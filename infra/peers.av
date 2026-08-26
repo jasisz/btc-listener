@@ -159,8 +159,8 @@ fn viewOf(key: Int, standing: Option<Standing>, heardMs: Int) -> PeerView
 
 verify viewOf
     viewOf(2, Option.None, 7) => PeerView(key = 2, address = "unknown", version = 0, agent = "", lastHeardMs = 7, sent = 0, received = 0, inbound = false)
-    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = [], version = 70016, agent = "/Satoshi/", sent = 120, received = 4096, inbound = false)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 120, received = 4096, inbound = false)
-    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = [], version = 70016, agent = "/Satoshi/", sent = 0, received = 0, inbound = true)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 0, received = 0, inbound = true)
+    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 120, received = 4096, inbound = false)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 120, received = 4096, inbound = false)
+    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 0, received = 0, inbound = true)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 0, received = 0, inbound = true)
 
 fn peerKeys(pool: Pool) -> List<Int>
     ? "Every key that names a Peer, which is every key but the listener's."
@@ -330,8 +330,8 @@ fn oneIfInbound(standing: Option<Standing>) -> Int
 
 verify oneIfInbound
     oneIfInbound(Option.None) => 0
-    oneIfInbound(Option.Some(Standing(address = "", buffer = [], version = 0, agent = "", sent = 0, received = 0, inbound = true))) => 1
-    oneIfInbound(Option.Some(Standing(address = "", buffer = [], version = 0, agent = "", sent = 0, received = 0, inbound = false))) => 0
+    oneIfInbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true))) => 1
+    oneIfInbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = false))) => 0
 
 fn countedDirection(inbound: Bool) -> Int
     ? "A Bool as the number it contributes to the count."
@@ -747,7 +747,7 @@ fn addressTextOf(standing: Option<Standing>) -> String
 
 verify addressTextOf
     addressTextOf(Option.None) => ""
-    addressTextOf(Option.Some(Standing(address = "1.2.3.4:8333", buffer = [], version = 0, agent = "", sent = 0, received = 0, inbound = true))) => "1.2.3.4:8333"
+    addressTextOf(Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true))) => "1.2.3.4:8333"
 
 fn pongThen(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, frame: Frame, inbound: Bool) -> Result<Pool, String>
     ? "Answer a ping that arrived mid-Handshake, then carry on."
@@ -1007,10 +1007,10 @@ fn readingInto(pool: Pool, key: Int, connection: Tcp.Connection, rest: List<Int>
       "not the end of the run. What ends the run is the pool emptying, which"
       "the caller notices rather than this."
     ! [Console.error, Console.print, Tcp.readSome, Time.unixMs]
-    arrived = Bytes.octets(Tcp.readSome(connection, readChunk())?)
-    match arrived
-        [] -> closedBy(pool, key, rest)
-        [head, ..tail] -> buffered(pool, key, rest, arrived)
+    arrived = Tcp.readSome(connection, readChunk())?
+    match Bytes.len(arrived) == 0
+        true -> closedBy(pool, key, rest)
+        false -> buffered(pool, key, rest, arrived)
 
 fn closedBy(pool: Pool, key: Int, rest: List<Int>) -> Result<Pool, String>
     ? "Say which Peer went, then carry on with the others."
@@ -1018,7 +1018,7 @@ fn closedBy(pool: Pool, key: Int, rest: List<Int>) -> Result<Pool, String>
     _said = Console.error("peer {key} closed the connection")
     reading(forgotten(pool, key), rest)
 
-fn buffered(pool: Pool, key: Int, rest: List<Int>, arrived: List<Int>) -> Result<Pool, String>
+fn buffered(pool: Pool, key: Int, rest: List<Int>, arrived: Bytes) -> Result<Pool, String>
     ? "Cut whole Messages out of what this Peer has sent so far, and mark"
       "when it was heard."
       "Bytes off the socket are the only honest moment to take: a Message is"
