@@ -41,7 +41,14 @@ verify asNumber
 
 verify asNumber law readsWhatFromNumberWrote
     given value: Int = [-2147483648, -2147483647, -8388608, -8388607, -32768, -32767, -256, -255, -129, -128, -127, -1, 0, 1, 127, 128, 129, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    because numberReadbackReason(value)
+    using [littleEndian.zeroDigitWindow, littleEndian.outsideByteRangeIsNeverAdded, littleEndian.readsBackBigEndian, placed.placementReadsBack, magnitudeOf.signAndSizeMakeTheNumber]
     asNumber(fromNumber(value)) => value
+
+verify asNumber law rewritingPreservesTheNumber
+    given item: List<Int> = [[], [0], [128], [0, 128], [1, 0], [128, 0], [255, 255, 255, 127], [-1, 256]]
+    using [asNumber.readsWhatFromNumberWrote]
+    asNumber(fromNumber(asNumber(item))) => asNumber(item)
 
 fn valued(top: Int, rest: List<Int>) -> Int
     ? "The most significant byte carries the sign; the rest are magnitude."
@@ -90,6 +97,15 @@ verify bigEndian law readsTheLastByteLast
     given acc: Int = [0, 1, 300]
     bigEndian(List.concat(bytes, [b]), acc) => bigEndian(bytes, acc) * 256 + b
 
+verify bigEndian law largerPrefixStaysLarger
+    given bytes: List<Int> = [[], [1, 2], [255, 0, 7], [-1, 256]]
+    given lower: Int = [-2, 0, 300]
+    given upper: Int = [-1, 1, 301]
+    when lower < upper
+    because largerPrefixReason(bytes, lower, upper)
+    using []
+    bigEndian(bytes, lower) < bigEndian(bytes, upper) holds
+
 fn fromNumber(value: Int) -> List<Int>
     ? "A number written the way Script writes one, minimally."
       "Zero is the empty string rather than a zero byte, which is the one case"
@@ -109,6 +125,12 @@ verify fromNumber
     fromNumber(256) => [0, 1]
     fromNumber(513) => [1, 2]
     fromNumber(2147483647) => [255, 255, 255, 127]
+
+verify fromNumber law encodingIdentifiesTheNumber
+    given left: Int = [-2147483648, -128, -1, 0, 1, 128, 2147483648]
+    given right: Int = [-2147483648, -128, -1, 0, 1, 128, 2147483648]
+    using [asNumber.readsWhatFromNumberWrote]
+    fromNumber(left) == fromNumber(right) => left == right
 
 fn magnitudeOf(value: Int) -> Int
     ? "Size without sign."
@@ -164,6 +186,22 @@ verify littleEndian law readsBackBigEndian
     when m >= 0
     bigEndian(List.reverse(littleEndian(m, [])), 0) => m
 
+verify littleEndian law outsideByteRangeIsNeverAdded
+    given m: Int = [-1, 0, 1, 127, 128, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    given acc: List<Int> = [[], [-1], [256], [1, 2], [-128, 300]]
+    given b: Int = [-128, -1, 0, 1, 127, 128, 255, 256, 300]
+    when Bool.or(b < 0, b >= 256)
+    List.contains(littleEndian(m, acc), b) => List.contains(acc, b)
+
+verify littleEndian law zeroDigitWindow
+    given m: Int = [-1, 0, 1, 127, 128, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    given acc: List<Int> = [[], [0], [1, 2], [-1, 300]]
+    List.len(littleEndian(m, acc)) <= List.len(acc) => m < 1
+
+verify littleEndian law mostSignificantDigitIsNotZero
+    given m: Int = [-1, 0, 1, 127, 128, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    List.contains(List.take(List.reverse(littleEndian(m, [])), 1), 0) => false
+
 fn withSign(bytes: List<Int>, negative: Bool) -> List<Int>
     ? "Put the sign in the top byte, or in a new one when that byte is full."
     match List.reverse(bytes)
@@ -187,6 +225,20 @@ verify placed
     placed(1, [], true) => [129]
     placed(128, [], false) => [128, 0]
     placed(128, [], true) => [128, 128]
+
+verify placed law placementReadsBack
+    given top: Int = [0, 1, 127, 128, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    given rest: List<Int> = [[], [0], [255], [-1, 300], [255, 255, 255]]
+    given negative: Bool = [false, true]
+    when top >= 0
+    asNumber(placed(top, rest, negative)) => signedBy(bigEndian(List.prepend(top, rest), 0), negative)
+
+verify placed law positiveTopMakesPlacementMinimal
+    given top: Int = [0, 1, 127, 128, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    given rest: List<Int> = [[], [0], [255], [-1, 300], [255, 255, 255]]
+    given negative: Bool = [false, true]
+    when top > 0
+    isMinimalNumber(placed(top, rest, negative)) holds
 
 fn signByte(negative: Bool) -> Int
     ? "The extra byte that carries a sign and nothing else."
@@ -292,6 +344,8 @@ verify isMinimalNumber
 
 verify isMinimalNumber law acceptsWhatFromNumberWrites
     given value: Int = [-2147483648, -2147483647, -8388608, -8388607, -32768, -32767, -256, -255, -129, -128, -127, -1, 0, 1, 127, 128, 129, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
+    because minimalReason(value)
+    using [littleEndian.mostSignificantDigitIsNotZero, littleEndian.outsideByteRangeIsNeverAdded, littleEndian.zeroDigitWindow, placed.positiveTopMakesPlacementMinimal]
     isMinimalNumber(fromNumber(value)) holds
 
 fn topIsNeeded(top: Int, rest: List<Int>) -> Bool
@@ -514,3 +568,61 @@ verify onlyOne
     onlyOne(1, []) => true
     onlyOne(0, []) => false
     onlyOne(1, [0]) => false
+
+fn minimalReason(value: Int) -> Bool
+    ? "Zero is minimal. Otherwise the leading element belongs to the digit list,"
+      "is positive, and admits a minimal sign placement. An empty digit list"
+      "would require a non-positive magnitude."
+    m = magnitudeOf(value)
+    bytes = littleEndian(m, [])
+    match value == 0
+        true -> isMinimalNumber(fromNumber(value))
+        false -> match List.reverse(bytes)
+            [] -> m <= 0
+            [top, ..rest] -> Bool.and(
+                List.contains(bytes, top),
+                Bool.and(top > 0, isMinimalNumber(placed(top, rest, value < 0)))
+            )
+
+verify minimalReason
+    minimalReason(0) => true
+    minimalReason(1) => true
+    minimalReason(-1) => true
+    minimalReason(128) => true
+    minimalReason(2147483648) => true
+
+fn numberReadbackReason(value: Int) -> Bool
+    ? "Read the magnitude, then remove exactly the sign that was placed."
+    m = magnitudeOf(value)
+    bytes = littleEndian(m, [])
+    match value == 0
+        true -> asNumber(fromNumber(value)) == value
+        false -> match List.reverse(bytes)
+            [] -> m <= 0
+            [top, ..rest] -> Bool.and(
+                List.contains(bytes, top),
+                Bool.and(top >= 0, Bool.and(
+                    asNumber(placed(top, rest, value < 0)) == signedBy(bigEndian(List.prepend(top, rest), 0), value < 0),
+                    bigEndian(List.prepend(top, rest), 0) == m
+                ))
+            )
+
+verify numberReadbackReason
+    numberReadbackReason(0) => true
+    numberReadbackReason(-128) => true
+    numberReadbackReason(2147483648) => true
+
+fn largerPrefixReason(bytes: List<Int>, lower: Int, upper: Int) -> Bool
+    ? "A larger prefix stays larger after each byte, with both prefixes advancing together."
+    match bytes
+        [] -> lower < upper
+        [head, ..tail] -> Bool.and(
+            largerPrefixReason(tail, lower * 256 + head, upper * 256 + head),
+            bigEndian(bytes, lower) < bigEndian(bytes, upper)
+        )
+
+verify largerPrefixReason
+    largerPrefixReason([], 0, 1) => true
+    largerPrefixReason([255, 0, 7], -2, 300) => true
+    largerPrefixReason([1, 2], 1, 1) => false
+    largerPrefixReason([1, 2], 1, 0) => false
