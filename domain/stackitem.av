@@ -50,6 +50,13 @@ verify asNumber law rewritingPreservesTheNumber
     using [asNumber.readsWhatFromNumberWrote]
     asNumber(fromNumber(asNumber(item))) => asNumber(item)
 
+verify asNumber law minimalEncodingIdentifiesBytes
+    given left: List<Int> = [[], [1], [129], [128, 0], [128, 128], [0], [256]]
+    given right: List<Int> = [[], [1], [129], [128, 0], [128, 128], [128], [256]]
+    when Bool.and(Bool.and(validBytes(left), isMinimalNumber(left)), Bool.and(validBytes(right), isMinimalNumber(right)))
+    using [fromNumber.minimalItemsAreFixedPoints]
+    asNumber(left) == asNumber(right) => left == right
+
 fn valued(top: Int, rest: List<Int>) -> Int
     ? "The most significant byte carries the sign; the rest are magnitude."
     signedBy(bigEndian(List.prepend(unsigned(top), rest), 0), top >= 128)
@@ -106,6 +113,28 @@ verify bigEndian law largerPrefixStaysLarger
     using []
     bigEndian(bytes, lower) < bigEndian(bytes, upper) holds
 
+verify bigEndian law writingReadDigitsPreservesThem
+    given bytes: List<Int> = [[], [0], [255, 0], [1, 2, 3]]
+    given prefix: Int = [1, 127, 128, 256]
+    when Bool.and(validBytes(bytes), prefix > 0)
+    because digitsReadbackReason(bytes, prefix)
+    using [littleEndian.positivePrefixAndDigit]
+    List.concat(List.reverse(bytes), littleEndian(prefix, [])) => littleEndian(bigEndian(bytes, prefix), [])
+
+verify bigEndian law headStartsPrefix
+    given head: Int = [-1, 0, 128, 255]
+    given tail: List<Int> = [[], [1], [0, 255]]
+    given prefix: Int = [-1, 0, 1, 128]
+    bigEndian(List.prepend(head, tail), prefix) => bigEndian(tail, prefix * 256 + head)
+
+verify bigEndian law positivePrefixStaysPositive
+    given bytes: List<Int> = [[], [0], [255, 0], [1, 2, 3]]
+    given prefix: Int = [1, 127, 128, 256]
+    when Bool.and(validBytes(bytes), prefix > 0)
+    because positiveReadReason(bytes, prefix)
+    using []
+    bigEndian(bytes, prefix) > 0 holds
+
 fn fromNumber(value: Int) -> List<Int>
     ? "A number written the way Script writes one, minimally."
       "Zero is the empty string rather than a zero byte, which is the one case"
@@ -131,6 +160,33 @@ verify fromNumber law encodingIdentifiesTheNumber
     given right: Int = [-2147483648, -128, -1, 0, 1, 128, 2147483648]
     using [asNumber.readsWhatFromNumberWrote]
     fromNumber(left) == fromNumber(right) => left == right
+
+verify fromNumber law signedMagnitudeEncoding
+    given magnitude: Int = [1, 127, 128, 256]
+    given negative: Bool = [false, true]
+    when magnitude > 0
+    using []
+    fromNumber(signedBy(magnitude, negative)) => withSign(littleEndian(magnitude, []), negative)
+
+verify fromNumber law minimalItemsAreFixedPoints
+    given item: List<Int> = [[], [1], [129], [128], [0], [1, 0], [128, 0], [128, 128], [255, 255, 255, 127], [0, 0, 0, 128, 0]]
+    when Bool.and(validBytes(item), isMinimalNumber(item))
+    because canonicalDigitsReason(item)
+    because canonicalReason(item)
+    using [canonicalDigitsReason.minimalItemDigitsReadBack, withSign.restoresMagnitudeTop, withSign.restoresSeparateSign, validBytes.headAndTail, validBytes.reversal, bigEndian.headStartsPrefix, fromNumber.signedMagnitudeEncoding]
+    fromNumber(asNumber(item)) => item
+
+verify fromNumber law canonicalExactlyWhenMinimal
+    given item: List<Int> = [[], [1], [129], [128], [0], [1, 0], [128, 0], [128, 128], [255, 255, 255, 127], [0, 0, 0, 128, 0]]
+    when validBytes(item)
+    using [fromNumber.minimalItemsAreFixedPoints, isMinimalNumber.acceptsWhatFromNumberWrites]
+    fromNumber(asNumber(item)) == item => isMinimalNumber(item)
+
+verify fromNumber
+    fromNumber(asNumber([128])) => []
+    fromNumber(asNumber([1, 0])) => [1]
+    fromNumber(asNumber([128, 0])) => [128, 0]
+    fromNumber(asNumber([256])) => [128, 128]
 
 fn magnitudeOf(value: Int) -> Int
     ? "Size without sign."
@@ -202,6 +258,29 @@ verify littleEndian law mostSignificantDigitIsNotZero
     given m: Int = [-1, 0, 1, 127, 128, 255, 256, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648]
     List.contains(List.take(List.reverse(littleEndian(m, [])), 1), 0) => false
 
+verify littleEndian law firstDigitIsPreserved
+    given value: Int = [0, 1, 128, 256]
+    given digit: Int = [0, 1, 255]
+    littleEndian(value, [digit]) => List.prepend(digit, littleEndian(value, []))
+
+verify littleEndian law positiveStep
+    given value: Int = [1, 127, 128, 256, 2147483648]
+    when value > 0
+    afterFirstDigit(value) => littleEndian(value, [])
+
+verify littleEndian law positivePrefixAndDigit
+    given prefix: Int = [1, 127, 128, 256, 2147483648]
+    given digit: Int = [0, 1, 127, 128, 255]
+    when Bool.and(prefix > 0, Bool.and(digit >= 0, digit < 256))
+    because digitStepReason(prefix, digit)
+    using [littleEndian.positiveStep, littleEndian.firstDigitIsPreserved]
+    littleEndian(prefix * 256 + digit, []) => List.prepend(digit, littleEndian(prefix, []))
+
+verify littleEndian law oneDigitEncoding
+    given digit: Int = [1, 127, 128, 255]
+    when Bool.and(digit > 0, digit < 256)
+    littleEndian(digit, []) => [digit]
+
 fn withSign(bytes: List<Int>, negative: Bool) -> List<Int>
     ? "Put the sign in the top byte, or in a new one when that byte is full."
     match List.reverse(bytes)
@@ -213,6 +292,21 @@ verify withSign
     withSign([1], true) => [129]
     withSign([128], false) => [128, 0]
     withSign([128], true) => [128, 128]
+
+verify withSign law restoresMagnitudeTop
+    given top: Int = [1, 127, 129, 255]
+    given rest: List<Int> = [[], [0], [1, 255]]
+    when Bool.and(Bool.and(top >= 0, top < 256), unsigned(top) > 0)
+    using []
+    withSign(List.reverse(List.prepend(unsigned(top), rest)), top >= 128) => List.reverse(List.prepend(top, rest))
+
+verify withSign law restoresSeparateSign
+    given top: Int = [0, 128]
+    given head: Int = [128, 255]
+    given tail: List<Int> = [[], [0], [1, 255]]
+    when Bool.and(Bool.or(top == 0, top == 128), head >= 128)
+    using []
+    withSign(List.reverse(List.prepend(head, tail)), top >= 128) => List.reverse(List.prepend(top, List.prepend(head, tail)))
 
 fn placed(top: Int, rest: List<Int>, negative: Bool) -> List<Int>
     ? "The top byte has room for the sign only if its high bit is clear."
@@ -347,6 +441,9 @@ verify isMinimalNumber law acceptsWhatFromNumberWrites
     because minimalReason(value)
     using [littleEndian.mostSignificantDigitIsNotZero, littleEndian.outsideByteRangeIsNeverAdded, littleEndian.zeroDigitWindow, placed.positiveTopMakesPlacementMinimal]
     isMinimalNumber(fromNumber(value)) holds
+
+verify isMinimalNumber
+    isMinimalNumber([256]) => true
 
 fn topIsNeeded(top: Int, rest: List<Int>) -> Bool
     ? "A top byte of zero or eighty is spare unless the byte under it is full."
@@ -626,3 +723,123 @@ verify largerPrefixReason
     largerPrefixReason([255, 0, 7], -2, 300) => true
     largerPrefixReason([1, 2], 1, 1) => false
     largerPrefixReason([1, 2], 1, 0) => false
+
+fn validBytes(bytes: List<Int>) -> Bool
+    ? "Every element is an octet."
+    match bytes
+        [] -> true
+        [head, ..tail] -> Bool.and(Bool.and(head >= 0, head < 256), validBytes(tail))
+
+verify validBytes
+    validBytes([]) => true
+    validBytes([0, 128, 255]) => true
+    validBytes([-1]) => false
+    validBytes([256]) => false
+
+verify validBytes law headAndTail
+    given head: Int = [-1, 0, 255, 256]
+    given tail: List<Int> = [[], [1, 2], [256]]
+    validBytes(List.prepend(head, tail)) => Bool.and(Bool.and(head >= 0, head < 256), validBytes(tail))
+
+verify validBytes law concatenation
+    given left: List<Int> = [[], [1, 2], [-1]]
+    given right: List<Int> = [[], [255], [256]]
+    validBytes(List.concat(left, right)) => Bool.and(validBytes(left), validBytes(right))
+
+verify validBytes law reversal
+    given bytes: List<Int> = [[], [1, 2], [-1, 256], [255, 0, 128]]
+    validBytes(List.reverse(bytes)) => validBytes(bytes)
+
+fn afterFirstDigit(value: Int) -> List<Int>
+    ? "Write the remaining magnitude with its first digit already collected."
+    littleEndian(Int.div(value, 256), [Int.mod(value, 256)])
+
+verify afterFirstDigit
+    afterFirstDigit(1) => [1]
+    afterFirstDigit(256) => [0, 1]
+
+fn digitStepReason(prefix: Int, digit: Int) -> Bool
+    ? "The quotient recovers the prefix and the remainder recovers the digit."
+    value = prefix * 256 + digit
+    Bool.and(value > 0, Bool.and(
+        littleEndian(value, []) == afterFirstDigit(value),
+        Bool.and(Int.div(value, 256) == prefix, Bool.and(Int.mod(value, 256) == digit,
+            littleEndian(prefix, [digit]) == List.prepend(digit, littleEndian(prefix, []))))
+    ))
+
+verify digitStepReason
+    digitStepReason(1, 0) => true
+    digitStepReason(128, 255) => true
+
+fn digitsReadbackReason(bytes: List<Int>, prefix: Int) -> Bool
+    ? "An existing positive prefix stays positive; each read octet is written back first."
+    match bytes
+        [] -> littleEndian(bigEndian(bytes, prefix), []) == List.concat(List.reverse(bytes), littleEndian(prefix, []))
+        [head, ..tail] -> Bool.and(
+            digitsReadbackReason(tail, prefix * 256 + head),
+            littleEndian(bigEndian(bytes, prefix), []) == List.concat(List.reverse(bytes), littleEndian(prefix, []))
+        )
+
+verify digitsReadbackReason
+    digitsReadbackReason([], 1) => true
+    digitsReadbackReason([0, 255], 128) => true
+    digitsReadbackReason([0], 0) => false
+
+fn positiveReadReason(bytes: List<Int>, prefix: Int) -> Bool
+    ? "A positive magnitude prefix stays positive after every valid octet."
+    match bytes
+        [] -> bigEndian(bytes, prefix) > 0
+        [head, ..tail] -> Bool.and(positiveReadReason(tail, prefix * 256 + head), bigEndian(bytes, prefix) > 0)
+
+verify positiveReadReason
+    positiveReadReason([], 1) => true
+    positiveReadReason([0, 255], 128) => true
+    positiveReadReason([], 0) => false
+
+fn canonicalDigitsReason(item: List<Int>) -> Bool
+    ? "A minimal top byte is either a magnitude digit or a necessary separate sign byte."
+    match List.reverse(item)
+        [] -> item == []
+        [top, ..rest] -> match unsigned(top) > 0
+            true -> Bool.and(validBytes(rest), Bool.and(
+                bigEndian(rest, unsigned(top)) > 0,
+                littleEndian(bigEndian(rest, unsigned(top)), []) == List.concat(List.reverse(rest), [unsigned(top)])
+            ))
+            false -> match rest
+                [] -> false
+                [head, ..tail] -> Bool.and(validBytes(List.reverse(item)), Bool.and(
+                    Bool.or(top == 0, top == 128), Bool.and(head >= 128, Bool.and(validBytes(tail), Bool.and(
+                        bigEndian(tail, head) > 0,
+                        littleEndian(bigEndian(tail, head), []) == List.concat(List.reverse(tail), [head])
+                    )))
+                ))
+
+verify canonicalDigitsReason
+    canonicalDigitsReason([]) => true
+    canonicalDigitsReason([128, 0]) => true
+    canonicalDigitsReason([255, 128]) => true
+
+verify canonicalDigitsReason law minimalItemDigitsReadBack
+    given item: List<Int> = [[], [1], [129], [128], [0], [1, 0], [128, 0], [128, 128], [255, 255, 255, 127], [0, 0, 0, 128, 0]]
+    when Bool.and(validBytes(item), isMinimalNumber(item))
+    because canonicalDigitsReason(item)
+    using [validBytes.headAndTail, validBytes.reversal, bigEndian.positivePrefixStaysPositive, bigEndian.writingReadDigitsPreservesThem, littleEndian.oneDigitEncoding]
+    canonicalDigitsReason(item) holds
+
+fn canonicalReason(item: List<Int>) -> Bool
+    ? "Restore the original top byte after reading the magnitude and sign."
+    match List.reverse(item)
+        [] -> fromNumber(asNumber(item)) == item
+        [top, ..rest] -> match unsigned(top) > 0
+            true -> fromNumber(valued(top, rest)) == List.reverse(List.prepend(top, rest))
+            false -> match rest
+                [] -> false
+                [head, ..tail] -> fromNumber(valued(top, rest)) == List.reverse(List.prepend(top, rest))
+
+verify canonicalReason
+    canonicalReason([]) => true
+    canonicalReason([1]) => true
+    canonicalReason([128, 0]) => true
+    canonicalReason([128, 128]) => true
+    canonicalReason([128]) => false
+    canonicalReason([0, 1]) => true

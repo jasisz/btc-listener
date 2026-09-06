@@ -8,15 +8,15 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `68035af20b924a8493ba6f86212266f63d0d9b71`, Lean reports **24 universal
+At pin `5b892fd1e16ca6f855913d6e84fb4b12094e79d5`, Lean reports **41 universal
 laws, 3 bounded laws and 1 open law**. The strict command exits 1 because
 the open law remains an obligation. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
 
 Of the original twenty laws in PR #338, sixteen now close universally, up
-from fourteen. The extra eight laws are counted separately: five helper
-lemmas, one inductive decoder property, and two consequences of the number
-roundtrip. The existing function bodies and public API are unchanged apart
+from fourteen. The extra twenty-five laws are counted separately: the original eight
+roundtrip and induction additions, followed by seventeen laws establishing
+canonical encoding and its supporting digit, byte-validity and sign facts. The existing function bodies and public API are unchanged apart
 from the original PR's `littleEndian` guard repair.
 
 ## Number guarantees
@@ -38,6 +38,34 @@ The first two use executable explanations which split zero from nonzero,
 name the most significant digit, and connect its properties to sign placement.
 The next two cite the proved roundtrip with `using`; no new justification
 function is needed for either consequence.
+
+## Canonical Script numbers
+
+For every list whose elements are octets (`0 <= byte < 256`),
+`fromNumber.canonicalExactlyWhenMinimal` proves:
+
+```text
+fromNumber(asNumber(bytes)) == bytes  iff  isMinimalNumber(bytes)
+```
+
+Thus the minimality checker recognizes exactly the fixed points of number
+normalization. Negative zero `[128]` normalizes to `[]`; redundant `[1, 0]`
+normalizes to `[1]`; the necessary sign byte in `[128, 0]` survives.
+The octet premise matters: the out-of-domain list `[256]` passes the minimality
+predicate but normalizes to `[128, 128]`, so the theorem deliberately excludes it.
+
+The hard direction is `fromNumber.minimalItemsAreFixedPoints`. Its two
+explanations first recover the magnitude digits, then restore the top byte or
+separate sign byte. `bigEndian.writingReadDigitsPreservesThem` supplies checked
+list induction: the recursive explanation consumes one byte and updates the
+positive prefix. Each explanation and the final implication are independently
+universal and kernel-audited. The Aver pin includes generic exporter fixes found
+while checking these proofs; no Bitcoin-specific compiler logic or handwritten
+Lean is used.
+
+The reverse direction cites the already-proved minimality of every encoder
+output. `asNumber.minimalEncodingIdentifiesBytes` then proves that two minimal byte
+encodings are equal exactly when they decode to the same number.
 
 ## An induction written in Aver
 
@@ -73,7 +101,9 @@ it has no `sorryAx` or dependency on sample evaluation.
 `fitsArithmetic.acceptsCoreOperandRange` is still not proved universally:
 the encoding should fit in four bytes exactly for `-2^31 < value < 2^31`.
 Its examples pass, but neither that result nor the decoder induction above
-is presented as a proof of this boundary.
+is presented as a proof of this boundary. The command also reports 130 declined
+non-law claims in the wider interpreter dependency cone; those were not
+exported or proved and are separate from the law counts above.
 
 Three laws retain bounded credit: `CompactSize.encode.readsBack`,
 `ScriptState.rearranged.staysWithinDeclaredDepth`, and
