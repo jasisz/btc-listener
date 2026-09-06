@@ -8,15 +8,16 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `9a200be69bbe3ee87542681050267dec08560c32`, Lean reports **54 universal
-laws, 3 bounded laws and no open laws**. The strict command still exits 1
+At pin `9b064b4fca9d02c87bc1a915309a97290530a1c8`, Lean reports **70 universal
+laws, 2 bounded laws and no open laws**. The strict command still exits 1
 because 130 non-law claims in the wider graph are deliberately declined. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
 
-Of the original twenty laws in PR #338, seventeen now close universally, up
-from fourteen. The extra thirty-seven laws are counted separately: eight
-roundtrip and induction additions, seventeen canonical-encoding laws, and twelve
-helpers that establish the exact arithmetic-width boundary. The existing function bodies and public API are unchanged apart
+Of the original twenty laws in PR #338, eighteen now close universally, up
+from fourteen. The extra fifty-two laws are counted separately: eight
+roundtrip and induction additions, seventeen canonical-encoding laws, twelve
+helpers that establish the exact arithmetic-width boundary, and fifteen
+helpers that establish the CompactSize roundtrip. The existing function bodies and public API are unchanged apart
 from the original PR's `littleEndian` guard repair.
 
 ## Number guarantees
@@ -120,13 +121,39 @@ This exposed a generic Aver bug: `using` lemmas disappeared from the final
 implication when `because` was present. Aver PR #1296 removes that exception.
 No width-specific compiler rule or handwritten Lean is involved.
 
+## CompactSize preserves the following field
+
+`CompactSize.encode.readsBack` is universal for every unsigned 64-bit value
+and every trailing list:
+
+```text
+read(encode(value) ++ rest)
+  == Count(value, rest, length(encode(value)))
+```
+
+The decoder recovers the value, consumes exactly the encoded field, and leaves
+the complete suffix untouched. This covers every marker boundary (253, 65536,
+4294967296), including the maximum value 18446744073709551615. It asserts a
+roundtrip for encoder output; it does not claim that the decoder rejects
+noncanonical external encodings.
+
+Fifteen helper laws establish fixed-width little-endian readback, field length,
+and suffix preservation. `readBackReason` is an ordinary private Bool function
+splitting the four wire widths: 1, 3, 5 and 9 bytes. The helper width guards cover
+up to eight payload bytes, so hostile checks stay executable even when they
+try extreme integers. The original roundtrip domain is unchanged.
+
+Aver PR #1298 derives a native countdown measure from existing guard and shrink
+checks and makes its equations available to `using`. This removes law-family
+special cases in the compiler. It also fixes imported record identities inside
+explanations. The complete proof is Aver source; no handwritten Lean is needed.
+
 ## Remaining limits
 
 There are no open laws in this export. The command still reports 130 declined
 non-law claims in the wider interpreter dependency cone; they are neither exported
 nor proved and are separate from the law counts.
 
-Three laws retain bounded credit: `CompactSize.encode.readsBack`,
-`ScriptState.rearranged.staysWithinDeclaredDepth`, and
-`StackItem.isMinimalPush.directPushIsMinimalUnlessSmallNumber`. All fourteen
-previously universal laws retain their credit.
+Two laws retain bounded credit: `ScriptState.rearranged.staysWithinDeclaredDepth`
+and `StackItem.isMinimalPush.directPushIsMinimalUnlessSmallNumber`. All previously
+universal laws retain their credit.

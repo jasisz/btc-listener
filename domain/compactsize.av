@@ -50,6 +50,12 @@ verify from
     from(254, [0, 0, 1, 0]) => Count(value = 65536, rest = [], width = 5)
     from(255, [1, 0, 0, 0, 0, 0, 0, 0]) => Count(value = 1, rest = [], width = 9)
 
+verify from law directByte
+    given head: Int = [0, 1, 252]
+    given tail: List<Int> = [[], [9]]
+    when head < 253
+    from(head, tail) => Count(value = head, rest = tail, width = 1)
+
 fn wide(width: Int, tail: List<Int>) -> Count
     ? "Read the wider field the marker promised, and step past it."
     Count(value = Domain.Message.readLittleEndian(List.take(tail, width)), rest = List.drop(tail, width), width = width + 1)
@@ -57,6 +63,32 @@ fn wide(width: Int, tail: List<Int>) -> Count
 verify wide
     wide(2, [1, 1, 9]) => Count(value = 257, rest = [9], width = 3)
     wide(4, [0, 0, 1, 0, 9]) => Count(value = 65536, rest = [9], width = 5)
+
+verify wide law wholeField
+    given bytes: List<Int> = [[], [0], [1, 2]]
+    given rest: List<Int> = [[], [9], [253, 0, 0]]
+    wide(List.len(bytes), List.concat(bytes, rest)) => Count(value = Domain.Message.readLittleEndian(bytes), rest = rest, width = List.len(bytes) + 1)
+
+verify wide law twoBytes
+    given value: Int = [0, 1, 65535]
+    given rest: List<Int> = [[], [9], [253, 0, 0]]
+    when Bool.and(0 <= value, value < 65536)
+    using [wide.wholeField, Domain.Message.littleEndian.fixedWidth, Domain.Message.littleEndian.twoBytesReadBack]
+    wide(2, List.concat(Domain.Message.littleEndian(value, 2), rest)) => Count(value = value, rest = rest, width = 3)
+
+verify wide law fourBytes
+    given value: Int = [0, 1, 4294967295]
+    given rest: List<Int> = [[], [9], [253, 0, 0]]
+    when Bool.and(0 <= value, value < 4294967296)
+    using [wide.wholeField, Domain.Message.littleEndian.fixedWidth, Domain.Message.littleEndian.fourBytesReadBack]
+    wide(4, List.concat(Domain.Message.littleEndian(value, 4), rest)) => Count(value = value, rest = rest, width = 5)
+
+verify wide law eightBytes
+    given value: Int = [0, 1, 18446744073709551615]
+    given rest: List<Int> = [[], [9], [253, 0, 0]]
+    when Bool.and(0 <= value, value < 18446744073709551616)
+    using [wide.wholeField, Domain.Message.littleEndian.fixedWidth, Domain.Message.littleEndian.eightBytesReadBack]
+    wide(8, List.concat(Domain.Message.littleEndian(value, 8), rest)) => Count(value = value, rest = rest, width = 9)
 
 fn widthOf(head: Int) -> Int
     ? "How many bytes the count occupies, its marker included."
@@ -100,6 +132,8 @@ verify encode law readsBack
     given value: Int = [0, 1, 252, 253, 254, 255, 256, 65535, 65536, 2147483647, 4294967295, 4294967296, 9223372036854775807, 18446744073709551615]
     given rest: List<Int> = [[], [9], [253, 0, 0]]
     when Bool.and(0 <= value, value <= 18446744073709551615)
+    because readBackReason(value, rest)
+    using [from.directByte, wide.twoBytes, wide.fourBytes, wide.eightBytes, Domain.Message.littleEndian.fixedWidth]
     read(List.concat(encode(value), rest)) => Count(value = value, rest = rest, width = List.len(encode(value)))
 
 fn narrowOrWide(value: Int) -> List<Int>
@@ -123,3 +157,19 @@ verify wider
     wider(65536) => [254, 0, 0, 1, 0]
     wider(4294967295) => [254, 255, 255, 255, 255]
     wider(4294967296) => [255, 0, 0, 0, 0, 1, 0, 0, 0]
+
+fn readBackReason(value: Int, rest: List<Int>) -> Bool
+    ? "Read each selected field width while preserving the following items."
+    match value < 253
+        true -> read(List.concat(encode(value), rest)) == Count(value = value, rest = rest, width = 1)
+        false -> match value < 65536
+            true -> read(List.concat(encode(value), rest)) == Count(value = value, rest = rest, width = 3)
+            false -> match value < 4294967296
+                true -> read(List.concat(encode(value), rest)) == Count(value = value, rest = rest, width = 5)
+                false -> read(List.concat(encode(value), rest)) == Count(value = value, rest = rest, width = 9)
+
+verify readBackReason
+    readBackReason(252, [253, 0, 0]) => true
+    readBackReason(253, [9]) => true
+    readBackReason(65536, [9]) => true
+    readBackReason(18446744073709551615, [9]) => true
