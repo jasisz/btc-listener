@@ -34,6 +34,13 @@ verify parse
     parse([76]) => Result.Err("push length runs past the end of the script")
     parse([0]) => Result.Ok([Op.Code(0)])
 
+verify parse law preservesExactBytes
+    given bytes: List<Int> = [[], [0], [1, 170], [118, 76, 1, 170], [77, 1, 0, 170], [78, 1, 0, 0, 0, 170], [76, 0], [77, 0, 0], [76], [2, 170]]
+    when validOctets(bytes)
+    because parseReason(bytes, bytes, [])
+    using [parseReason.enoughSteps]
+    readsExactly(bytes) holds
+
 fn opsIn(scriptHex: String) -> Result<List<Op>, String>
     ? "The same, from the hexadecimal a Transaction carries."
     raw = Bytes.fromHex(scriptHex)?
@@ -126,6 +133,19 @@ verify bytesOf
     bytesOf([Op.Push(78, [170])]) => [78, 1, 0, 0, 0, 170]
     bytesOf(parse([118, 169, 1, 170])?) => [118, 169, 1, 170]
 
+verify bytesOf law prepend
+    given head: Op = [Op.Code(81), Op.Push(76, [171])]
+    given tail: List<Op> = [[], [Op.Code(82)]]
+    using [intoBytes.consStep, intoBytes.accumulates, prependReversed.reverseOnto]
+    bytesOf(List.prepend(head, tail)) => List.concat(oneOp(head), bytesOf(tail))
+
+verify bytesOf law concatenates
+    given left: List<Op> = [[], [Op.Code(81)], [Op.Push(76, [171]), Op.Code(82)]]
+    given right: List<Op> = [[], [Op.Code(83)]]
+    because serializeConcatReason(left, right)
+    using [bytesOf.prepend]
+    bytesOf(List.concat(left, right)) => List.concat(bytesOf(left), bytesOf(right))
+
 fn intoBytes(ops: List<Op>, acc: List<Int>) -> List<Int>
     ? "Accumulator form, turned round at the end."
     match ops
@@ -136,6 +156,20 @@ verify intoBytes
     intoBytes([], []) => []
     intoBytes([Op.Code(118)], []) => [118]
     intoBytes([Op.Code(118), Op.Code(169)], []) => [118, 169]
+
+verify intoBytes law accumulates
+    given ops: List<Op> = [[], [Op.Code(81)], [Op.Push(76, [171]), Op.Code(82)]]
+    given acc: List<Int> = [[], [9, 8]]
+    because serializeAccReason(ops, acc)
+    using [prependReversed.reverseOnto]
+    intoBytes(ops, acc) => List.concat(List.reverse(acc), bytesOf(ops))
+
+verify intoBytes law consStep
+    given head: Op = [Op.Code(81), Op.Push(76, [171])]
+    given tail: List<Op> = [[], [Op.Code(82)]]
+    given acc: List<Int> = [[], [9]]
+    using []
+    intoBytes(List.prepend(head, tail), acc) => intoBytes(tail, prependReversed(oneOp(head), acc))
 
 fn oneOp(op: Op) -> List<Int>
     ? "One Op's bytes: its opcode, any length it needs, and its data."
@@ -169,6 +203,11 @@ fn prependReversed(bytes: List<Int>, acc: List<Int>) -> List<Int>
 verify prependReversed
     prependReversed([], [9]) => [9]
     prependReversed([1, 2], [9]) => [2, 1, 9]
+
+verify prependReversed law reverseOnto
+    given bytes: List<Int> = [[], [1, 2]]
+    given acc: List<Int> = [[], [9]]
+    prependReversed(bytes, acc) => List.concat(List.reverse(bytes), acc)
 
 fn minimalPush(data: List<Int>) -> List<Int>
     ? "These bytes as the push Bitcoin would write for them."
@@ -405,3 +444,262 @@ verify retained law commutes
     because retainedSwapReason(ops, left, right)
     using []
     retained(retained(ops, left), right) => retained(retained(ops, right), left)
+
+fn serializeAccReason(ops: List<Op>, acc: List<Int>) -> Bool
+    ? "The reversed byte accumulator contributes a prefix to every serialized suffix."
+    match ops
+        [] -> intoBytes(ops, acc) == List.concat(List.reverse(acc), intoBytes(ops, []))
+        [head, ..tail] -> Bool.and(
+            serializeAccReason(tail, prependReversed(oneOp(head), acc)),
+            Bool.and(serializeAccReason(tail, prependReversed(oneOp(head), [])), intoBytes(ops, acc) == List.concat(List.reverse(acc), intoBytes(ops, []))))
+
+verify serializeAccReason
+    serializeAccReason([], [9, 8]) => true
+    serializeAccReason([Op.Push(76, [171]), Op.Code(82)], [9]) => true
+
+fn serializeConcatReason(left: List<Op>, right: List<Op>) -> Bool
+    ? "Serializing a concatenation preserves both byte sequences and their order."
+    match left
+        [] -> bytesOf(List.concat(left, right)) == List.concat(bytesOf(left), bytesOf(right))
+        [head, ..tail] -> Bool.and(serializeConcatReason(tail, right), bytesOf(List.concat(left, right)) == List.concat(bytesOf(left), bytesOf(right)))
+
+verify serializeConcatReason
+    serializeConcatReason([], [Op.Code(81)]) => true
+    serializeConcatReason([Op.Push(77, [170])], [Op.Code(82)]) => true
+
+fn validOctets(bytes: List<Int>) -> Bool
+    ? "Every integer in the input represents one byte."
+    match bytes
+        [] -> true
+        [head, ..tail] -> Bool.and(Bool.and(head >= 0, head <= 255), validOctets(tail))
+
+verify validOctets law dropStaysValid
+    given bytes: List<Int> = [[], [0, 255], [-1, 256]]
+    given count: Int = [-1, 0, 1, 2]
+    when validOctets(bytes)
+    because dropValidReason(bytes, count)
+    using []
+    validOctets(List.drop(bytes, count)) holds
+
+verify validOctets law takeStaysValid
+    given bytes: List<Int> = [[], [0, 255], [-1, 256]]
+    given count: Int = [-1, 0, 1, 2]
+    when validOctets(bytes)
+    because takeValidReason(bytes, count)
+    using []
+    validOctets(List.take(bytes, count)) holds
+
+fn dropValidReason(bytes: List<Int>, count: Int) -> Bool
+    ? "Dropping a prefix preserves the byte range of the remaining elements."
+    match bytes
+        [] -> validOctets(List.drop(bytes, count))
+        [head, ..tail] -> match count <= 0
+            true -> validOctets(List.drop(bytes, count))
+            false -> Bool.and(dropValidReason(tail, count - 1), validOctets(List.drop(bytes, count)))
+
+verify dropValidReason
+    dropValidReason([], -1) => true
+    dropValidReason([0, 255], 1) => true
+    dropValidReason([256], 0) => false
+
+fn takeValidReason(bytes: List<Int>, count: Int) -> Bool
+    ? "Taking a prefix preserves the byte range of the selected elements."
+    match bytes
+        [] -> validOctets(List.take(bytes, count))
+        [head, ..tail] -> match count <= 0
+            true -> validOctets(List.take(bytes, count))
+            false -> Bool.and(takeValidReason(tail, count - 1), validOctets(List.take(bytes, count)))
+
+verify takeValidReason
+    takeValidReason([], 2) => true
+    takeValidReason([0, 255], 1) => true
+    takeValidReason([256], 1) => false
+
+fn lengthBytesRoundtrip(bytes: List<Int>) -> List<Int>
+    ? "Decode a length field and write it back at its original width."
+    Domain.Message.littleEndian(Domain.Message.readLittleEndian(bytes), List.len(bytes))
+
+verify lengthBytesRoundtrip law fixedWidths
+    given bytes: List<Int> = [[], [0], [255], [1, 0], [1, 0, 0, 0], [255, 255, 255, 255]]
+    when Bool.and(validOctets(bytes), List.len(bytes) <= 8)
+    because lengthRoundtripReason(bytes)
+    using [Domain.Message.littleEndian.lowDigitStep, Domain.Message.readLittleEndian.lowDigitStep]
+    Domain.Message.littleEndian(Domain.Message.readLittleEndian(bytes), List.len(bytes)) => bytes
+
+fn lengthRoundtripReason(bytes: List<Int>) -> Bool
+    ? "Remove one low byte at a time, retaining its quotient and remainder facts."
+    match bytes
+        [] -> lengthBytesRoundtrip(bytes) == bytes
+        [head, ..tail] -> Bool.and(lengthRoundtripReason(tail), Bool.and(
+            Domain.Message.readLittleEndian(bytes) == Domain.Message.readLittleEndian(tail) * 256 + head,
+            Bool.and(Int.mod(Domain.Message.readLittleEndian(bytes), 256) == head,
+                Bool.and(Int.div(Domain.Message.readLittleEndian(bytes), 256) == Domain.Message.readLittleEndian(tail),
+                    lengthBytesRoundtrip(bytes) == bytes))))
+
+verify lengthRoundtripReason
+    lengthRoundtripReason([]) => true
+    lengthRoundtripReason([1, 0, 0, 0]) => true
+    lengthRoundtripReason([256]) => false
+
+fn rejoined(bytes: List<Int>, count: Int) -> List<Int>
+    ? "A prefix and its remaining suffix reconstruct the original list."
+    List.concat(List.take(bytes, count), List.drop(bytes, count))
+
+verify rejoined law exact
+    given bytes: List<Int> = [[], [1, 2, 3]]
+    given count: Int = [-1, 0, 2, 10]
+    using []
+    List.concat(List.take(bytes, count), List.drop(bytes, count)) => bytes
+
+fn parsedBytesMatch(bytes: List<Int>, acc: List<Op>) -> Bool
+    ? "A successful parser step preserves the accumulated operations and every remaining byte."
+    match from(bytes, acc)
+        Result.Err(_) -> true
+        Result.Ok(ops) -> bytesOf(ops) == List.concat(bytesOf(List.reverse(acc)), bytes)
+
+verify parsedBytesMatch law codeStep
+    given code: Int = [0, 118, 255]
+    given rest: List<Int> = [[], [1, 170]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when Bool.and(Bool.not(Domain.Opcode.isPushData(code)), parsedBytesMatch(rest, List.prepend(Op.Code(code), acc)))
+    using [bytesOf.prepend, bytesOf.concatenates, rejoined.exact]
+    parsedBytesMatch(List.prepend(code, rest), acc) holds
+
+verify parsedBytesMatch law directPushStep
+    given code: Int = [1, 2, 75]
+    given rest: List<Int> = [[], [1, 170], [170, 118]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when directStepReady(code, rest, acc)
+    using [bytesOf.prepend, bytesOf.concatenates, rejoined.exact]
+    parsedBytesMatch(List.prepend(code, rest), acc) holds
+
+verify parsedBytesMatch law widePushStep
+    given code: Int = [76, 77, 78]
+    given rest: List<Int> = [[], [1, 170], [1, 0, 170], [1, 0, 0, 0, 170]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when wideStepReady(code, rest, acc)
+    because wideStepReason(code, rest, acc)
+    using [bytesOf.prepend, bytesOf.concatenates, rejoined.exact, lengthBytesRoundtrip.fixedWidths, pushWidthFits.always]
+    parsedBytesMatch(List.prepend(code, rest), acc) holds
+
+verify parsedBytesMatch law truncatedDirect
+    given code: Int = [1, 2, 75]
+    given rest: List<Int> = [[], [170]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when Bool.and(Domain.Opcode.isPushData(code), Bool.and(Domain.Opcode.pushWidth(code) == 0, List.len(List.take(rest, code)) != code))
+    using []
+    parsedBytesMatch(List.prepend(code, rest), acc) holds
+
+verify parsedBytesMatch law truncatedWidth
+    given code: Int = [76, 77, 78]
+    given rest: List<Int> = [[], [1, 0]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when Bool.and(Domain.Opcode.isPushData(code), Bool.and(Domain.Opcode.pushWidth(code) != 0, List.len(List.take(rest, Domain.Opcode.pushWidth(code))) != Domain.Opcode.pushWidth(code)))
+    using []
+    parsedBytesMatch(List.prepend(code, rest), acc) holds
+
+verify parsedBytesMatch law truncatedData
+    given code: Int = [76, 77, 78]
+    given rest: List<Int> = [[], [3, 170], [3, 0, 170]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when Bool.and(Domain.Opcode.isPushData(code), Bool.and(Domain.Opcode.pushWidth(code) != 0, Bool.and(List.len(List.take(rest, Domain.Opcode.pushWidth(code))) == Domain.Opcode.pushWidth(code), List.len(List.take(List.drop(rest, Domain.Opcode.pushWidth(code)), Domain.Message.readLittleEndian(List.take(rest, Domain.Opcode.pushWidth(code))))) != Domain.Message.readLittleEndian(List.take(rest, Domain.Opcode.pushWidth(code))))))
+    using []
+    parsedBytesMatch(List.prepend(code, rest), acc) holds
+
+fn directStepReady(code: Int, rest: List<Int>, acc: List<Op>) -> Bool
+    ? "A complete direct push inherits exact bytes from its parsed suffix."
+    Bool.and(Domain.Opcode.isPushData(code), Bool.and(Domain.Opcode.pushWidth(code) == 0, Bool.and(List.len(List.take(rest, code)) == code, parsedBytesMatch(List.drop(rest, code), List.prepend(Op.Push(code, List.take(rest, code)), acc)))))
+
+verify directStepReady
+    directStepReady(2, [170, 171], []) => true
+    directStepReady(2, [170], []) => false
+    directStepReady(76, [1, 170], []) => false
+
+fn pushWidthFits(code: Int) -> Bool
+    ? "Every supported push length field fits the proven codec width."
+    Domain.Opcode.pushWidth(code) <= 8
+
+verify pushWidthFits law always
+    given code: Int = [0, 75, 76, 77, 78, 255]
+    using []
+    Domain.Opcode.pushWidth(code) <= 8 holds
+
+fn wideStepReady(code: Int, rest: List<Int>, acc: List<Op>) -> Bool
+    ? "A complete wide push has a byte-valid length field and an exact parsed suffix."
+    width = Domain.Opcode.pushWidth(code)
+    length = List.take(rest, width)
+    body = List.drop(rest, width)
+    count = Domain.Message.readLittleEndian(length)
+    data = List.take(body, count)
+    Bool.and(Domain.Opcode.isPushData(code), Bool.and(width > 0, Bool.and(validOctets(length), Bool.and(List.len(length) == width, Bool.and(List.len(data) == count, parsedBytesMatch(List.drop(body, count), List.prepend(Op.Push(code, data), acc)))))))
+
+verify wideStepReady
+    wideStepReady(76, [1, 170], []) => true
+    wideStepReady(77, [1, 0, 170], []) => true
+    wideStepReady(78, [1, 0, 0, 0, 170], []) => true
+    wideStepReady(76, [2, 170], []) => false
+
+fn wideStepReason(code: Int, rest: List<Int>, acc: List<Op>) -> Bool
+    ? "First recover the original length field, then the entire push."
+    length = List.take(rest, Domain.Opcode.pushWidth(code))
+    Bool.and(Domain.Message.littleEndian(Domain.Message.readLittleEndian(length), List.len(length)) == length, parsedBytesMatch(List.prepend(code, rest), acc))
+
+verify wideStepReason
+    wideStepReason(76, [1, 170], []) => true
+    wideStepReason(77, [1, 0, 170], [Op.Code(82)]) => true
+
+fn suffixFits(bytes: List<Int>, count: Int) -> Bool
+    ? "Dropping any prefix cannot increase the remaining work."
+    List.len(List.drop(bytes, count)) <= List.len(bytes)
+
+verify suffixFits law always
+    given bytes: List<Int> = [[], [1, 2, 3]]
+    given count: Int = [-1, 0, 2, 10]
+    using []
+    List.len(List.drop(bytes, count)) <= List.len(bytes) holds
+
+fn parseReason(steps: List<Int>, bytes: List<Int>, acc: List<Op>) -> Bool
+    ? "Follow the parser with a structurally shrinking guide; enoughSteps relates its length to the remaining bytes."
+    continuation = match steps
+        [] -> true
+        [step, ..remaining] -> match bytes
+            [] -> true
+            [code, ..tail] -> match Domain.Opcode.isPushData(code)
+                false -> parseReason(remaining, tail, List.prepend(Op.Code(code), acc))
+                true -> match Domain.Opcode.pushWidth(code)
+                    0 -> match List.take(tail, code)
+                        data -> match List.len(data) == code
+                            false -> true
+                            true -> Bool.and(parseReason(remaining, List.drop(tail, code), List.prepend(Op.Push(code, data), acc)), directStepReady(code, tail, acc))
+                    width -> match List.take(tail, width)
+                        length -> match List.len(length) == width
+                            false -> true
+                            true -> match List.drop(tail, width)
+                                rest -> match Domain.Message.readLittleEndian(length)
+                                    count -> match List.take(rest, count)
+                                        data -> match List.len(data) == count
+                                            false -> true
+                                            true -> Bool.and(parseReason(remaining, List.drop(rest, count), List.prepend(Op.Push(code, data), acc)), wideStepReady(code, tail, acc))
+    Bool.and(continuation, parsedBytesMatch(bytes, acc))
+
+verify parseReason law enoughSteps
+    given steps: List<Int> = [[], [0], [0, 0, 0, 0, 0]]
+    given bytes: List<Int> = [[], [118], [76, 1, 170], [77, 1, 0, 170]]
+    given acc: List<Op> = [[], [Op.Code(82)]]
+    when Bool.and(List.len(steps) >= List.len(bytes), validOctets(bytes))
+    because parseReason(steps, bytes, acc)
+    using [parsedBytesMatch.truncatedDirect, parsedBytesMatch.truncatedWidth, parsedBytesMatch.truncatedData, parsedBytesMatch.codeStep, parsedBytesMatch.directPushStep, parsedBytesMatch.widePushStep, validOctets.dropStaysValid, validOctets.takeStaysValid, suffixFits.always]
+    parseReason(steps, bytes, acc) holds
+
+fn readsExactly(bytes: List<Int>) -> Bool
+    ? "Every successfully parsed byte sequence serializes back to exactly the same bytes."
+    match parse(bytes)
+        Result.Err(_) -> true
+        Result.Ok(ops) -> bytesOf(ops) == bytes
+
+verify readsExactly
+    readsExactly([1, 170]) => true
+    readsExactly([76, 1, 170]) => true
+    readsExactly([77, 1, 0, 170]) => true
+    readsExactly([78, 1, 0, 0, 0, 170]) => true
+    readsExactly([77, 256, -1]) => false

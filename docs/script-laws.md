@@ -8,17 +8,18 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `c5846cf589e35856cf139e9a0c8357b471794ffb`, Lean reports **78 universal
+At pin `00156896a8513abf8fda71997bf564e9aae01e53`, Lean reports **97 universal
 laws, 2 bounded laws and no open laws**. The strict command still exits 1
 because 130 non-law claims in the wider graph are deliberately declined. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
 
 Of the original twenty laws in PR #338, eighteen now close universally, up
-from fourteen. The extra sixty laws are counted separately: eight
+from fourteen. The extra seventy-nine laws are counted separately: eight
 roundtrip and induction additions, seventeen canonical-encoding laws, twelve
 helpers that establish the exact arithmetic-width boundary, and fifteen
-helpers that establish the CompactSize roundtrip, and eight laws for stable
-Script filtering and deletion algebra. The existing function bodies and public API are unchanged apart
+helpers that establish the CompactSize roundtrip, eight laws for stable
+Script filtering and deletion algebra, and nineteen laws establishing exact
+Script parse/serialize roundtrip. The existing function bodies and public API are unchanged apart
 from the original PR's `littleEndian` guard repair.
 
 ## Number guarantees
@@ -174,13 +175,55 @@ ordinary private functions with executable examples; no public API is added.
 The distinction between encodings matters: deleting the minimal push `[1, 171]`
 removes `Op.Push(1, [171])`, while `Op.Push(76, [171])` survives. Equal payloads do
 not imply equal serialized operations. The theorem concerns `withoutEach` on
-parsed operations. It does not yet prove the same composition through the public
-hex-string `withoutPushes` API: that also requires a parse/serialize theorem.
+parsed operations. Composition through the public hex-string `withoutPushes` API remains a
+separate claim: byte roundtrip is now proved below, but the full wrapper and
+filtering composition have not yet been proved.
 
 Aver PR #1303 supplies generic structural-equality reflection and equations for
 mutually recursive functions whose termination is already checked. Independent
 record, container, import-collision and packet-filter tests cover these fixes;
 Float and structures containing Float retain their nonreflexive NaN semantics.
+
+## Parsing preserves exact Script bytes
+
+For every finite list of octets, `ScriptParse.parse.preservesExactBytes`
+proves:
+
+```text
+parse(bytes) == Ok(ops)  implies  bytesOf(ops) == bytes
+```
+
+This preserves the original representation, including nonminimal pushes and
+zero bytes in multi-byte length fields. For example `[76, 1, 170]`,
+`[77, 1, 0, 170]`, and `[78, 1, 0, 0, 0, 170]` each survive byte-for-byte;
+none is shortened to `[1, 170]`. This matters because changing the serialized
+Script changes what the signature machinery hashes.
+
+The theorem assumes `validOctets(bytes)`, not a bound on the list's length.
+The byte premise is necessary: `[77, 256, -1]` parses but serializes as
+`[77, 0, 0]`; an explicit negative example checks this excluded input.
+It makes a claim about successful parses; truncated pushes retain their
+existing errors. It does not assert Script execution validity or a roundtrip
+for arbitrary manually constructed `Op` values.
+
+Eighteen helper laws establish serializer composition, preservation of valid
+slices, length-field read/write identity, complete and truncated parser steps,
+and the final induction. `parseReason` is executable Aver: its list of steps
+shrinks structurally, while `enoughSteps` proves that a guide at least as long
+as the remaining input suffices. The final law uses the input itself as that
+guide. Recursive calls must establish the length and octet premises again.
+The internal length-field codec theorem is limited to eight bytes; supported
+push length fields are at most four. The original Script theorem has no
+length bound.
+
+Aver PRs #1305, #1307 and #1310 reuse checked function equations, preserve
+sample types, and split nested explanation cases before ordered facts. The
+last fix is covered by an independent integer-list traversal and a false
+strict-positivity control. All Bitcoin-specific facts remain ordinary Aver
+laws. No handwritten Lean or Bitcoin-specific compiler recognition is used.
+
+The ScriptParse export alone reports 37 universal laws, zero open laws and
+zero build errors. Its three provider-related non-law refusals remain explicit.
 
 ## Chainwork composes and preserves comparison
 
@@ -214,8 +257,8 @@ the unbudgeted strict command exits 1.
 
 The final source passes `aver check . --module-root .` for all 149 modules and
 whole-project formatting. Native `verify main.av` checks 111 reachable modules:
-8719 passing cases, 398 guard skips, no failures. Hostile checks pass 1962 cases
-for ScriptParse (135 guard skips) and 4266 for Chainwork (212 guard skips), with
+8970 passing cases, 484 guard skips, no failures. Hostile checks pass 2570 cases
+for ScriptParse (739 guard skips) and 4266 for Chainwork (212 guard skips), with
 no failures. Local provider paths were rebound only in a disposable runtime copy.
 The complete application compiles to wasm-gc and passes `wasm-tools validate`.
 
