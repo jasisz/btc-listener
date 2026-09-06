@@ -215,6 +215,71 @@ verify signedBytes
     signedBytes(128, false) => [128, 0]
     signedBytes(128, true) => [128, 128]
 
+verify signedBytes law byteStep
+    given magnitude: Int = [256, 65535, 65536, 2147483648]
+    given negative: Bool = [false, true]
+    when magnitude >= 256
+    using [littleEndian.lowDigitStep, littleEndian.positiveHasDigits, withSign.preservesLowByte]
+    signedBytes(magnitude, negative) => List.prepend(Int.mod(magnitude, 256), signedBytes(Int.div(magnitude, 256), negative))
+
+verify signedBytes law smallMagnitudeSize
+    given magnitude: Int = [0, 1, 127, 128, 255]
+    given negative: Bool = [false, true]
+    when Bool.and(magnitude >= 0, magnitude < 256)
+    because littleEndian(magnitude, []) == match magnitude > 0
+        true -> [magnitude]
+        false -> []
+    using [littleEndian.nonpositiveHasNoDigits, littleEndian.oneDigitEncoding]
+    List.len(signedBytes(magnitude, negative)) => smallSize(magnitude)
+
+verify signedBytes law lengthStep
+    given magnitude: Int = [256, 65535, 65536, 2147483648]
+    given negative: Bool = [false, true]
+    when magnitude >= 256
+    because signedBytes(magnitude, negative) == List.prepend(Int.mod(magnitude, 256), signedBytes(Int.div(magnitude, 256), negative))
+    using [signedBytes.byteStep]
+    List.len(signedBytes(magnitude, negative)) => 1 + List.len(signedBytes(Int.div(magnitude, 256), negative))
+
+verify signedBytes law positiveHasBytes
+    given magnitude: Int = [1, 127, 128, 256, 2147483648]
+    given negative: Bool = [false, true]
+    when magnitude > 0
+    because sizeRecurrenceReason(magnitude, negative)
+    using [signedBytes.smallMagnitudeSize, signedBytes.lengthStep]
+    List.len(signedBytes(magnitude, negative)) > 0 holds
+
+verify signedBytes law oneByteRange
+    given magnitude: Int = [0, 1, 127, 128, 255, 256, 65536]
+    given negative: Bool = [false, true]
+    when magnitude >= 0
+    because sizeRecurrenceReason(magnitude, negative)
+    using [signedBytes.smallMagnitudeSize, signedBytes.lengthStep, signedBytes.positiveHasBytes]
+    List.len(signedBytes(magnitude, negative)) <= 1 => magnitude < 128
+
+verify signedBytes law twoByteRange
+    given magnitude: Int = [0, 1, 32767, 32768, 65536]
+    given negative: Bool = [false, true]
+    when magnitude >= 0
+    because sizeRecurrenceReason(magnitude, negative)
+    using [signedBytes.smallMagnitudeSize, signedBytes.lengthStep, signedBytes.oneByteRange]
+    List.len(signedBytes(magnitude, negative)) <= 2 => magnitude < 32768
+
+verify signedBytes law threeByteRange
+    given magnitude: Int = [0, 1, 8388607, 8388608, 16777216]
+    given negative: Bool = [false, true]
+    when magnitude >= 0
+    because sizeRecurrenceReason(magnitude, negative)
+    using [signedBytes.smallMagnitudeSize, signedBytes.lengthStep, signedBytes.twoByteRange]
+    List.len(signedBytes(magnitude, negative)) <= 3 => magnitude < 8388608
+
+verify signedBytes law fourByteRange
+    given magnitude: Int = [0, 1, 2147483647, 2147483648, 4294967296]
+    given negative: Bool = [false, true]
+    when magnitude >= 0
+    because sizeRecurrenceReason(magnitude, negative)
+    using [signedBytes.smallMagnitudeSize, signedBytes.lengthStep, signedBytes.threeByteRange]
+    List.len(signedBytes(magnitude, negative)) <= 4 => magnitude < 2147483648
+
 fn littleEndian(value: Int, acc: List<Int>) -> List<Int>
     ? "Least significant byte first, with no leading zero."
       "The guard reads `value > 0` rather than `value == 0` on purpose (#336):"
@@ -281,6 +346,24 @@ verify littleEndian law oneDigitEncoding
     when Bool.and(digit > 0, digit < 256)
     littleEndian(digit, []) => [digit]
 
+verify littleEndian law positiveHasDigits
+    given value: Int = [1, 127, 128, 256, 2147483648]
+    when value > 0
+    List.len(littleEndian(value, [])) > 0 holds
+
+verify littleEndian law lowDigitStep
+    given value: Int = [1, 127, 128, 256, 2147483648]
+    when value > 0
+    because afterFirstDigit(value) == littleEndian(value, [])
+    because littleEndian(Int.div(value, 256), [Int.mod(value, 256)]) == List.prepend(Int.mod(value, 256), littleEndian(Int.div(value, 256), []))
+    using [littleEndian.firstDigitIsPreserved, littleEndian.positiveStep]
+    littleEndian(value, []) => List.prepend(Int.mod(value, 256), littleEndian(Int.div(value, 256), []))
+
+verify littleEndian law nonpositiveHasNoDigits
+    given value: Int = [-1, 0]
+    when value <= 0
+    littleEndian(value, []) => []
+
 fn withSign(bytes: List<Int>, negative: Bool) -> List<Int>
     ? "Put the sign in the top byte, or in a new one when that byte is full."
     match List.reverse(bytes)
@@ -307,6 +390,15 @@ verify withSign law restoresSeparateSign
     when Bool.and(Bool.or(top == 0, top == 128), head >= 128)
     using []
     withSign(List.reverse(List.prepend(head, tail)), top >= 128) => List.reverse(List.prepend(top, List.prepend(head, tail)))
+
+verify withSign law preservesLowByte
+    given digit: Int = [-1, 0, 128, 255]
+    given tail: List<Int> = [[0], [1], [128], [1, 2, 255]]
+    given negative: Bool = [false, true]
+    when List.len(tail) > 0
+    because lowByteReason(digit, tail, negative)
+    using []
+    withSign(List.prepend(digit, tail), negative) => List.prepend(digit, withSign(tail, negative))
 
 fn placed(top: Int, rest: List<Int>, negative: Bool) -> List<Int>
     ? "The top byte has room for the sign only if its high bit is clear."
@@ -415,6 +507,7 @@ verify fitsArithmetic
 
 verify fitsArithmetic law acceptsCoreOperandRange
     given value: Int = [-4294967296, -2147483649, -2147483648, -2147483647, -2147483646, -8388608, -8388607, -128, -127, -1, 0, 1, 127, 128, 8388607, 8388608, 2147483646, 2147483647, 2147483648, 4294967295, 4294967296]
+    using [signedBytes.fourByteRange]
     fitsArithmetic(fromNumber(value)) => Bool.and(value >= 0 - 2147483647, value <= 2147483647)
 
 fn isMinimalNumber(item: List<Int>) -> Bool
@@ -843,3 +936,42 @@ verify canonicalReason
     canonicalReason([128, 128]) => true
     canonicalReason([128]) => false
     canonicalReason([0, 1]) => true
+
+fn smallSize(magnitude: Int) -> Int
+    ? "Byte count for a nonnegative magnitude below 256: zero, a byte with sign room, or a byte plus sign."
+    match magnitude > 0
+        false -> 0
+        true -> match magnitude < 128
+            true -> 1
+            false -> 2
+
+verify smallSize
+    smallSize(0) => 0
+    smallSize(127) => 1
+    smallSize(128) => 2
+    smallSize(255) => 2
+
+fn sizeRecurrenceReason(magnitude: Int, negative: Bool) -> Bool
+    ? "A small magnitude is the base case; otherwise one low byte precedes the quotient encoding."
+    match magnitude < 256
+        true -> List.len(signedBytes(magnitude, negative)) == smallSize(magnitude)
+        false -> Bool.and(
+            Int.div(magnitude, 256) > 0,
+            List.len(signedBytes(magnitude, negative)) == 1 + List.len(signedBytes(Int.div(magnitude, 256), negative))
+        )
+
+verify sizeRecurrenceReason
+    sizeRecurrenceReason(0, false) => true
+    sizeRecurrenceReason(128, true) => true
+    sizeRecurrenceReason(256, false) => true
+    sizeRecurrenceReason(2147483648, true) => true
+
+fn lowByteReason(digit: Int, tail: List<Int>, negative: Bool) -> Bool
+    ? "The sign lives at the far end, so a nonempty tail keeps a prepended byte untouched."
+    match List.reverse(tail)
+        [] -> false
+        [top, ..rest] -> withSign(List.prepend(digit, tail), negative) == List.prepend(digit, withSign(tail, negative))
+
+verify lowByteReason
+    lowByteReason(7, [], false) => false
+    lowByteReason(7, [128], true) => true

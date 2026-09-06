@@ -8,15 +8,15 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `db6fb85b615cfc04c84cb67fb99b1c56624f8b59`, Lean reports **41 universal
-laws, 3 bounded laws and 1 open law**. The strict command exits 1 because
-the open law remains an obligation. The generated `proof_manifest.json`
+At pin `9a200be69bbe3ee87542681050267dec08560c32`, Lean reports **54 universal
+laws, 3 bounded laws and no open laws**. The strict command still exits 1
+because 130 non-law claims in the wider graph are deliberately declined. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
 
-Of the original twenty laws in PR #338, sixteen now close universally, up
-from fourteen. The extra twenty-five laws are counted separately: the original eight
-roundtrip and induction additions, followed by seventeen laws establishing
-canonical encoding and its supporting digit, byte-validity and sign facts. The existing function bodies and public API are unchanged apart
+Of the original twenty laws in PR #338, seventeen now close universally, up
+from fourteen. The extra thirty-seven laws are counted separately: eight
+roundtrip and induction additions, seventeen canonical-encoding laws, and twelve
+helpers that establish the exact arithmetic-width boundary. The existing function bodies and public API are unchanged apart
 from the original PR's `littleEndian` guard repair.
 
 ## Number guarantees
@@ -96,14 +96,35 @@ explanation. Both explanation and implication receive universal credit.
 The source theorem uses only `Classical.choice`, `Quot.sound` and `propext`;
 it has no `sorryAx` or dependency on sample evaluation.
 
-## What is still open
+## Exact arithmetic-width boundary
 
-`fitsArithmetic.acceptsCoreOperandRange` is still not proved universally:
-the encoding should fit in four bytes exactly for `-2^31 < value < 2^31`.
-Its examples pass, but neither that result nor the decoder induction above
-is presented as a proof of this boundary. The command also reports 130 declined
-non-law claims in the wider interpreter dependency cone; those were not
-exported or proved and are separate from the law counts above.
+`fitsArithmetic.acceptsCoreOperandRange` is now universal:
+
+```text
+fitsArithmetic(fromNumber(value))  iff  -2147483648 < value < 2147483648
+```
+
+This includes both signs and excludes both endpoints. A magnitude of 2147483648
+needs another byte for its sign, so even -2147483648 is outside the four-byte
+operand range. The proof composes the exact one-, two-, three-, and four-byte
+thresholds: 128, 32768, 8388608 and 2147483648.
+
+The common step is `signedBytes.lengthStep`: above a single unsigned byte,
+the low byte adds one to the length of the quotient's signed encoding.
+`sizeRecurrenceReason` is the same executable explanation at each threshold.
+The sign-placement law preserves a prepended byte whenever the tail is nonempty;
+zero and magnitudes below 256 provide the base cases. Existing production
+function bodies and the public API stay unchanged.
+
+This exposed a generic Aver bug: `using` lemmas disappeared from the final
+implication when `because` was present. Aver PR #1296 removes that exception.
+No width-specific compiler rule or handwritten Lean is involved.
+
+## Remaining limits
+
+There are no open laws in this export. The command still reports 130 declined
+non-law claims in the wider interpreter dependency cone; they are neither exported
+nor proved and are separate from the law counts.
 
 Three laws retain bounded credit: `CompactSize.encode.readsBack`,
 `ScriptState.rearranged.staysWithinDeclaredDepth`, and
