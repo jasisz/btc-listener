@@ -8,7 +8,7 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `5b892fd1e16ca6f855913d6e84fb4b12094e79d5`, Lean reports **41 universal
+At pin `db6fb85b615cfc04c84cb67fb99b1c56624f8b59`, Lean reports **41 universal
 laws, 3 bounded laws and 1 open law**. The strict command exits 1 because
 the open law remains an obligation. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
@@ -59,7 +59,7 @@ explanations first recover the magnitude digits, then restore the top byte or
 separate sign byte. `bigEndian.writingReadDigitsPreservesThem` supplies checked
 list induction: the recursive explanation consumes one byte and updates the
 positive prefix. Each explanation and the final implication are independently
-universal and kernel-audited. The Aver pin includes generic exporter fixes found
+universal and kernel-audited. The Aver pin includes generic compiler fixes found
 while checking these proofs; no Bitcoin-specific compiler logic or handwritten
 Lean is used.
 
