@@ -8,16 +8,17 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `9b064b4fca9d02c87bc1a915309a97290530a1c8`, Lean reports **70 universal
+At pin `c5846cf589e35856cf139e9a0c8357b471794ffb`, Lean reports **78 universal
 laws, 2 bounded laws and no open laws**. The strict command still exits 1
 because 130 non-law claims in the wider graph are deliberately declined. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
 
 Of the original twenty laws in PR #338, eighteen now close universally, up
-from fourteen. The extra fifty-two laws are counted separately: eight
+from fourteen. The extra sixty laws are counted separately: eight
 roundtrip and induction additions, seventeen canonical-encoding laws, twelve
 helpers that establish the exact arithmetic-width boundary, and fifteen
-helpers that establish the CompactSize roundtrip. The existing function bodies and public API are unchanged apart
+helpers that establish the CompactSize roundtrip, and eight laws for stable
+Script filtering and deletion algebra. The existing function bodies and public API are unchanged apart
 from the original PR's `littleEndian` guard repair.
 
 ## Number guarantees
@@ -147,6 +148,80 @@ Aver PR #1298 derives a native countdown measure from existing guard and shrink
 checks and makes its equations available to `using`. This removes law-family
 special cases in the compiler. It also fixes imported record identities inside
 explanations. The complete proof is Aver source; no handwritten Lean is needed.
+
+## Signature deletion is stable under repetition and reordering
+
+For arbitrary operation lists and arbitrary lists of signature payloads,
+`ScriptParse.withoutEach` now has two universal laws:
+
+```text
+withoutEach(withoutEach(ops, items), items) == withoutEach(ops, items)
+withoutEach(withoutEach(ops, left), right)
+  == withoutEach(withoutEach(ops, right), left)
+```
+
+Repeating a batch of deletions has no further effect, and two batches can be
+applied in either order. These quantify over lists of any length, including
+repeated payloads. They preserve the exact surviving operations and their order.
+
+The reference function `retained` compares each complete encoded operation with
+the target bytes. `without.stableFilter` proves that the production accumulator
+implementation is exactly `reverse(acc) ++ retained(ops, target)`. The remaining
+lemmas establish single-deletion idempotence and commutation, move one deletion
+past a batch, and then induct over entire batches. The Bool explanations are
+ordinary private functions with executable examples; no public API is added.
+
+The distinction between encodings matters: deleting the minimal push `[1, 171]`
+removes `Op.Push(1, [171])`, while `Op.Push(76, [171])` survives. Equal payloads do
+not imply equal serialized operations. The theorem concerns `withoutEach` on
+parsed operations. It does not yet prove the same composition through the public
+hex-string `withoutPushes` API: that also requires a parse/serialize theorem.
+
+Aver PR #1303 supplies generic structural-equality reflection and equations for
+mutually recursive functions whose termination is already checked. Independent
+record, container, import-collision and packet-filter tests cover these fixes;
+Float and structures containing Float retain their nonreflexive NaN semantics.
+
+## Chainwork composes and preserves comparison
+
+Three additional laws live in `domain/chainwork.av`, outside the interpreter
+entry's law count:
+
+- `over.preservesDifference`: processing the same contributions preserves the
+  exact difference between two initial totals.
+- `over.chunksCompose`: processing `prefix ++ suffix` equals processing the
+  prefix and then continuing with the suffix from its resulting total.
+- `heavier.sameWorkPreservesChoice`: adding the same contributions to candidate
+  and incumbent preserves the strict heavier decision, including ties.
+
+Two private recursive Bool explanations supply list induction with changing
+accumulators. The comparison law then cites the exact-difference theorem. This
+needed no new compiler mechanism. The claims concern identical contributions;
+they do not establish header validity or the correctness of compact-target work
+arithmetic, and do not assert that two different tips can share a valid extension.
+
+Check this cone separately:
+
+```sh
+aver proof domain/chainwork.av --module-root . --check-json -o /tmp/chainwork-laws
+```
+
+It reports 27 universal laws (24 imported and these three), no bounded or open
+laws and zero build errors. Its 61 declined non-law claims remain explicit, so
+the unbudgeted strict command exits 1.
+
+## Validation of the latest additions
+
+The final source passes `aver check . --module-root .` for all 149 modules and
+whole-project formatting. Native `verify main.av` checks 111 reachable modules:
+8719 passing cases, 398 guard skips, no failures. Hostile checks pass 1962 cases
+for ScriptParse (135 guard skips) and 4266 for Chainwork (212 guard skips), with
+no failures. Local provider paths were rebound only in a disposable runtime copy.
+The complete application compiles to wasm-gc and passes `wasm-tools validate`.
+
+All universal laws and their explanation obligations were checked against the
+manifest: only `Classical.choice`, `Quot.sound` and `propext` occur. Every existing
+interpreter law retains its previous tier.
 
 ## Remaining limits
 
