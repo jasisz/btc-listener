@@ -37,8 +37,8 @@ verify parse
 verify parse law preservesExactBytes
     given bytes: List<Int> = [[], [0], [1, 170], [118, 76, 1, 170], [77, 1, 0, 170], [78, 1, 0, 0, 0, 170], [76, 0], [77, 0, 0], [76], [2, 170]]
     when validOctets(bytes)
-    because parseReason(bytes, bytes, [])
-    using [parseReason.enoughSteps]
+    because parseReason(bytes, [])
+    using [parseReason.preservesBytes]
     readsExactly(bytes) holds
 
 fn opsIn(scriptHex: String) -> Result<List<Op>, String>
@@ -658,38 +658,35 @@ verify suffixFits law always
     using []
     List.len(List.drop(bytes, count)) <= List.len(bytes) holds
 
-fn parseReason(steps: List<Int>, bytes: List<Int>, acc: List<Op>) -> Bool
-    ? "Follow the parser with a structurally shrinking guide; enoughSteps relates its length to the remaining bytes."
-    continuation = match steps
+fn parseReason(bytes: List<Int>, acc: List<Op>) -> Bool
+    ? "Follow the parser by induction over the remaining bytes."
+    continuation = match bytes
         [] -> true
-        [step, ..remaining] -> match bytes
-            [] -> true
-            [code, ..tail] -> match Domain.Opcode.isPushData(code)
-                false -> parseReason(remaining, tail, List.prepend(Op.Code(code), acc))
-                true -> match Domain.Opcode.pushWidth(code)
-                    0 -> match List.take(tail, code)
-                        data -> match List.len(data) == code
-                            false -> true
-                            true -> Bool.and(parseReason(remaining, List.drop(tail, code), List.prepend(Op.Push(code, data), acc)), directStepReady(code, tail, acc))
-                    width -> match List.take(tail, width)
-                        length -> match List.len(length) == width
-                            false -> true
-                            true -> match List.drop(tail, width)
-                                rest -> match Domain.Message.readLittleEndian(length)
-                                    count -> match List.take(rest, count)
-                                        data -> match List.len(data) == count
-                                            false -> true
-                                            true -> Bool.and(parseReason(remaining, List.drop(rest, count), List.prepend(Op.Push(code, data), acc)), wideStepReady(code, tail, acc))
+        [code, ..tail] -> match Domain.Opcode.isPushData(code)
+            false -> parseReason(tail, List.prepend(Op.Code(code), acc))
+            true -> match Domain.Opcode.pushWidth(code)
+                0 -> match List.take(tail, code)
+                    data -> match List.len(data) == code
+                        false -> true
+                        true -> Bool.and(parseReason(List.drop(tail, code), List.prepend(Op.Push(code, data), acc)), directStepReady(code, tail, acc))
+                width -> match List.take(tail, width)
+                    length -> match List.len(length) == width
+                        false -> true
+                        true -> match List.drop(tail, width)
+                            rest -> match Domain.Message.readLittleEndian(length)
+                                count -> match List.take(rest, count)
+                                    data -> match List.len(data) == count
+                                        false -> true
+                                        true -> Bool.and(parseReason(List.drop(rest, count), List.prepend(Op.Push(code, data), acc)), wideStepReady(code, tail, acc))
     Bool.and(continuation, parsedBytesMatch(bytes, acc))
 
-verify parseReason law enoughSteps
-    given steps: List<Int> = [[], [0], [0, 0, 0, 0, 0]]
+verify parseReason law preservesBytes
     given bytes: List<Int> = [[], [118], [76, 1, 170], [77, 1, 0, 170]]
     given acc: List<Op> = [[], [Op.Code(82)]]
-    when Bool.and(List.len(steps) >= List.len(bytes), validOctets(bytes))
-    because parseReason(steps, bytes, acc)
+    when validOctets(bytes)
+    because parseReason(bytes, acc)
     using [parsedBytesMatch.truncatedDirect, parsedBytesMatch.truncatedWidth, parsedBytesMatch.truncatedData, parsedBytesMatch.codeStep, parsedBytesMatch.directPushStep, parsedBytesMatch.widePushStep, validOctets.dropStaysValid, validOctets.takeStaysValid, suffixFits.always]
-    parseReason(steps, bytes, acc) holds
+    parseReason(bytes, acc) holds
 
 fn readsExactly(bytes: List<Int>) -> Bool
     ? "Every successfully parsed byte sequence serializes back to exactly the same bytes."

@@ -8,7 +8,7 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `00156896a8513abf8fda71997bf564e9aae01e53`, Lean reports **97 universal
+At pin `c5e6faddec2ce61cfca9f7521677a72335bf49af`, Lean reports **97 universal
 laws, 2 bounded laws and no open laws**. The strict command still exits 1
 because 130 non-law claims in the wider graph are deliberately declined. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
@@ -208,10 +208,12 @@ for arbitrary manually constructed `Op` values.
 
 Eighteen helper laws establish serializer composition, preservation of valid
 slices, length-field read/write identity, complete and truncated parser steps,
-and the final induction. `parseReason` is executable Aver: its list of steps
-shrinks structurally, while `enoughSteps` proves that a guide at least as long
-as the remaining input suffices. The final law uses the input itself as that
-guide. Recursive calls must establish the length and octet premises again.
+and the final induction. `parseReason(bytes, acc)` is executable Aver that
+follows the actual remaining input, including named and nested slices.
+`preservesBytes` proves the explanation for every valid octet list and
+accumulator. Its induction hypothesis applies to shorter lists; recursive
+calls must still establish the octet premise. There is no separate step-list
+parameter or guide-length premise.
 The internal length-field codec theorem is limited to eight bytes; supported
 push length fields are at most four. The original Script theorem has no
 length bound.
@@ -220,7 +222,11 @@ Aver PRs #1305, #1307 and #1310 reuse checked function equations, preserve
 sample types, and split nested explanation cases before ordered facts. The
 last fix is covered by an independent integer-list traversal and a false
 strict-positivity control. All Bitcoin-specific facts remain ordinary Aver
-laws. No handwritten Lean or Bitcoin-specific compiler recognition is used.
+laws. Aver PR #1314 shares alias and nested-slice
+analysis across singleton and mutual recursion, and derives the fallback
+induction from the checked list length. This removes the parser explanation's
+step-list guide while preserving the original roundtrip claim. No handwritten
+Lean or Bitcoin-specific compiler recognition is used.
 
 The ScriptParse export alone reports 37 universal laws, zero open laws and
 zero build errors. Its three provider-related non-law refusals remain explicit.
@@ -249,7 +255,7 @@ Check this cone separately:
 aver proof domain/chainwork.av --module-root . --check-json -o /tmp/chainwork-laws
 ```
 
-It reports 27 universal laws (24 imported and these three), no bounded or open
+It reports 46 universal laws (43 imported and these three), no bounded or open
 laws and zero build errors. Its 61 declined non-law claims remain explicit, so
 the unbudgeted strict command exits 1.
 
@@ -257,9 +263,8 @@ the unbudgeted strict command exits 1.
 
 The final source passes `aver check . --module-root .` for all 149 modules and
 whole-project formatting. Native `verify main.av` checks 111 reachable modules:
-8970 passing cases, 484 guard skips, no failures. Hostile checks pass 2570 cases
-for ScriptParse (739 guard skips) and 4266 for Chainwork (212 guard skips), with
-no failures. Local provider paths were rebound only in a disposable runtime copy.
+8958 passing cases, 464 guard skips, no failures. ScriptParse hostile checks
+pass 2502 cases with 667 guard skips and no failures. Local provider paths were rebound only in a disposable runtime copy.
 The complete application compiles to wasm-gc and passes `wasm-tools validate`.
 
 All universal laws and their explanation obligations were checked against the
