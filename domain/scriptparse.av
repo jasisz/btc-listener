@@ -281,6 +281,16 @@ verify withoutPushes
     withoutPushes("5101ab01ab52", [[171]]) => Result.Ok("5152")
     withoutPushes("5101ab52", [[187]]) => Result.Ok("5101ab52")
     withoutPushes("zz", []) => Result.Err("Bytes.fromHex: invalid hexadecimal character 'z'")
+    withoutPushes("abc", [[171]]) => Result.Err("Bytes.fromHex: expected an even number of hex characters")
+    withoutPushes("4c", [[171]]) => Result.Err("push length runs past the end of the script")
+    withoutPushes("02ab", [[171]]) => Result.Err("push of 2 bytes runs past the end of the script")
+    withoutPushes("5101AB4C01AB52", [[171], [171]]) => Result.Ok("514c01ab52")
+
+verify withoutPushes law repeatedItemsHaveNoFurtherEffect
+    given scriptHex: String = ["", "5101ab52", "5101AB4C01AB52", "00", "zz", "abc", "4c", "02ab"]
+    given items: List<List<Int>> = [[], [[]], [[171]], [[171], [171]], [[171], [187]], [[-1], [256]]]
+    using [withoutEach.concatenatedBatches, withoutEach.repeatedDeletionIsIdempotent]
+    withoutPushes(scriptHex, List.concat(items, items)) => withoutPushes(scriptHex, items)
 
 fn withoutEach(ops: List<Op>, items: List<List<Int>>) -> List<Op>
     ? "One item deleted, then the next, over what the last one left."
@@ -291,6 +301,14 @@ fn withoutEach(ops: List<Op>, items: List<List<Int>>) -> List<Op>
 verify withoutEach
     withoutEach([], []) => []
     withoutEach([Op.Code(81), Op.Push(1, [171])], [[171]]) => [Op.Code(81)]
+
+verify withoutEach law concatenatedBatches
+    given ops: List<Op> = [[], [Op.Code(81)], [Op.Push(1, [171]), Op.Push(76, [171])]]
+    given left: List<List<Int>> = [[], [[]], [[171], [187]]]
+    given right: List<List<Int>> = [[], [[171]]]
+    because batchConcatReason(ops, left, right)
+    using []
+    withoutEach(ops, List.concat(left, right)) => withoutEach(withoutEach(ops, left), right)
 
 verify withoutEach law oneDeletionCommutes
     given ops: List<Op> = [[], [Op.Code(81)], [Op.Push(1, [171]), Op.Push(76, [171])]]
@@ -397,6 +415,16 @@ fn onePastManyReason(ops: List<Op>, items: List<List<Int>>, target: List<Int>) -
 verify onePastManyReason
     onePastManyReason([], [], [1, 171]) => true
     onePastManyReason([Op.Push(1, [171]), Op.Push(1, [187])], [[187], [171]], [1, 171]) => true
+
+fn batchConcatReason(ops: List<Op>, left: List<List<Int>>, right: List<List<Int>>) -> Bool
+    ? "Processing concatenated batches continues with the right batch after the left is exhausted."
+    match left
+        [] -> withoutEach(ops, List.concat(left, right)) == withoutEach(withoutEach(ops, left), right)
+        [head, ..tail] -> Bool.and(batchConcatReason(without(ops, minimalPush(head), []), tail, right), withoutEach(ops, List.concat(left, right)) == withoutEach(withoutEach(ops, left), right))
+
+verify batchConcatReason
+    batchConcatReason([], [], []) => true
+    batchConcatReason([Op.Push(1, [171]), Op.Push(76, [171]), Op.Code(81)], [[171]], [[187], [171]]) => true
 
 fn manyRepeatReason(ops: List<Op>, items: List<List<Int>>) -> Bool
     ? "Remove the first repeated deletion, then apply the argument to the remaining items."

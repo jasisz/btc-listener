@@ -8,18 +8,19 @@ helpers, from the interpreter entry:
 aver proof domain/interp.av --module-root . --check-json -o /tmp/script-laws
 ```
 
-At pin `c5e6faddec2ce61cfca9f7521677a72335bf49af`, Lean reports **97 universal
+At pin `c5e6faddec2ce61cfca9f7521677a72335bf49af`, Lean reports **99 universal
 laws, 2 bounded laws and no open laws**. The strict command still exits 1
 because 130 non-law claims in the wider graph are deliberately declined. The generated `proof_manifest.json`
 records the tier and kernel dependencies of each law.
 
 Of the original twenty laws in PR #338, eighteen now close universally, up
-from fourteen. The extra seventy-nine laws are counted separately: eight
+from fourteen. The extra eighty-one laws are counted separately: eight
 roundtrip and induction additions, seventeen canonical-encoding laws, twelve
 helpers that establish the exact arithmetic-width boundary, and fifteen
 helpers that establish the CompactSize roundtrip, eight laws for stable
 Script filtering and deletion algebra, and nineteen laws establishing exact
-Script parse/serialize roundtrip. The existing function bodies and public API are unchanged apart
+Script parse/serialize roundtrip, plus two laws connecting concatenated deletion
+batches to the public hex wrapper. The existing function bodies and public API are unchanged apart
 from the original PR's `littleEndian` guard repair.
 
 ## Number guarantees
@@ -174,10 +175,33 @@ ordinary private functions with executable examples; no public API is added.
 
 The distinction between encodings matters: deleting the minimal push `[1, 171]`
 removes `Op.Push(1, [171])`, while `Op.Push(76, [171])` survives. Equal payloads do
-not imply equal serialized operations. The theorem concerns `withoutEach` on
-parsed operations. Composition through the public hex-string `withoutPushes` API remains a
-separate claim: byte roundtrip is now proved below, but the full wrapper and
-filtering composition have not yet been proved.
+not imply equal serialized operations. These internal laws concern `withoutEach`
+on arbitrary operation lists.
+
+The public API now has `withoutPushes.repeatedItemsHaveNoFurtherEffect`:
+
+```text
+withoutPushes(scriptHex, items ++ items) == withoutPushes(scriptHex, items)
+```
+
+This equality quantifies over every String and every finite list of integer
+payload lists, with no validity or length premise. Both sides return exactly
+the same `Result`: malformed hex and truncated pushes retain their error;
+successful outputs have identical lowercase hex, preserving every surviving
+operation's encoding. For example, deleting `[171]` twice from
+`"5101AB4C01AB52"` yields `Ok("514c01ab52")`: the nonminimal push survives.
+
+The helper law `withoutEach.concatenatedBatches` proves that processing
+`left ++ right` equals processing `left` and then `right`. Its executable
+`batchConcatReason` follows the left batch. The wrapper law selects that
+lemma and the existing idempotence law with `using`; the existing Aver pin
+closes the composition without compiler changes or handwritten Lean.
+
+The public law repeats the payload batch in one call. Feeding the output hex
+back into a second `withoutPushes` call is a separate claim: it additionally
+requires proving that decoding and parsing the filtered serialization recover
+the surviving operations. The byte roundtrip below goes in the other direction
+and does not establish that premise.
 
 Aver PR #1303 supplies generic structural-equality reflection and equations for
 mutually recursive functions whose termination is already checked. Independent
@@ -228,7 +252,7 @@ induction from the checked list length. This removes the parser explanation's
 step-list guide while preserving the original roundtrip claim. No handwritten
 Lean or Bitcoin-specific compiler recognition is used.
 
-The ScriptParse export alone reports 37 universal laws, zero open laws and
+The ScriptParse export alone reports 39 universal laws, zero open laws and
 zero build errors. Its three provider-related non-law refusals remain explicit.
 
 ## Chainwork composes and preserves comparison
