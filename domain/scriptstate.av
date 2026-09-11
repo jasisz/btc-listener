@@ -204,6 +204,21 @@ verify spent
     spent(empty(), 81).opCount => 0
     spent(empty(), 118).opCount => 1
 
+verify spent law onlyOpcodesCount
+    given state: State = [State(stack = [], alt = [], conditions = [], opCount = 0, weightLeft = 0), State(stack = [[1]], alt = [[2]], conditions = [true], opCount = 200, weightLeft = 50)]
+    given code: Int = [0, 1, 75, 76, 96, 97, 172, 185]
+    spent(state, code).opCount => state.opCount + countsAgainstTheLimit(code)
+
+fn countsAgainstTheLimit(code: Int) -> Int
+    ? "One for an opcode above OP_16, nought for a push or a small number."
+    match code > 96
+        true -> 1
+        false -> 0
+
+verify countsAgainstTheLimit
+    countsAgainstTheLimit(96) => 0
+    countsAgainstTheLimit(97) => 1
+
 fn executing(conditions: List<Bool>) -> Bool
     ? "Whether every branch we are inside is one that is being taken."
     match conditions
@@ -215,6 +230,21 @@ verify executing
     executing([true]) => true
     executing([false]) => false
     executing([true, false]) => false
+
+verify executing law executingSpec
+    given conditions: List<Bool> = [[], [true], [false], [true, true], [true, false], [false, true], [false, false], [true, true, true], [true, true, false], [true, false, true], [false, true, true], [true, false, false], [false, true, false], [false, false, true], [false, false, false]]
+    executing(conditions) => executingSpec(conditions)
+
+fn executingSpec(conditions: List<Bool>) -> Bool
+    ? "What executing means, said the plain way: every condition is true."
+    match conditions
+        [] -> true
+        [head, ..tail] -> Bool.and(head, executingSpec(tail))
+
+verify executingSpec
+    executingSpec([]) => true
+    executingSpec([true, true]) => true
+    executingSpec([true, false]) => false
 
 fn falseOrOn(head: Bool, tail: List<Bool>) -> Bool
     ? "Stop at the first branch that is not being taken."
@@ -237,6 +267,23 @@ verify settled
     settled(empty()) => Ending.Failed("script left nothing on the stack")
     settled(holding([[1]])) => Ending.Passed
     settled(State(stack = [[1]], alt = [], conditions = [true], opCount = 0, weightLeft = 0)) => Ending.Failed("script ended inside an unclosed OP_IF")
+
+verify settled law settledSpec
+    given stack: List<List<Int>> = [[], [[1]], [[0]], [[128]], [[1], [0]], [[], [1]]]
+    given conditions: List<Bool> = [[], [true], [false], [true, false]]
+    settled(withConditions(holding(stack), conditions)) => settledSpec(stack, conditions)
+
+fn settledSpec(stack: List<List<Int>>, conditions: List<Bool>) -> Ending
+    ? "How a Script ends, said the plain way: an open branch fails it, and"
+      "otherwise the top of the stack decides."
+    match conditions
+        [] -> topOf(stack)
+        [head, ..tail] -> Ending.Failed("script ended inside an unclosed OP_IF")
+
+verify settledSpec
+    settledSpec([[1]], []) => Ending.Passed
+    settledSpec([[1]], [true]) => Ending.Failed("script ended inside an unclosed OP_IF")
+    settledSpec([], []) => Ending.Failed("script left nothing on the stack")
 
 fn topOf(stack: List<List<Int>>) -> Ending
     ? "The final answer is whether the top of the stack is true."
@@ -457,6 +504,35 @@ verify rearranged law twoSwapTwiceIsTheTopFour
     given items: List<List<Int>> = [[[1], [2], [3], [4]], [[1], [2], [3], [4], [5]], [[0], [7], [8], [9], [10], [11]]]
     when List.len(items) >= 4
     rearranged(114, rearranged(114, items)) => List.take(items, 4)
+
+verify rearranged law lengthSpec
+    given code: Int = [0, 109, 110, 111, 112, 113, 114, 117, 118, 119, 120, 123, 124, 125, 172]
+    given items: List<List<Int>> = [[], [[1]], [[1], [2], [3], [4], [5], [6]], [[1], [2], [3], [4], [5], [6], [7], [8]]]
+    List.len(rearranged(code, items)) => rearrangedLength(code, items)
+
+fn rearrangedLength(code: Int, items: List<List<Int>>) -> Int
+    ? "How many items each shuffling opcode leaves, and, for any other code,"
+      "the items as they were: the table read down the same thirteen rows."
+    match code
+        109 -> 0
+        110 -> 4
+        111 -> 6
+        112 -> 6
+        113 -> 6
+        114 -> 4
+        117 -> 0
+        118 -> 2
+        119 -> 1
+        120 -> 3
+        123 -> 3
+        124 -> 2
+        125 -> 3
+        _ -> List.len(items)
+
+verify rearrangedLength
+    rearrangedLength(109, [[1], [2]]) => 0
+    rearrangedLength(113, [[1]]) => 6
+    rearrangedLength(0, [[1], [2]]) => 2
 
 fn missing(code: Int) -> String
     ? "What this opcode needs that the run was not given."

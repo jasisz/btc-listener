@@ -25,6 +25,21 @@ verify landed
     landed([[1]], Domain.ScriptState.empty()) => Step.Continue(Domain.ScriptState.holding([[1]]))
     landed(Domain.ScriptState.repeated(1001, [1]), Domain.ScriptState.empty()) => Step.Stop(Outcome.Decided(Ending.Failed("stack is over the 1000 item limit")))
 
+verify landed law neverOverLimit
+    given stack: List<List<Int>> = [[], [[1]], [[1], [2], [3]]]
+    given alt: List<List<Int>> = [[], [[2]], [[2], [3]]]
+    continues(landed(stack, Domain.ScriptState.State(stack = [], alt = alt, conditions = [], opCount = 0, weightLeft = 0))) => List.len(stack) + List.len(alt) <= Domain.ScriptState.maxStack()
+
+fn continues(step: Step) -> Bool
+    ? "Whether a Step carries on, for laws that only ask that much."
+    match step
+        Step.Continue(state) -> true
+        Step.Stop(outcome) -> false
+
+verify continues
+    continues(Step.Continue(Domain.ScriptState.empty())) => true
+    continues(Step.Stop(Outcome.Decided(Ending.Passed))) => false
+
 fn pushing(item: List<Int>, state: State) -> Step
     ? "One more item on the data stack."
     landed(List.prepend(item, state.stack), state)

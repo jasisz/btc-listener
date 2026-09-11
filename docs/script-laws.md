@@ -304,3 +304,32 @@ nor proved and are separate from the law counts.
 Two laws retain bounded credit: `ScriptState.rearranged.staysWithinDeclaredDepth`
 and `StackItem.isMinimalPush.directPushIsMinimalUnlessSmallNumber`. All previously
 universal laws retain their credit.
+
+## Laws added after #338 (n1bor/btc-listener#337)
+
+Nine laws over the engine's bookkeeping and its arithmetic table, landed with
+the proof job (#341) gating them. Tiers as the gate measured them at pin
+`b6a37c82`: **107 universal, 3 bounded, 0 open, 130 declined**.
+
+| law | pins | tier |
+|---|---|---|
+| `ScriptMath.unaryValue.unaryValueSpec` | the unary table against a spec whose `?` block quotes Core's `EvalScript` line per opcode | universal |
+| `ScriptMath.binaryValue.binaryValueSpec` | the binary table the same way, `a` the deeper operand | universal |
+| `ScriptMath.binaryValue.commutative` | ADD, BOOLAND, BOOLOR, NUMEQUAL, NUMNOTEQUAL, MIN, MAX commute | universal |
+| `ScriptState.executing.executingSpec` | executing is "every open branch is taken" | universal |
+| `ScriptState.settled.settledSpec` | an open OP_IF fails the Script; otherwise the top decides | universal |
+| `ScriptState.spent.onlyOpcodesCount` | only opcodes above OP_16 count against the limit | universal |
+| `ScriptState.rearranged.lengthSpec` | how many items each of the thirteen shuffles leaves | universal |
+| `ScriptStep.landed.neverOverLimit` | a Step continues exactly when both stacks together fit in 1000 | universal |
+| `ScriptParse.parse.directPushRunsPastTheEnd` | the error string for a direct push with no data, for `1 <= n <= 75` | bounded (`when`) |
+
+Two proposals from #337 did not land and are recorded there: the truthiness
+roundtrip `isTruthy(fromNumber(n)) == (n != 0)` opens at the implication
+because it needs the digit lemmas the number laws are built from, and the
+`isTruthy(item ++ [128]) == anyNonZero(item)` induction hits a `simp`
+heartbeat timeout that the current pin reports as a hard build error rather
+than a caught `sorry` (`../test/ISSUE-law-timeout-is-a-hard-error.md`). A
+third, that `minimalPush` is `isMinimalPush`-minimal, is false as stated:
+`CScript() << vch` writes `[1]` as a one-byte push, which MINIMALDATA refuses
+in favour of OP_1, and `isMinimalPush.directPushIsMinimalUnlessSmallNumber`
+already pins exactly that.

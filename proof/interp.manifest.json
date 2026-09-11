@@ -830,6 +830,27 @@
         "propext"
       ],
       "backend": "lean",
+      "law": "Domain.ScriptMath.binaryValue.binaryValueSpec",
+      "theorem": "Domain.ScriptMath.binaryValue_law_binaryValueSpec",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.binaryValue.commutative",
+      "theorem": "Domain.ScriptMath.binaryValue_law_commutative",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
       "law": "Domain.ScriptMath.binaryValue.equalAndNotEqualAreOpposites",
       "theorem": "Domain.ScriptMath.binaryValue_law_equalAndNotEqualAreOpposites",
       "tier": "universal"
@@ -895,6 +916,16 @@
     },
     {
       "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.unaryValue.unaryValueSpec",
+      "theorem": "Domain.ScriptMath.unaryValue_law_unaryValueSpec",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
@@ -947,6 +978,13 @@
       "law": "Domain.ScriptParse.lengthBytesRoundtrip.fixedWidths",
       "theorem": "Domain.ScriptParse.lengthBytesRoundtrip_law_fixedWidths",
       "tier": "universal"
+    },
+    {
+      "axioms": [],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parse.directPushRunsPastTheEnd",
+      "theorem": "Domain.ScriptParse.parse_law_directPushRunsPastTheEnd",
+      "tier": "bounded"
     },
     {
       "axioms": [
@@ -1213,6 +1251,26 @@
         "propext"
       ],
       "backend": "lean",
+      "law": "Domain.ScriptState.executing.executingSpec",
+      "theorem": "Domain.ScriptState.executing_law_executingSpec",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptState.rearranged.lengthSpec",
+      "theorem": "Domain.ScriptState.rearranged_law_lengthSpec",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
       "law": "Domain.ScriptState.rearranged.rotThreeTimesIsTheTopThree",
       "theorem": "Domain.ScriptState.rearranged_law_rotThreeTimesIsTheTopThree",
       "tier": "universal"
@@ -1242,6 +1300,38 @@
       "backend": "lean",
       "law": "Domain.ScriptState.rearranged.twoSwapTwiceIsTheTopFour",
       "theorem": "Domain.ScriptState.rearranged_law_twoSwapTwiceIsTheTopFour",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptState.settled.settledSpec",
+      "theorem": "Domain.ScriptState.settled_law_settledSpec",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptState.spent.onlyOpcodesCount",
+      "theorem": "Domain.ScriptState.spent_law_onlyOpcodesCount",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptStep.landed.neverOverLimit",
+      "theorem": "Domain.ScriptStep.landed_law_neverOverLimit",
       "tier": "universal"
     },
     {
