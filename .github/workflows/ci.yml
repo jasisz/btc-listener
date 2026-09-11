@@ -251,11 +251,12 @@ jobs:
     # CI never runs --write-baseline; that would let a regression sign for
     # itself.
     #
-    # The elan default matters: until the pin carries jasisz/aver#1336, aver
-    # probes `lake --version` in the working directory, and without a default
-    # toolchain every when-guarded law is silently emitted as bounded (87/8/6
-    # instead of 99/2/0). So the export runs first, the toolchain it names is
-    # installed and made the default, and only then is the check run.
+    # The export runs first so the toolchain it names can be installed (and
+    # cached) before the check. It is not made the elan default on purpose:
+    # before jasisz/aver#1336 an elan without a default failed aver's
+    # `lake --version` probe and every when-guarded law was silently emitted
+    # as bounded (87/8/6 instead of 99/2/0). The pin carries the fix, and this
+    # job is the scenario it was written for, so it runs without the default.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -291,12 +292,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/proof/.lake
           key: proof-lake-${{ hashFiles('.aver-version', 'domain/**', 'infra/kv.av') }}-${{ runner.os }}
-      - name: Export, then make the toolchain it names the elan default
+      - name: Export, then install the toolchain it names
         run: |
           aver proof domain/interp.av --module-root . -o "$RUNNER_TEMP/proof"
           elan toolchain install "$(cat "$RUNNER_TEMP/proof/lean-toolchain")"
-          elan default "$(cat "$RUNNER_TEMP/proof/lean-toolchain")"
-          lake --version
+          elan show
       - name: Check against the committed budgets and baseline
         run: |
           aver proof domain/interp.av --module-root . -o "$RUNNER_TEMP/proof" \

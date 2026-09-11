@@ -24,8 +24,8 @@ and attached as an artifact, followed by one text line from the gate
 (`--gate: 0 regression(s) vs baseline (101 baseline laws, 101 current)`), so a
 red run says which claim moved.
 
-Locally, with Lean on the machine (`elan` with a default toolchain — see
-below), the same command against a scratch directory takes a few minutes the
+Locally, with Lean on the machine (`elan`; `lake` fetches the pinned
+toolchain on first use), the same command against a scratch directory takes a few minutes the
 first time and seconds after, because `lake` caches under `<out>/.lake`:
 
 ```bash
@@ -113,17 +113,13 @@ citations, see `docs/script-laws.md`), each of which is also a millisecond
 test under `aver verify`. A proven helper law is a rewrite rule for every law
 below it.
 
-## The elan default
+## The elan default, a closed chapter
 
-Until the pin carries jasisz/aver#1336, `aver proof` probes `lake --version`
-in the working directory before deciding whether to attempt the guarded
-(`when`) laws. An `elan` that has the pinned Lean installed but **no default
-toolchain** fails that probe, and every guarded law is silently emitted as
-bounded; the build still passes, so the only symptom is a manifest twelve
-laws short (87/8/6 instead of 99/2/0). The CI job sets the default from the
-generated `lean-toolchain` before checking, and locally `elan show` must list
-one:
-
-```bash
-elan default "$(cat ../btc-listener-proof/lean-toolchain)"
-```
+Before jasisz/aver#1336, `aver proof` probed `lake --version` in the working
+directory before deciding whether to attempt the guarded (`when`) laws, and an
+`elan` with the pinned Lean installed but no default toolchain failed that
+probe: every guarded law was silently emitted as bounded, the build still
+passed, and the only symptom was a manifest twelve laws short (87/8/6 instead
+of 99/2/0). That is how #338's numbers went unreproduced for a day. The pin
+carries the fix, the CI job deliberately runs without an elan default, and
+the manifest it produces is the one to trust.

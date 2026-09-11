@@ -158,7 +158,7 @@ aver verify . --module-root .                        # everything, corpus includ
 aver verify domain/script.av --module-root .         # one file's cases
 aver verify corpus --module-root .                   # the Core corpus only
 aver format . --check
-aver proof domain/interp.av --module-root . -o ../btc-listener-proof --check-json --declined-budget $(cat proof/interp.declined) --sorry-budget 0 --gate proof/interp.manifest.json   # the Script engine in Lean, what CI's proof job runs; docs/proofs.md, needs an elan default
+aver proof domain/interp.av --module-root . -o ../btc-listener-proof --check-json --declined-budget $(cat proof/interp.declined) --sorry-budget 0 --gate proof/interp.manifest.json   # the Script engine in Lean, what CI's proof job runs; docs/proofs.md
 
 cargo test --manifest-path providers/primitives/Cargo.toml   # the providers carry their own Rust tests, run when you touch providers/
 cargo test --manifest-path providers/kv/Cargo.toml
