@@ -591,7 +591,7 @@ fn accepting(pool: Pool, key: Int) -> Result<Accepted, String>
         Option.Some(socket) -> acceptingOn(pool, key, socket)
 
 fn acceptingOn(pool: Pool, key: Int, socket: Tcp.Socket) -> Result<Accepted, String>
-    ? "Only a Listener can be accepted from; the other two states are not"
+    ? "Only a Listener can be accepted from; the other three states are not"
       "errors here, just nothing to do."
     ! [
         Console.error, Console.print,
@@ -602,6 +602,7 @@ fn acceptingOn(pool: Pool, key: Int, socket: Tcp.Socket) -> Result<Accepted, Str
     match socket
         Tcp.Socket.Listening(listener) -> acceptedOrNot(pool, key, Tcp.accept(listener))
         Tcp.Socket.Connected(connection) -> Result.Ok(Accepted(pool = pool, seated = Option.None))
+        Tcp.Socket.Sending(connection) -> Result.Ok(Accepted(pool = pool, seated = Option.None))
         Tcp.Socket.Dialing(dial) -> Result.Ok(Accepted(pool = pool, seated = Option.None))
 
 fn acceptedOrNot(pool: Pool, key: Int, taken: Result<Option<Tcp.Connection>, String>) -> Result<Accepted, String>
@@ -1784,10 +1785,13 @@ fn tell(pool: Pool, key: Int, command: String, payload: Bytes) -> Result<Pool, S
 
 fn tellingOne(pool: Pool, key: Int, socket: Tcp.Socket, command: String, payload: Bytes) -> Result<Pool, String>
     ? "A Peer that is no longer a Connection cannot be told anything, and"
-      "saying so is all this can usefully do about it."
+      "saying so is all this can usefully do about it. A Sending key wraps a"
+      "Connection too -- it is the same socket registered for write readiness"
+      "-- so it is told the same way."
     ! [Console.error, Tcp.close, Tcp.writeBytes]
     match socket
         Tcp.Socket.Connected(connection) -> tookIt(pool, key, connection, command, payload)
+        Tcp.Socket.Sending(connection) -> tookIt(pool, key, connection, command, payload)
         Tcp.Socket.Listening(listener) -> Result.Ok(pool)
         Tcp.Socket.Dialing(dial) -> Result.Ok(pool)
 
@@ -1812,13 +1816,16 @@ fn wentMidWrite(pool: Pool, key: Int, command: String, why: String) -> Result<Po
 fn sendingTo(pool: Pool, key: Int, socket: Tcp.Socket, command: String, payload: Bytes) -> Result<Pool, String>
     ? "One key names one socket state (jasisz/aver#1138): a Listener waiting"
       "for callers, a Dial still in flight, or a Connection that can be read"
-      "and written. Only the last can carry a Message, and the type says so"
-      "rather than the run time -- writeBytes on a Listener does not compile."
-      "The other two are answered rather than ignored, because a caller"
-      "addressing a Message to a Listener has made a mistake worth naming."
+      "and written -- registered under Connected for reading or under Sending"
+      "for write readiness, the same socket either way. Only a Connection can"
+      "carry a Message, and the type says so rather than the run time --"
+      "writeBytes on a Listener does not compile. The other two are answered"
+      "rather than ignored, because a caller addressing a Message to a"
+      "Listener has made a mistake worth naming."
     ! [Tcp.writeBytes]
     match socket
         Tcp.Socket.Connected(connection) -> written(pool, key, connection, command, payload)
+        Tcp.Socket.Sending(connection) -> written(pool, key, connection, command, payload)
         Tcp.Socket.Listening(listener) -> Result.Err("identifier {key} is the listener, which cannot be sent to")
         Tcp.Socket.Dialing(dial) -> Result.Err("identifier {key} is still dialling and cannot be sent to yet")
 
@@ -2118,10 +2125,13 @@ fn readingFrom(pool: Pool, key: Int, socket: Tcp.Socket, rest: List<Int>) -> Res
     ? "Only a Connection has bytes to read. A Listener that polled ready has"
       "a caller waiting on it, which the accept loop takes, and a Dial that"
       "polled ready has finished connecting -- neither belongs here, and both"
-      "are passed over rather than treated as a Peer that said nothing."
+      "are passed over rather than treated as a Peer that said nothing. So is"
+      "a Sending key: it polled ready because the socket will take bytes, which"
+      "says nothing about whether there are any to read."
     ! [Console.error, Console.print, Tcp.close, Tcp.readSome, Time.unixMs]
     match socket
         Tcp.Socket.Connected(connection) -> readingInto(pool, key, connection, rest)
+        Tcp.Socket.Sending(connection) -> reading(pool, rest)
         Tcp.Socket.Listening(listener) -> reading(pool, rest)
         Tcp.Socket.Dialing(dial) -> reading(pool, rest)
 
@@ -2212,6 +2222,7 @@ fn closingSocket(pool: Pool, key: Int, socket: Tcp.Socket) -> Result<Pool, Strin
     ! [Tcp.close]
     match socket
         Tcp.Socket.Connected(connection) -> closedOne(pool, key, connection)
+        Tcp.Socket.Sending(connection) -> closedOne(pool, key, connection)
         Tcp.Socket.Listening(listener) -> Result.Ok(forgotten(pool, key))
         Tcp.Socket.Dialing(dial) -> Result.Ok(forgotten(pool, key))
 
@@ -2272,10 +2283,12 @@ fn releasingSocket(pool: Pool, key: Int, socket: Tcp.Socket) -> Result<Pool, Str
       "local by joined and never parked in pool.sockets (#172), so the only"
       "kinds under a key are a Listener and a Connection. It releases the dial"
       "anyway, because the type says a key can name one and unreachable today"
-      "is not unreachable."
+      "is not unreachable. The same goes for Sending, which this pool never"
+      "registers: it is a Connection, and a Connection is released by close."
     ! [Tcp.close, Tcp.closeDial, Tcp.closeListener]
     match socket
         Tcp.Socket.Connected(connection) -> closedOne(pool, key, connection)
+        Tcp.Socket.Sending(connection) -> closedOne(pool, key, connection)
         Tcp.Socket.Listening(listener) -> closedListening(pool, key, listener)
         Tcp.Socket.Dialing(dial) -> closedDialing(pool, key, dial)
 

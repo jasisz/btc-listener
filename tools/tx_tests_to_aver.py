@@ -190,52 +190,12 @@ def probe(path):
     return 0
 
 
-# `aver verify` runs on the VM, which has a million-step budget.  One case in
-# tx_valid.json is a 1911 byte Transaction with twelve Inputs and exceeds it --
-# measured, not guessed: added to the corpus it aborts with "VM step limit
-# exceeded (1000000 steps)".  The median case is 135 bytes and the next largest
-# is under 500.  The compiled engine has no such budget and answers it, so it is
-# answered there and recorded in the module intent rather than dropped in
-# silence.  n1bor/btc-listener#75.
-VM_TX_LIMIT = 1000
-
-
-def too_slow_to_verify(raw):
-    """Nothing is, any more -- see the same function in the Script tool."""
-    return False
-
-
-def verifiable(row):
-    """Whether this row becomes a verify case rather than a recorded exclusion."""
-    return not too_slow_to_verify(row[0])
-
-
-def excluded_note(pairs):
-    """The cases verify cannot run, written into the module rather than dropped.
-
-    A case left out silently is a case nobody sees.  Each names its size, what
-    Core says, and what the compiled engine actually answered.
-    """
-    if not pairs:
-        return ""
-    lines = ['        "%d case(s) are answered by the compiled engine and not by verify."\n'
-             '        "aver verify runs on a VM with a million-step budget and the largest"\n'
-             '        "Transactions here exhaust it. Each is named below with the answer"\n'
-             '        "the compiled engine gave it, because a case left out silently is a"\n'
-             '        "case nobody sees. n1bor/btc-listener#75:"\n' % len(pairs)]
-    for (raw, supplied, flags, core_valid), answer in pairs:
-        lines.append('        "  %d byte Transaction, %d inputs, flags %s -- Core says %s,"\n'
-                     '        "  this engine answers %s."\n'
-                     % (len(raw) // 2, len(supplied), flags.strip() or "NONE",
-                        "valid" if core_valid else "invalid", answer.replace('"', "'")))
-    return "".join(lines)
-
-
 def collected():
-    """Every case Core supplies that assembles, including those verify cannot run.
+    """Every case Core supplies that assembles.
 
-    The probe runs under the compiled engine, which has no step budget, so it
-    answers all of them; `verifiable` decides which become verify cases.
+    Every one: the per-function step budget in aver.toml (jasisz/aver#1071,
+    n1bor/btc-listener#75) lets `aver verify` run the largest Transaction, so
+    nothing is left out any more; the filter that once decided otherwise is gone.
     """
     rows = []
     for name, valid in (("tx_valid.json", True), ("tx_invalid.json", False)):
@@ -269,7 +229,7 @@ def prevout_literal(p):
 
 
 def emit(per_file=60, report=""):
-    rows = [r for r in collected() if verifiable(r)]
+    rows = collected()
     print("assembled %d cases" % len(rows))
     parts = [rows[i:i + per_file] for i in range(0, len(rows), per_file)]
     for k, chunk in enumerate(parts, start=1):
@@ -294,9 +254,8 @@ def answers(answers_path):
         print("have %d answers for %d cases -- refusing to guess which is which"
               % (len(got), len(rows)))
         return 1
-    left_out = [(r, a) for r, a in zip(rows, got) if not verifiable(r)]
     agree = undecided = lax = strict = 0
-    it = iter([a for r, a in zip(rows, got) if verifiable(r)])
+    it = iter(got)
     for name in sorted(os.listdir(OUT), key=lambda n: int(re.findall(r"\d+", n)[0]) if re.fullmatch(r"txcases\d+\.av", n) else 0):
         if not re.fullmatch(r"txcases\d+\.av", name):
             continue
@@ -333,22 +292,13 @@ def answers(answers_path):
               '        "%d are a rule this engine does not implement and %d are this engine"\n'
               '        "refusing what Core accepts -- which is the direction a defect shows"\n'
               '        "up in, so any of those is a bug until shown otherwise."\n'
-              % (len(rows), agree, disagree, undecided, lax, strict)) + excluded_note(left_out)
-    if left_out:
-        print("\n%d case(s) answered by the compiled engine but not emitted as verify cases:"
-              % len(left_out))
-        for (raw, supplied, flags, core_valid), answer in left_out:
-            print("  %d bytes, %d inputs, Core says %-8s this engine answers %s"
-                  % (len(raw) // 2, len(supplied),
-                     "valid" if core_valid else "invalid", answer))
+              % (len(rows), agree, disagree, undecided, lax, strict))
     emit(report=report)
-    # emit rewrote the files with placeholders; put the answers back.
-    # The filtered list again, not `got`: emit writes only the verifiable rows,
-    # so feeding it every answer shifts each one after an excluded case onto
-    # its neighbour.  That is exactly what happened the first time #75 was
-    # taken up, and 56 cases came back wrong in a way that looked like an
-    # engine change rather than a bookkeeping error.
-    it = iter([a for r, a in zip(rows, got) if verifiable(r)])
+    # emit rewrote the files with placeholders; put the answers back, in the
+    # order the engine gave them.  Every row is emitted, so the answers line up
+    # one to one; when a filter sat between the two, feeding it every answer
+    # shifted each one after an excluded case onto its neighbour (#75).
+    it = iter(got)
     for name in sorted(os.listdir(OUT), key=lambda n: int(re.findall(r"\d+", n)[0]) if re.fullmatch(r"txcases\d+\.av", n) else 0):
         if not re.fullmatch(r"txcases\d+\.av", name):
             continue

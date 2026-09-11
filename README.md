@@ -2021,6 +2021,7 @@ way. Grep the claim as well:
 
 ```bash
 grep -rniE "(still |remains? |is )(open|outstanding|unfixed|pending|blocked)" --include="*.md" --include="*.av" .
+grep -rnE "#[0-9]+,? open\)" --include="*.md" --include="*.av" .     # "(2,200×, #1160, open)" passed the line above
 ```
 
 Every upstream issue this repository cites is either history (a docstring

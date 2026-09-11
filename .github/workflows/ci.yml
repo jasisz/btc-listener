@@ -305,10 +305,11 @@ jobs:
     # cross here should not stop a Linux release going out. Wire it into
     # `binary` once it has been green for a while.
     #
-    # Known to be broken at run time even if this builds: Disk.sync on a
-    # directory cannot work on Windows (jasisz/aver#1238), and
-    # Infra.Blocks.synced calls it once per batch. So a binary from here is
-    # a compile-level answer, not a node that runs.
+    # Still a compile-level answer, not a node that runs: Disk.sync on a
+    # directory could not work on Windows (jasisz/aver#1238, since closed
+    # upstream), and Infra.Blocks.synced calls it once per batch. Nobody has
+    # yet run a binary from here against regtest on Windows to see the fix
+    # hold, and that run is what would earn it a place in `binary`'s needs.
     runs-on: windows-latest
     timeout-minutes: 90
     steps:

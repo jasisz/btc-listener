@@ -118,6 +118,13 @@ directory holding only an `index.log` is refused by name rather than read,
 and is rebuilt from the network. Memory stays, for exactly the reason given
 above. The title's "keep the log" is the part this amendment ends.
 
+The reason given above for Memory has since expired as well:
+[jasisz/aver#989](https://github.com/jasisz/aver/issues/989) closed and
+`aver verify` runs against the real providers, so nothing keeps it away from
+the database. Memory stays anyway, on a reason of its own: the verify cases
+written against `Store.fixture` need a Store that exists without a directory,
+and that is what it is. (Noted 11 September 2026, moving the Aver pin.)
+
 **Superseded in its choice of engine by [ADR 0009](0009-rocksdb-under-the-index.md)**
 on 23 August 2026: the Index stays a key-value database behind `Infra.Kv`, but
 `rusty-leveldb` gave way to RocksDB.

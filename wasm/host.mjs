@@ -413,6 +413,15 @@ function entryReady(entry) {
     return state.kind === "connection"
       && (state.chunks.length > 0 || state.ended || state.error !== null);
   }
+  if (entry.kind === 3) {
+    // Sending: the same connection registered for write readiness
+    // (jasisz/aver#1331). Ready when the next writeNow would take at least
+    // one byte, or would fail. Nothing in this program registers one yet, so
+    // the only wake for a Sending-only waitset is the timeout; a drain event
+    // does not wake waiters here.
+    return state.kind === "connection"
+      && ((state.connected && !state.socket.writableNeedDrain) || state.ended || state.error !== null);
+  }
   throw new Error(`unknown Tcp.Socket kind ${entry.kind}`);
 }
 

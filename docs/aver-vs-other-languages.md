@@ -221,8 +221,8 @@ pass-through E0308 (#901), packed-bytes equality (#1065), an opaque resource
 in a record (#994), E0505 borrow moves (#1130). `aver compile` exits 0 on
 Rust that does not build. Performance cliffs: a `Map` returned from a helper
 was cloned (3,400× slower; opening a Store "took hours instead of two
-seconds", #890, fixed); a record holding a Map still is (2,200×, #1160,
-open); the VM was quadratic on `[h, ..t]` with an accumulator (29 s / 16 GB
+seconds", #890, fixed); a record holding a Map was too (2,200×, #1160,
+fixed by #1163); the VM was quadratic on `[h, ..t]` with an accumulator (29 s / 16 GB
 against 14 ms compiled, #886) and on Map building (#900). ADR 0003 "compile,
 don't interpret" exists because of these. The VM once silently truncated
 list literals to `len mod 256` (#1054), caught only because the corpus tool
