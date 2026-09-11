@@ -1,0 +1,2814 @@
+{
+  "backend": "lean",
+  "declined": [
+    {
+      "claim": "Domain.Bech32.drain",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bech32.encode",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bech32.regroup",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bech32.toFiveBits",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bip143.hashed",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bip143.message",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bip143.messageOfRaw",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bip143.preimage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bip143.withHashType",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Bip341.message",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.againstMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.legacyStep",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.overMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.pastDeletion",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.single",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.singleOn",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.singleShaped",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.step",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.tapscriptSingle",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checksig.tapscriptStep",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Checkwork.decided",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Ecdsa.decide",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Ecdsa.overCurve",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Ecdsa.ruled",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Hash.hash160",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Hash.ripemd160",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Hash.sha1",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.sha1, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.againstKeys",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.charged",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.countedKeys",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.countedSigs",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.decidedMultiple",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.encodedPair",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.multiAdvanced",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.multiAgainst",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.multiPastDeletion",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.multiRuling",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.multiple",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.oneRuling",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.overMessageOrWhy",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.overOne",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.overOneMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.pastDummy",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.ruledWith",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.withDummy",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.withKeyCount",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.withKeys",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.withSigCount",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Multisig.withSigs",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.addressFor",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.addressOn",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.describe",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.describeMaybe",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.describeOn",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.laterWitnessAddress",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Payto.render",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Schnorr.verified",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.coded",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.digestFor",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.disabled",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.flowOrRest",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.hashed",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.hashedTop",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.operated",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.refused",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.signedOrGrouped",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.step",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.ScriptOps.whenExecuting",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.bySingleRule",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.hashed",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.legacy",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.legacyOfRaw",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.preimage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.withHashType",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Sighash.withMatchingOutput",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.bip143Transaction",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.legacyMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.messageFor",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.messageOf",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.signedTransaction",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.tapscriptMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.tapscriptMessageWith",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.SpendContext.witnessMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.added",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.afterCharge",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.answered",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.charged",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.checked",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.counted",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.overBuiltMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.overCurve",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.overMessage",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.overSingle",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.overSingleIn",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.readCount",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.ruling",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.shaped",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Tapsig.verified",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.verifySchnorr, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.assemble",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.attachWitnesses",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.build",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.countOne",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.countWitnesses",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.decode",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.decodeNext",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto, Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number; the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.inputFrom",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.inputWhole",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.outputFrom",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto whose seed is not a proven recursion bound (the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.outputLine",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.outputLines",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Bech32.drain, Domain.Bech32.regroup whose seed is not a proven recursion bound (the mutual recursion of `drain`, `regroup` has no measure that decreases on every call: the call from `regroup` to `drain` passes `Bits.shiftLeft(acc, 8) + head` for `acc`, which is not a parameter of `regroup` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.outputWhole",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto whose seed is not a proven recursion bound (the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readInputAfter",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readInputs",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readInputsInto",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readOneInput",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.inputFrom, Domain.Transaction.inputWhole, Domain.Transaction.readInputAfter, Domain.Transaction.readInputsInto, Domain.Transaction.readOneInput whose seed is not a proven recursion bound (the mutual recursion of `inputFrom`, `inputWhole`, `readInputAfter`, `readInputsInto`, `readOneInput` has no measure that decreases on every call: the call from `inputWhole` to `readInputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readOneOutput",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto whose seed is not a proven recursion bound (the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readOutputAfter",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto whose seed is not a proven recursion bound (the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readOutputs",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto whose seed is not a proven recursion bound (the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.readOutputsInto",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.outputFrom, Domain.Transaction.outputWhole, Domain.Transaction.readOneOutput, Domain.Transaction.readOutputAfter, Domain.Transaction.readOutputsInto whose seed is not a proven recursion bound (the mutual recursion of `outputFrom`, `outputWhole`, `readOneOutput`, `readOutputAfter`, `readOutputsInto` has no measure that decreases on every call: the call from `outputWhole` to `readOutputsInto` passes `remaining - 1` for `remaining`, which no guard on the call shows to be a smaller number); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.takeItemFrom",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.takeOneItem",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "Domain.Transaction.takeWitnessItems",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches fuel-lowered function(s) Domain.Transaction.takeItemFrom, Domain.Transaction.takeOneItem, Domain.Transaction.takeWitnessItems whose seed is not a proven recursion bound (the mutual recursion of `takeItemFrom`, `takeOneItem`, `takeWitnessItems` has no measure that decreases on every call: the call from `takeItemFrom` to `takeWitnessItems` passes `List.drop(item.rest, item.value)` for `rest`, which is not a parameter of `takeItemFrom` or a smaller part of one); native_decide can turn fuel exhaustion into a default value, so this claim was not exported"
+    },
+    {
+      "claim": "evaluate",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "executed",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "ordinary",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "parsed",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "reach",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "run",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "stepped",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    },
+    {
+      "claim": "walked",
+      "kind": "cases",
+      "reason": "the Lean call cone reaches provider-owned capability operation(s) Domain.Primitives.ripemd160, Domain.Primitives.sha1, Domain.Primitives.verifySchnorr, Domain.Primitives.verifySignature, which are opaque and noncomputable; evaluating them could fabricate a result, so this claim was not exported"
+    }
+  ],
+  "laws": [
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.encode.readsBack",
+      "theorem": "Domain.CompactSize.encode_law_readsBack",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.from.directByte",
+      "theorem": "Domain.CompactSize.from'_law_directByte",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.eightBytes",
+      "theorem": "Domain.CompactSize.wide_law_eightBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.fourBytes",
+      "theorem": "Domain.CompactSize.wide_law_fourBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.twoBytes",
+      "theorem": "Domain.CompactSize.wide_law_twoBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.wholeField",
+      "theorem": "Domain.CompactSize.wide_law_wholeField",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.eightBytesReadBack",
+      "theorem": "Domain.Message.littleEndian_law_eightBytesReadBack",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.fixedWidth",
+      "theorem": "Domain.Message.littleEndian_law_fixedWidth",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.fourBytesReadBack",
+      "theorem": "Domain.Message.littleEndian_law_fourBytesReadBack",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.lowDigitStep",
+      "theorem": "Domain.Message.littleEndian_law_lowDigitStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.twoBytesReadBack",
+      "theorem": "Domain.Message.littleEndian_law_twoBytesReadBack",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndianInto.accumulatorPrefix",
+      "theorem": "Domain.Message.littleEndianInto_law_accumulatorPrefix",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndianInto.fixedWidth",
+      "theorem": "Domain.Message.littleEndianInto_law_fixedWidth",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.readLittleEndian.lowDigitStep",
+      "theorem": "Domain.Message.readLittleEndian_law_lowDigitStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.readLittleEndianFrom.emptyKeepsAccumulator",
+      "theorem": "Domain.Message.readLittleEndianFrom_law_emptyKeepsAccumulator",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.readLittleEndianFrom.finalDigit",
+      "theorem": "Domain.Message.readLittleEndianFrom_law_finalDigit",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.binaryValue.equalAndNotEqualAreOpposites",
+      "theorem": "Domain.ScriptMath.binaryValue_law_equalAndNotEqualAreOpposites",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.binaryValue.lessThanMirrorsGreaterThan",
+      "theorem": "Domain.ScriptMath.binaryValue_law_lessThanMirrorsGreaterThan",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.binaryValue.minAndMaxShareThePair",
+      "theorem": "Domain.ScriptMath.binaryValue_law_minAndMaxShareThePair",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.binaryValue.subtractionSwappedIsNegated",
+      "theorem": "Domain.ScriptMath.binaryValue_law_subtractionSwappedIsNegated",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.unaryValue.absIsMaxOfSelfAndNegated",
+      "theorem": "Domain.ScriptMath.unaryValue_law_absIsMaxOfSelfAndNegated",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.unaryValue.negateIsAnInvolution",
+      "theorem": "Domain.ScriptMath.unaryValue_law_negateIsAnInvolution",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptMath.unaryValue.notAndZeroNotEqualAreOpposites",
+      "theorem": "Domain.ScriptMath.unaryValue_law_notAndZeroNotEqualAreOpposites",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.bytesOf.concatenates",
+      "theorem": "Domain.ScriptParse.bytesOf_law_concatenates",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.bytesOf.prepend",
+      "theorem": "Domain.ScriptParse.bytesOf_law_prepend",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.intoBytes.accumulates",
+      "theorem": "Domain.ScriptParse.intoBytes_law_accumulates",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.intoBytes.consStep",
+      "theorem": "Domain.ScriptParse.intoBytes_law_consStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.lengthBytesRoundtrip.fixedWidths",
+      "theorem": "Domain.ScriptParse.lengthBytesRoundtrip_law_fixedWidths",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parse.preservesExactBytes",
+      "theorem": "Domain.ScriptParse.parse_law_preservesExactBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parseReason.preservesBytes",
+      "theorem": "Domain.ScriptParse.parseReason_law_preservesBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.codeStep",
+      "theorem": "Domain.ScriptParse.parsedBytesMatch_law_codeStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.directPushStep",
+      "theorem": "Domain.ScriptParse.parsedBytesMatch_law_directPushStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.truncatedData",
+      "theorem": "Domain.ScriptParse.parsedBytesMatch_law_truncatedData",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.truncatedDirect",
+      "theorem": "Domain.ScriptParse.parsedBytesMatch_law_truncatedDirect",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.truncatedWidth",
+      "theorem": "Domain.ScriptParse.parsedBytesMatch_law_truncatedWidth",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.widePushStep",
+      "theorem": "Domain.ScriptParse.parsedBytesMatch_law_widePushStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.prependReversed.reverseOnto",
+      "theorem": "Domain.ScriptParse.prependReversed_law_reverseOnto",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.pushWidthFits.always",
+      "theorem": "Domain.ScriptParse.pushWidthFits_law_always",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.rejoined.exact",
+      "theorem": "Domain.ScriptParse.rejoined_law_exact",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.retained.commutes",
+      "theorem": "Domain.ScriptParse.retained_law_commutes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.retained.idempotent",
+      "theorem": "Domain.ScriptParse.retained_law_idempotent",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.suffixFits.always",
+      "theorem": "Domain.ScriptParse.suffixFits_law_always",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.validOctets.dropStaysValid",
+      "theorem": "Domain.ScriptParse.validOctets_law_dropStaysValid",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.validOctets.takeStaysValid",
+      "theorem": "Domain.ScriptParse.validOctets_law_takeStaysValid",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.deletionCommutes",
+      "theorem": "Domain.ScriptParse.without_law_deletionCommutes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.repeatedDeletion",
+      "theorem": "Domain.ScriptParse.without_law_repeatedDeletion",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.stableFilter",
+      "theorem": "Domain.ScriptParse.without_law_stableFilter",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.concatenatedBatches",
+      "theorem": "Domain.ScriptParse.withoutEach_law_concatenatedBatches",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.deletionOrderCommutes",
+      "theorem": "Domain.ScriptParse.withoutEach_law_deletionOrderCommutes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.oneDeletionCommutes",
+      "theorem": "Domain.ScriptParse.withoutEach_law_oneDeletionCommutes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.repeatedDeletionIsIdempotent",
+      "theorem": "Domain.ScriptParse.withoutEach_law_repeatedDeletionIsIdempotent",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutPushes.repeatedItemsHaveNoFurtherEffect",
+      "theorem": "Domain.ScriptParse.withoutPushes_law_repeatedItemsHaveNoFurtherEffect",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptState.rearranged.rotThreeTimesIsTheTopThree",
+      "theorem": "Domain.ScriptState.rearranged_law_rotThreeTimesIsTheTopThree",
+      "tier": "universal"
+    },
+    {
+      "axioms": [],
+      "backend": "lean",
+      "law": "Domain.ScriptState.rearranged.staysWithinDeclaredDepth",
+      "theorem": "Domain.ScriptState.rearranged_law_staysWithinDeclaredDepth",
+      "tier": "bounded"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptState.rearranged.swapTwiceIsTheTopPair",
+      "theorem": "Domain.ScriptState.rearranged_law_swapTwiceIsTheTopPair",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptState.rearranged.twoSwapTwiceIsTheTopFour",
+      "theorem": "Domain.ScriptState.rearranged_law_twoSwapTwiceIsTheTopFour",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.minimalEncodingIdentifiesBytes",
+      "theorem": "Domain.StackItem.asNumber_law_minimalEncodingIdentifiesBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.readsWhatFromNumberWrote",
+      "theorem": "Domain.StackItem.asNumber_law_readsWhatFromNumberWrote",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.rewritingPreservesTheNumber",
+      "theorem": "Domain.StackItem.asNumber_law_rewritingPreservesTheNumber",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.headStartsPrefix",
+      "theorem": "Domain.StackItem.bigEndian_law_headStartsPrefix",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.largerPrefixStaysLarger",
+      "theorem": "Domain.StackItem.bigEndian_law_largerPrefixStaysLarger",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.positivePrefixStaysPositive",
+      "theorem": "Domain.StackItem.bigEndian_law_positivePrefixStaysPositive",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.readsTheLastByteLast",
+      "theorem": "Domain.StackItem.bigEndian_law_readsTheLastByteLast",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.writingReadDigitsPreservesThem",
+      "theorem": "Domain.StackItem.bigEndian_law_writingReadDigitsPreservesThem",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.canonicalDigitsReason.minimalItemDigitsReadBack",
+      "theorem": "Domain.StackItem.canonicalDigitsReason_law_minimalItemDigitsReadBack",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fitsArithmetic.acceptsCoreOperandRange",
+      "theorem": "Domain.StackItem.fitsArithmetic_law_acceptsCoreOperandRange",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.canonicalExactlyWhenMinimal",
+      "theorem": "Domain.StackItem.fromNumber_law_canonicalExactlyWhenMinimal",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.encodingIdentifiesTheNumber",
+      "theorem": "Domain.StackItem.fromNumber_law_encodingIdentifiesTheNumber",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.minimalItemsAreFixedPoints",
+      "theorem": "Domain.StackItem.fromNumber_law_minimalItemsAreFixedPoints",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.signedMagnitudeEncoding",
+      "theorem": "Domain.StackItem.fromNumber_law_signedMagnitudeEncoding",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.isMinimalNumber.acceptsWhatFromNumberWrites",
+      "theorem": "Domain.StackItem.isMinimalNumber_law_acceptsWhatFromNumberWrites",
+      "tier": "universal"
+    },
+    {
+      "axioms": [],
+      "backend": "lean",
+      "law": "Domain.StackItem.isMinimalPush.directPushIsMinimalUnlessSmallNumber",
+      "theorem": "Domain.StackItem.isMinimalPush_law_directPushIsMinimalUnlessSmallNumber_part1",
+      "tier": "bounded"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.accumulatorComesFirst",
+      "theorem": "Domain.StackItem.littleEndian_law_accumulatorComesFirst",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.firstDigitIsPreserved",
+      "theorem": "Domain.StackItem.littleEndian_law_firstDigitIsPreserved",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.lowDigitStep",
+      "theorem": "Domain.StackItem.littleEndian_law_lowDigitStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.mostSignificantDigitIsNotZero",
+      "theorem": "Domain.StackItem.littleEndian_law_mostSignificantDigitIsNotZero",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.nonpositiveHasNoDigits",
+      "theorem": "Domain.StackItem.littleEndian_law_nonpositiveHasNoDigits",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.oneDigitEncoding",
+      "theorem": "Domain.StackItem.littleEndian_law_oneDigitEncoding",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.outsideByteRangeIsNeverAdded",
+      "theorem": "Domain.StackItem.littleEndian_law_outsideByteRangeIsNeverAdded",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.positiveHasDigits",
+      "theorem": "Domain.StackItem.littleEndian_law_positiveHasDigits",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.positivePrefixAndDigit",
+      "theorem": "Domain.StackItem.littleEndian_law_positivePrefixAndDigit",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.positiveStep",
+      "theorem": "Domain.StackItem.littleEndian_law_positiveStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.readsBackBigEndian",
+      "theorem": "Domain.StackItem.littleEndian_law_readsBackBigEndian",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.zeroDigitWindow",
+      "theorem": "Domain.StackItem.littleEndian_law_zeroDigitWindow",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.magnitudeOf.signAndSizeMakeTheNumber",
+      "theorem": "Domain.StackItem.magnitudeOf_law_signAndSizeMakeTheNumber",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.placed.placementReadsBack",
+      "theorem": "Domain.StackItem.placed_law_placementReadsBack",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.placed.positiveTopMakesPlacementMinimal",
+      "theorem": "Domain.StackItem.placed_law_positiveTopMakesPlacementMinimal",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.byteStep",
+      "theorem": "Domain.StackItem.signedBytes_law_byteStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.fourByteRange",
+      "theorem": "Domain.StackItem.signedBytes_law_fourByteRange",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.lengthStep",
+      "theorem": "Domain.StackItem.signedBytes_law_lengthStep",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.oneByteRange",
+      "theorem": "Domain.StackItem.signedBytes_law_oneByteRange",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.positiveHasBytes",
+      "theorem": "Domain.StackItem.signedBytes_law_positiveHasBytes",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.smallMagnitudeSize",
+      "theorem": "Domain.StackItem.signedBytes_law_smallMagnitudeSize",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.threeByteRange",
+      "theorem": "Domain.StackItem.signedBytes_law_threeByteRange",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.twoByteRange",
+      "theorem": "Domain.StackItem.signedBytes_law_twoByteRange",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.validBytes.concatenation",
+      "theorem": "Domain.StackItem.validBytes_law_concatenation",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.validBytes.headAndTail",
+      "theorem": "Domain.StackItem.validBytes_law_headAndTail",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.validBytes.reversal",
+      "theorem": "Domain.StackItem.validBytes_law_reversal",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.preservesLowByte",
+      "theorem": "Domain.StackItem.withSign_law_preservesLowByte",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.restoresMagnitudeTop",
+      "theorem": "Domain.StackItem.withSign_law_restoresMagnitudeTop",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.restoresSeparateSign",
+      "theorem": "Domain.StackItem.withSign_law_restoresSeparateSign",
+      "tier": "universal"
+    }
+  ],
+  "obligations": [
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.encode.readsBack.because1",
+      "theorem": "Domain.CompactSize.__aver_reason_encode_law_readsBack_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.encode.readsBack.implication",
+      "theorem": "Domain.CompactSize.__aver_reason_encode_law_readsBack_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.eightBytes.implication",
+      "theorem": "Domain.CompactSize.__aver_reason_wide_law_eightBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.fourBytes.implication",
+      "theorem": "Domain.CompactSize.__aver_reason_wide_law_fourBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.CompactSize.wide.twoBytes.implication",
+      "theorem": "Domain.CompactSize.__aver_reason_wide_law_twoBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.eightBytesReadBack.implication",
+      "theorem": "Domain.Message.__aver_reason_littleEndian_law_eightBytesReadBack_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.fixedWidth.implication",
+      "theorem": "Domain.Message.__aver_reason_littleEndian_law_fixedWidth_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.fourBytesReadBack.implication",
+      "theorem": "Domain.Message.__aver_reason_littleEndian_law_fourBytesReadBack_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.lowDigitStep.implication",
+      "theorem": "Domain.Message.__aver_reason_littleEndian_law_lowDigitStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.littleEndian.twoBytesReadBack.implication",
+      "theorem": "Domain.Message.__aver_reason_littleEndian_law_twoBytesReadBack_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.Message.readLittleEndian.lowDigitStep.implication",
+      "theorem": "Domain.Message.__aver_reason_readLittleEndian_law_lowDigitStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.bytesOf.concatenates.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_bytesOf_law_concatenates_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.bytesOf.concatenates.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_bytesOf_law_concatenates_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.bytesOf.prepend.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_bytesOf_law_prepend_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.intoBytes.accumulates.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_intoBytes_law_accumulates_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.intoBytes.accumulates.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_intoBytes_law_accumulates_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.intoBytes.consStep.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_intoBytes_law_consStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.lengthBytesRoundtrip.fixedWidths.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_lengthBytesRoundtrip_law_fixedWidths_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.lengthBytesRoundtrip.fixedWidths.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_lengthBytesRoundtrip_law_fixedWidths_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parse.preservesExactBytes.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_parse_law_preservesExactBytes_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parse.preservesExactBytes.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parse_law_preservesExactBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parseReason.preservesBytes.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_parseReason_law_preservesBytes_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parseReason.preservesBytes.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parseReason_law_preservesBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.codeStep.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_codeStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.directPushStep.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_directPushStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.truncatedData.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_truncatedData_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.truncatedDirect.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_truncatedDirect_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.truncatedWidth.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_truncatedWidth_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.widePushStep.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_widePushStep_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.parsedBytesMatch.widePushStep.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_parsedBytesMatch_law_widePushStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.pushWidthFits.always.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_pushWidthFits_law_always_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.rejoined.exact.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_rejoined_law_exact_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.retained.commutes.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_retained_law_commutes_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.retained.commutes.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_retained_law_commutes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.retained.idempotent.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_retained_law_idempotent_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.retained.idempotent.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_retained_law_idempotent_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.suffixFits.always.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_suffixFits_law_always_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.validOctets.dropStaysValid.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_validOctets_law_dropStaysValid_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.validOctets.dropStaysValid.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_validOctets_law_dropStaysValid_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.validOctets.takeStaysValid.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_validOctets_law_takeStaysValid_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.validOctets.takeStaysValid.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_validOctets_law_takeStaysValid_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.deletionCommutes.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_without_law_deletionCommutes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.repeatedDeletion.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_without_law_repeatedDeletion_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.stableFilter.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_without_law_stableFilter_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.without.stableFilter.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_without_law_stableFilter_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.concatenatedBatches.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_concatenatedBatches_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.concatenatedBatches.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_concatenatedBatches_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.deletionOrderCommutes.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_deletionOrderCommutes_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.deletionOrderCommutes.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_deletionOrderCommutes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.oneDeletionCommutes.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_oneDeletionCommutes_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.oneDeletionCommutes.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_oneDeletionCommutes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.repeatedDeletionIsIdempotent.because1",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_repeatedDeletionIsIdempotent_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutEach.repeatedDeletionIsIdempotent.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutEach_law_repeatedDeletionIsIdempotent_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.ScriptParse.withoutPushes.repeatedItemsHaveNoFurtherEffect.implication",
+      "theorem": "Domain.ScriptParse.__aver_reason_withoutPushes_law_repeatedItemsHaveNoFurtherEffect_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.minimalEncodingIdentifiesBytes.implication",
+      "theorem": "Domain.StackItem.__aver_reason_asNumber_law_minimalEncodingIdentifiesBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.readsWhatFromNumberWrote.because1",
+      "theorem": "Domain.StackItem.__aver_reason_asNumber_law_readsWhatFromNumberWrote_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.readsWhatFromNumberWrote.implication",
+      "theorem": "Domain.StackItem.__aver_reason_asNumber_law_readsWhatFromNumberWrote_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.asNumber.rewritingPreservesTheNumber.implication",
+      "theorem": "Domain.StackItem.__aver_reason_asNumber_law_rewritingPreservesTheNumber_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.largerPrefixStaysLarger.because1",
+      "theorem": "Domain.StackItem.__aver_reason_bigEndian_law_largerPrefixStaysLarger_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.largerPrefixStaysLarger.implication",
+      "theorem": "Domain.StackItem.__aver_reason_bigEndian_law_largerPrefixStaysLarger_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.positivePrefixStaysPositive.because1",
+      "theorem": "Domain.StackItem.__aver_reason_bigEndian_law_positivePrefixStaysPositive_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.positivePrefixStaysPositive.implication",
+      "theorem": "Domain.StackItem.__aver_reason_bigEndian_law_positivePrefixStaysPositive_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.writingReadDigitsPreservesThem.because1",
+      "theorem": "Domain.StackItem.__aver_reason_bigEndian_law_writingReadDigitsPreservesThem_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.bigEndian.writingReadDigitsPreservesThem.implication",
+      "theorem": "Domain.StackItem.__aver_reason_bigEndian_law_writingReadDigitsPreservesThem_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.canonicalDigitsReason.minimalItemDigitsReadBack.because1",
+      "theorem": "Domain.StackItem.__aver_reason_canonicalDigitsReason_law_minimalItemDigitsReadBack_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.canonicalDigitsReason.minimalItemDigitsReadBack.implication",
+      "theorem": "Domain.StackItem.__aver_reason_canonicalDigitsReason_law_minimalItemDigitsReadBack_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fitsArithmetic.acceptsCoreOperandRange.implication",
+      "theorem": "Domain.StackItem.__aver_reason_fitsArithmetic_law_acceptsCoreOperandRange_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.canonicalExactlyWhenMinimal.implication",
+      "theorem": "Domain.StackItem.__aver_reason_fromNumber_law_canonicalExactlyWhenMinimal_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.encodingIdentifiesTheNumber.implication",
+      "theorem": "Domain.StackItem.__aver_reason_fromNumber_law_encodingIdentifiesTheNumber_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.minimalItemsAreFixedPoints.because1",
+      "theorem": "Domain.StackItem.__aver_reason_fromNumber_law_minimalItemsAreFixedPoints_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.minimalItemsAreFixedPoints.because2",
+      "theorem": "Domain.StackItem.__aver_reason_fromNumber_law_minimalItemsAreFixedPoints_because2",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.minimalItemsAreFixedPoints.implication",
+      "theorem": "Domain.StackItem.__aver_reason_fromNumber_law_minimalItemsAreFixedPoints_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.fromNumber.signedMagnitudeEncoding.implication",
+      "theorem": "Domain.StackItem.__aver_reason_fromNumber_law_signedMagnitudeEncoding_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.isMinimalNumber.acceptsWhatFromNumberWrites.because1",
+      "theorem": "Domain.StackItem.__aver_reason_isMinimalNumber_law_acceptsWhatFromNumberWrites_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.isMinimalNumber.acceptsWhatFromNumberWrites.implication",
+      "theorem": "Domain.StackItem.__aver_reason_isMinimalNumber_law_acceptsWhatFromNumberWrites_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.lowDigitStep.because1",
+      "theorem": "Domain.StackItem.__aver_reason_littleEndian_law_lowDigitStep_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.lowDigitStep.because2",
+      "theorem": "Domain.StackItem.__aver_reason_littleEndian_law_lowDigitStep_because2",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.lowDigitStep.implication",
+      "theorem": "Domain.StackItem.__aver_reason_littleEndian_law_lowDigitStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.positivePrefixAndDigit.because1",
+      "theorem": "Domain.StackItem.__aver_reason_littleEndian_law_positivePrefixAndDigit_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.littleEndian.positivePrefixAndDigit.implication",
+      "theorem": "Domain.StackItem.__aver_reason_littleEndian_law_positivePrefixAndDigit_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.byteStep.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_byteStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.fourByteRange.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_fourByteRange_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.fourByteRange.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_fourByteRange_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.lengthStep.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_lengthStep_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.lengthStep.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_lengthStep_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.oneByteRange.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_oneByteRange_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.oneByteRange.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_oneByteRange_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.positiveHasBytes.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_positiveHasBytes_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.positiveHasBytes.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_positiveHasBytes_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.smallMagnitudeSize.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_smallMagnitudeSize_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.smallMagnitudeSize.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_smallMagnitudeSize_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.threeByteRange.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_threeByteRange_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.threeByteRange.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_threeByteRange_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.twoByteRange.because1",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_twoByteRange_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.signedBytes.twoByteRange.implication",
+      "theorem": "Domain.StackItem.__aver_reason_signedBytes_law_twoByteRange_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.preservesLowByte.because1",
+      "theorem": "Domain.StackItem.__aver_reason_withSign_law_preservesLowByte_because1",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.preservesLowByte.implication",
+      "theorem": "Domain.StackItem.__aver_reason_withSign_law_preservesLowByte_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.restoresMagnitudeTop.implication",
+      "theorem": "Domain.StackItem.__aver_reason_withSign_law_restoresMagnitudeTop_implication",
+      "tier": "universal"
+    },
+    {
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "backend": "lean",
+      "law": "Domain.StackItem.withSign.restoresSeparateSign.implication",
+      "theorem": "Domain.StackItem.__aver_reason_withSign_law_restoresSeparateSign_implication",
+      "tier": "universal"
+    }
+  ],
+  "version": 1
+}

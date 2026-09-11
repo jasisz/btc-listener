@@ -1702,6 +1702,9 @@ docs/adr/           architecture decisions, nine of them
 docs/full-node-plan.md  the stages, all shipped, and what each asked of Aver
 docs/regtest-testing.md the end-to-end test against a real Core node
 docs/core-corpora.md    which of Core's test files are read, and how
+docs/proofs.md          what the proof job proves about the Script engine, and what it does not
+docs/script-laws.md     the laws themselves: statements, explanations, limits
+proof/              the declined budget and the per-law baseline the proof job is gated on
 tools/              the generators that turn Core's test vectors into corpus/,
                     refresh_corpora.sh, and regtest/ (liar.py, the Peer that lies)
 providers/          kv (RocksDB) and primitives (libsecp256k1, RIPEMD-160, SHA-1)

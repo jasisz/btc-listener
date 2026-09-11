@@ -1,0 +1,129 @@
+# Proofs, and what the proof job in CI proves
+
+`aver proof` exports the pure Script engine — every module reachable from
+`domain/interp.av` that touches no effect — to a Lean 4 project, turns every
+`verify` case into a Lean example and every `verify ... law` into a theorem,
+and asks the Lean kernel to check the lot. CI runs that on every push as the
+`proof` job. This page says what a green run means, what it does not mean, and
+how to move the two files it is measured against.
+
+## What the job runs
+
+```bash
+aver proof domain/interp.av --module-root . -o "$RUNNER_TEMP/proof" \
+  --check-json \
+  --declined-budget "$(cat proof/interp.declined)" \
+  --sorry-budget 0 \
+  --gate proof/interp.manifest.json
+```
+
+The exit code is the verdict: 0 within every budget and no regression against
+the baseline, 1 over a budget or a regression, 2 when the harness itself
+failed (no `lake`, an unreadable baseline). The JSON summary is in the job log
+and attached as an artifact, followed by one text line from the gate
+(`--gate: 0 regression(s) vs baseline (101 baseline laws, 101 current)`), so a
+red run says which claim moved.
+
+Locally, with Lean on the machine (`elan` with a default toolchain — see
+below), the same command against a scratch directory takes a few minutes the
+first time and seconds after, because `lake` caches under `<out>/.lake`:
+
+```bash
+aver proof domain/interp.av --module-root . -o ../btc-listener-proof \
+  --check-json --declined-budget "$(cat proof/interp.declined)" --sorry-budget 0 \
+  --gate proof/interp.manifest.json
+```
+
+## What green means
+
+Three numbers in the summary, and a manifest.
+
+- **`universal_laws`** — laws whose theorem the Lean kernel checked in full,
+  over every value of their `given`s, with `#print axioms` inside Lean's core
+  three (`propext`, `Classical.choice`, `Quot.sound`). Nothing `native_decide`
+  proves counts here, because that trusts the compiler's evaluator. At the
+  `7cfb66a9` pin there are 99.
+- **`bounded_laws`** — laws stated only over an enumerated domain. Two
+  today, both `when`-guarded (`ScriptState.rearranged.staysWithinDeclaredDepth`,
+  `StackItem.isMinimalPush.directPushIsMinimalUnlessSmallNumber`). A law that
+  cites a bounded law in `using` can never be universal.
+- **`sorries`** — obligations that no strategy closed. Budget 0: a law that
+  lands on `sorry` is a red run, by design.
+- **`declined`** — claims the exporter refused to state at all, so no theorem,
+  no `sorry` and no error stands in for them. They need their own budget
+  precisely because nothing else would notice them. 130 today, in two
+  families:
+  - **74 reach a provider operation** (`ripemd160`, `sha1`, `verifySignature`,
+    `verifySchnorr`). Every claim on `evaluate`, `run`, `walked`, `stepped` and
+    everything downstream of CHECKSIG or HASH160. Opaque on purpose (the curve
+    is a provider because its edge cases are consensus rules), so these stay
+    declined; engine-level invariants over the evaluator need hand-written
+    Lean over the export, not sampled laws.
+  - **56 reach a mutual recursion the exporter cannot bound**:
+    `Domain.Transaction`'s three groups and `Domain.Bech32`'s
+    `drain`/`regroup`. Each is a follow-up; fixing one lowers the number.
+
+  Every verify case in the cone is also emitted as a Lean example and checked
+  by `native_decide`, which is a second run of the same cases through the
+  translation rather than the VM.
+
+## What green does not mean
+
+Kernel-genuine is a narrow claim: the kernel checked the proof of *the theorem
+as translated*. It certifies the tactics, not the Aver-to-Lean translator,
+which is part of the trusted base. What pins the translation to the runtime is
+the dual run: every `verify` case runs on the VM under `aver verify` and as a
+Lean example under `aver proof`, so each is one point where the two must
+agree. The 6,050 Core corpus cases are the largest such set, which is one more
+reason the corpus is verified on every push.
+
+Nothing here says the engine agrees with Bitcoin Core. There is no formal
+statement of Script to prove against; Core's C++ is the specification, and the
+corpus is the only bridge to it.
+
+## The two committed files, and who may change them
+
+- **`proof/interp.declined`** — the declined budget, a number. It only goes
+  down. A PR that lifts a decline (a recursion given a measure, a cone that no
+  longer reaches a provider) lowers it in the same PR. A PR that raises it has
+  to say why in its own diff; CI will not raise it for you.
+- **`proof/interp.manifest.json`** — the per-law baseline: for every law, its
+  tier, its theorem and its axiom set. CI runs `--gate` against it and fails on
+  any law removed, demoted (universal > bounded > sampled > failed), whose
+  axiom set grew, or whose backend changed. New laws are allowed and do not
+  need a new baseline. To regenerate it, after a change that legitimately
+  removes or weakens a law:
+
+  ```bash
+  aver proof domain/interp.av --module-root . -o ../btc-listener-proof \
+    --write-baseline proof/interp.manifest.json
+  ```
+
+  and commit the result in the same PR, where the diff shows exactly what was
+  given up. CI never runs `--write-baseline`; that would let any regression
+  acknowledge itself.
+
+## Reading a red run
+
+`--check-json` names the law. For the goal it could not close, run locally
+with `--explain`: each open law's residual goal is printed and recorded in the
+manifest under `open_goal`. The documented escalation is more Aver, not Lean:
+split the law into helper laws (`because` explanations and `using`
+citations, see `docs/script-laws.md`), each of which is also a millisecond
+test under `aver verify`. A proven helper law is a rewrite rule for every law
+below it.
+
+## The elan default
+
+Until the pin carries jasisz/aver#1336, `aver proof` probes `lake --version`
+in the working directory before deciding whether to attempt the guarded
+(`when`) laws. An `elan` that has the pinned Lean installed but **no default
+toolchain** fails that probe, and every guarded law is silently emitted as
+bounded; the build still passes, so the only symptom is a manifest twelve
+laws short (87/8/6 instead of 99/2/0). The CI job sets the default from the
+generated `lean-toolchain` before checking, and locally `elan show` must list
+one:
+
+```bash
+elan default "$(cat ../btc-listener-proof/lean-toolchain)"
+```

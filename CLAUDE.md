@@ -105,9 +105,9 @@ go green, fast-forward merge (`git merge --ff-only`, never a merge commit —
 and fix anything red there**. The last step is not a formality: a branch that
 passed alone can still break `main` when another branch landed in the
 meantime, and only the post-merge run catches that. Stack a second fix on the
-first rather than waiting, and rebase it once the first is merged. CI is eight
+first rather than waiting, and rebase it once the first is merged. CI is nine
 jobs — `format`, `check`, `provider-tests`, `verify`, `verify-corpus`,
-`compile`, `wasm-node`, and `binary`; `binary` publishes the release artifact
+`proof`, `compile`, `wasm-node`, and `binary`; `binary` publishes the release artifact
 and runs only on `main`, so on a PR it shows as *skipping*, which is success,
 not a failure. Moving the Aver pin (above) is the one change that also touches
 `main`'s CI timing: the pinned toolchain is built from source, so a run after
@@ -158,6 +158,7 @@ aver verify . --module-root .                        # everything, corpus includ
 aver verify domain/script.av --module-root .         # one file's cases
 aver verify corpus --module-root .                   # the Core corpus only
 aver format . --check
+aver proof domain/interp.av --module-root . -o ../btc-listener-proof --check-json --declined-budget $(cat proof/interp.declined) --sorry-budget 0 --gate proof/interp.manifest.json   # the Script engine in Lean, what CI's proof job runs; docs/proofs.md, needs an elan default
 
 cargo test --manifest-path providers/primitives/Cargo.toml   # the providers carry their own Rust tests, run when you touch providers/
 cargo test --manifest-path providers/kv/Cargo.toml
