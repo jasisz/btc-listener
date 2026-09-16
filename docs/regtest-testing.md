@@ -2030,6 +2030,66 @@ caller: still connected after 34.1 s      <- polite, until the node was stopped
 caller: dropped after 0.0 s               <- locator
 dropping peer 1: a getheaders Locator of 102 Ids, more than the 101 Core allows
 ```
+### A Segment that grows under a running node
+
+n1bor/btc-listener#327. `Domain.Segment.place` derives every Location from
+the count the process carries, and `Disk.appendBytes` lands wherever the file
+ends; on mainnet the two drifted by 35,202,610 bytes and every Location in the
+Segment after that was wrong by exactly that, silently, until a body failed to
+hash two days later. Now the count is read against `Disk.size` twice per
+batch — before the batch's first append and again before its Locations are
+written — and a difference is a refusal on this node's own side, with no
+Location written and no Peer charged.
+
+Forcing it needs the file to change *under* a running node, because a node
+that reopens the directory counts from the disk and is self-correcting. Sync
+honestly, leave `follow` running at the tip, append bytes the count does not
+know about, then give it something to write:
+
+```bash
+timeout -s INT 90 $BIN regtest follow 127.0.0.1:18444 $D          # honest, to the tip
+$BIN regtest txindex $D 1 166 | tail -1; $BIN regtest outputs $D 1 166 | tail -1
+$BIN regtest audit $D 1 166 | tail -1                              # spends resolved 20, CLEAN
+timeout -s INT 120 $BIN regtest follow 127.0.0.1:18444 $D > follow-2.out 2>&1 &
+until grep -q "following at Height 166" follow-2.out; do sleep 0.2; done
+head -c 200 /dev/urandom >> $D/blocks/blk000000.dat               # a second writer, or a hand
+$C generatetoaddress 3 "$($C getnewaddress)" > /dev/null
+wait; echo "follow exit $?"; grep "count says" follow-2.out
+```
+
+The first append of the next batch reads the file, and the run ends where it
+stands:
+
+```
+follow exit 1
+the chain cannot be followed past here: Segment 0 is 46820 bytes on the disk where the count says 46620; a Location placed from the count would be 200 bytes off, so none was written, and the next open counts from the disk again
+```
+
+`show $D 169 summary` still names Core's Block at 169 — the Header was
+placed — but no body was located: `reindex` reports `166 Blocks located
+across 1 Segments`, the three new ones never reached the file. Then the
+recovery the message names:
+
+```bash
+$BIN regtest reindex $D | tail -1
+timeout -s INT 60 $BIN regtest follow 127.0.0.1:18444 $D | grep "following at"
+$BIN regtest show $D 169 summary | grep -oE "block  [0-9a-f]{64}"; $C getblockhash 169
+$BIN regtest txindex $D 1 169 | tail -1; $BIN regtest outputs $D 1 169 | tail -1
+$BIN regtest audit $D 1 169 | tail -1
+```
+
+```
+166 Blocks located across 1 Segments
+following at Height 169: 3 connected, 0 disconnected, set +3 -0
+block  346534530872c2177e38568902e3b1da66cb63db72e0935e579016478fc3ddd8
+346534530872c2177e38568902e3b1da66cb63db72e0935e579016478fc3ddd8
+blocks 169  transactions 189  spends resolved 20  coinbase 169  unresolved 0  scripts 20 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+```
+
+The reopened node counted from the disk (junk included, which the next record
+simply follows), fetched the three bodies, and agrees with Core hash for
+hash. Before the fix the same run writes three Locations 200 bytes short of
+their bodies and reports nothing until the Set walk tries to read one.
 
 ## A Peer that lies
 

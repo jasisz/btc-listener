@@ -131,7 +131,7 @@ fn needTwo(network: Network, rest: List<String>) -> Result<Unit, String>
     ? "The header phase wants an address and a directory."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.size, Disk.writeText,
         Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -147,7 +147,7 @@ fn withDir(network: Network, address: String, more: List<String>) -> Result<Unit
     ? "Take the directory that follows the address."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.size, Disk.writeText,
         Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -163,7 +163,7 @@ fn startHeaders(network: Network, parsed: Result<PeerAddress, String>, dir: Stri
     ? "Fetch every Header, or say why the address was rejected."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.size, Disk.writeText,
         Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -182,7 +182,7 @@ fn headerRun(network: Network, address: PeerAddress, dir: String) -> Result<Stri
       "one's — which is what lets a real database replace it untouched."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.makeDir, Disk.readText, Disk.size, Disk.writeText,
         Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -197,7 +197,7 @@ fn headersDone(network: Network, address: PeerAddress, dir: String) -> Result<St
     ? "Fill the Index, with the claim already taken."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.exists, Disk.makeDir,
+        Disk.appendBytes, Disk.appendText, Disk.exists, Disk.makeDir, Disk.size,
         Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,

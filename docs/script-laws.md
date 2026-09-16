@@ -296,6 +296,39 @@ It reports 46 universal laws (43 imported and these three), no bounded or open
 laws and zero build errors. Its 61 declined non-law claims remain explicit, so
 the unbudgeted strict command exits 1.
 
+## Segment placement: the writer's arithmetic is the reader's
+
+Six laws in `domain/segment.av` (n1bor/btc-listener#357), the pure half of
+#327. `place` derives a Location from the count the process carries, and
+`nextHeader` / `payloadAt` / `complete` are what `reindex` reads a Segment
+back with after a crash; nothing stated that the two agree until these.
+
+- `place.recordEndsAtUsed`: the record placed ends exactly at the new
+  `used`, in the Segment the state names, as long as the Block, past a header.
+- `place.consecutiveRecordsTile`: two consecutive placements either open the
+  next Segment at its first record or start one header past where the first
+  ended -- no gap, no overlap.
+- `place.staysUnderCap`: a record that fits under the cap never takes `used`
+  past it.
+- `place.agreesWithTheReader`: when the Segment does not roll, the offset is
+  `payloadAt(used)`, the state after is `nextHeader(used, n)`, and `complete`
+  holds for the record against a Segment that size.
+- `headerFor.readsBack`: `lengthOf(headerFor(n)) == Ok(n)` for every
+  `0 <= n < 2^32`, citing `Domain.Message.littleEndian.fourBytesReadBack`.
+- `nameOf.sortsWithSegment`: the file names sort as the Segment numbers do,
+  below a million.
+
+A seventh pair pins the effectful fix: `agreesWithDisk.theDiskItCountedAgrees`
+(the size the count says is accepted) and `agreesWithDisk.anyOtherSizeRefuses`
+(any other size is refused by name, with both numbers and the Segment).
+
+**Segment is outside the interpreter's proof cone**, so these are not in the
+CI proof job's count and have no Lean tier yet. They are checked by
+`aver verify domain/segment.av --module-root .` and by the same command with
+`--hostile`, which is where the `when` guards come from: a negative `used`
+or a negative Block length is not a world the writer is ever in, and a
+`rolls` case is exactly the one `agreesWithTheReader` is not about.
+
 ## Validation of the latest additions
 
 The final source passes `aver check . --module-root .` for all 149 modules and
