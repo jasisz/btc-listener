@@ -323,6 +323,29 @@ the proof job (#341) gating them. Tiers as the gate measured them at pin
 | `ScriptStep.landed.neverOverLimit` | a Step continues exactly when both stacks together fit in 1000 | universal |
 | `ScriptParse.parse.directPushRunsPastTheEnd` | the error string for a direct push with no data, for `1 <= n <= 75` | bounded (`when`) |
 
+## Laws added with the Regtest P2SH Height (n1bor/btc-listener#346)
+
+`Domain.Rules.at(Regtest, 0)` had SegWit on and P2SH off, because the P2SH
+Height table said 1 for regtest where the SegWit table said 0, and Core's
+`VerifyScript` asserts WITNESS never comes without P2SH. The table entry is
+now 0, and three laws over `at` pin the shape of every Height table against
+the rules Core states rather than against a value someone copied:
+
+| law | pins | tier |
+|---|---|---|
+| `Rules.at.witnessImpliesPayToScriptHash` | `segWit ⇒ payToScriptHash` on all four Networks at every activation Height and its neighbour; fails on the old table at (Regtest, 0) | universal |
+| `Rules.at.rulesOnlyTurnOn` | every rule in force at `h` is in force at `h + 1` (`eachRuleOn`, seven fields); Core's `DeploymentActiveAt` is monotone and nothing turns a soft fork off | universal |
+| `Rules.at.auditorGetsNoPolicy` | `at(n, h).policy == Policy.none()` on every Network: the #52 guarantee the module intent relies on, stated executably | universal |
+| `Rules.onOrStays.isImplication` | the one-field helper is material implication | universal |
+
+`Domain.Rules` is inside the `domain/interp.av` cone, so these are checked by
+the existing proof job and ratcheted by `proof/interp.manifest.json`. Measured
+locally at pin `b6a37c82` with the committed budgets: **111 universal, 3
+bounded, 0 open, 130 declined**, `--gate` reporting 0 regressions and the four
+as new. The implication law needed stating through `onOrStays` with
+`using [onOrStays.isImplication]`; written as a bare `Bool.or` over the two
+projections it opened at the implication and landed on `sorry`.
+
 Two proposals from #337 did not land and are recorded there: the truthiness
 roundtrip `isTruthy(fromNumber(n)) == (n != 0)` opens at the implication
 because it needs the digit lemmas the number laws are built from, and the

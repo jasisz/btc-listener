@@ -106,6 +106,7 @@ verify at
     at(Network.Testnet, 834623).segWit => false
     at(Network.Testnet, 834624).segWit => true
     at(Network.Regtest, 0).segWit => true
+    at(Network.Regtest, 0).payToScriptHash => true
     at(Network.Mainnet, 709631).taproot => false
     at(Network.Mainnet, 709632).taproot => true
     at(Network.Mainnet, 481824).taproot => false
@@ -115,6 +116,55 @@ verify at
     at(Network.Testnet, 330776).strictDer => true
     at(Network.Signet, 1).strictDer => true
     at(Network.Signet, 1).taproot => true
+
+verify at law witnessImpliesPayToScriptHash
+    given network: Network = [Network.Mainnet, Network.Testnet, Network.Signet, Network.Regtest]
+    given height: Int = [0, 1, 173804, 173805, 419327, 419328, 481823, 481824, 709631, 709632, 834623, 834624, 2011967, 2011968]
+    using [onOrStays.isImplication]
+    onOrStays(at(network, height).segWit, at(network, height).payToScriptHash) => true
+
+verify at law rulesOnlyTurnOn
+    given network: Network = [Network.Mainnet, Network.Testnet, Network.Signet, Network.Regtest]
+    given height: Int = [0, 1, 173804, 173805, 330775, 330776, 363724, 363725, 388380, 388381, 419327, 419328, 481823, 481824, 581884, 581885, 709631, 709632, 770111, 770112, 834623, 834624, 2011967, 2011968]
+    eachRuleOn(at(network, height), at(network, height + 1)) => true
+
+verify at law auditorGetsNoPolicy
+    given network: Network = [Network.Mainnet, Network.Testnet, Network.Signet, Network.Regtest]
+    given height: Int = [0, 1, 173805, 481824, 709632, 2011968]
+    at(network, height).policy => Domain.Policy.none()
+
+fn eachRuleOn(before: Rules, after: Rules) -> Bool
+    ? "Whether every rule in force under the first is still in force under the"
+      "second: a soft fork turns a rule on and nothing turns one off."
+      "Core's DeploymentActiveAt is monotone in Height, and every table in"
+      "this module is one Height compared with >=, so this holds by"
+      "construction today. It is stated so that a range excused by hand, or"
+      "a table whose entries are not a single threshold, would fail here"
+      "rather than judge a Block leniently and hide it."
+    Bool.and(Bool.and(Bool.and(onOrStays(before.payToScriptHash, after.payToScriptHash), onOrStays(before.strictDer, after.strictDer)), Bool.and(onOrStays(before.checkLockTimeVerify, after.checkLockTimeVerify), onOrStays(before.checkSequenceVerify, after.checkSequenceVerify))), Bool.and(Bool.and(onOrStays(before.segWit, after.segWit), onOrStays(before.nullDummy, after.nullDummy)), onOrStays(before.taproot, after.taproot)))
+
+verify eachRuleOn
+    eachRuleOn(at(Network.Mainnet, 0), at(Network.Mainnet, 1)) => true
+    eachRuleOn(at(Network.Mainnet, 173804), at(Network.Mainnet, 173805)) => true
+    eachRuleOn(at(Network.Mainnet, 173805), at(Network.Mainnet, 173804)) => false
+    eachRuleOn(at(Network.Mainnet, 709632), latest()) => true
+    eachRuleOn(latest(), at(Network.Mainnet, 0)) => false
+    eachRuleOn(latest(), latest()) => true
+
+fn onOrStays(before: Bool, after: Bool) -> Bool
+    ? "A rule that was on is still on; a rule that was off may do either."
+    Bool.or(before == false, after)
+
+verify onOrStays
+    onOrStays(false, false) => true
+    onOrStays(false, true) => true
+    onOrStays(true, true) => true
+    onOrStays(true, false) => false
+
+verify onOrStays law isImplication
+    given before: Bool = [false, true]
+    given after: Bool = [false, true]
+    onOrStays(before, after) => Bool.or(Bool.not(before), after)
 
 fn stillNop(rules: Rules, code: Int) -> Bool
     ? "Whether this opcode had no meaning yet and was simply a NOP."
@@ -246,20 +296,25 @@ fn payToScriptHashHeight(network: Network) -> Int
       "So the Height and the exception list are not merely in agreement so"
       "far, they cannot come apart on mainnet: the Blocks that could tell them"
       "apart all exist already and none of them does. n1bor/btc-listener#66."
-      "The other Networks are one because Core enforces P2SH from the start on"
-      "them, which for signet and regtest is also the historical truth: they"
-      "have never had a Block that predates it."
+      "The other Networks have it from the start, because Core enforces P2SH"
+      "on every Block it does not excuse by name and the one excused Block is"
+      "on mainnet. Testnet and signet say one; regtest says zero, the Height"
+      "its SegWit table names, because Core's VerifyScript asserts that"
+      "WITNESS never comes without P2SH and at(Regtest, 0) once broke that:"
+      "n1bor/btc-listener#346. For signet and regtest it is also the"
+      "historical truth: they have never had a Block that predates it."
     match network
         Network.Mainnet -> 173805
         Network.Testnet -> 1
         Network.Signet -> 1
-        Network.Regtest -> 1
+        Network.Regtest -> 0
 
 verify payToScriptHashHeight
     payToScriptHashHeight(Network.Mainnet) => 173805
     payToScriptHashHeight(Network.Testnet) => 1
     payToScriptHashHeight(Network.Signet) => 1
-    payToScriptHashHeight(Network.Regtest) => 1
+    payToScriptHashHeight(Network.Regtest) => 0
+    payToScriptHashHeight(Network.Regtest) => segWitHeight(Network.Regtest)
 
 fn underFlags(flags: List<String>) -> Rules
     ? "The rules Core's verification flags ask for, and no others."
