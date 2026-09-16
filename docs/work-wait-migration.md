@@ -237,6 +237,8 @@ listener cleanly. Both provider suites pass (8 primitives and 23 KV cases).
 The final fresh-node run passed all 24 automated scenarios in one run.
 [Machine-readable acceptance results](work-wait-acceptance.json) record the
 Aver pin, exact tested binary hash, platform, counts and separate idle deadline.
-Consumer GitHub CI has not been run for this local branch; its updated commands
-were exercised locally. Aver PRs #1382 and #1383 passed their remote checks
+Consumer GitHub CI ran on the published draft. Its Lean proof gate failed
+(9 build errors, 12 sorries); Core acceptance also hit a fixed-window PTY
+redraw assertion. These failures are under investigation; see PR #361 for
+the current check status. Aver PRs #1382 and #1383 passed their remote checks
 before merging.

@@ -294,11 +294,13 @@ jobs:
           key: proof-lake-${{ hashFiles('.aver-version', 'domain/**', 'infra/kv.av') }}-${{ runner.os }}
       - name: Export, then install the toolchain it names
         run: |
+          export AVER_SPECULATIVE_LOG="$RUNNER_TEMP/proof-speculative.log"
           aver proof domain/interp.av --module-root . -o "$RUNNER_TEMP/proof"
           elan toolchain install "$(cat "$RUNNER_TEMP/proof/lean-toolchain")"
           elan show
       - name: Check against the committed budgets and baseline
         run: |
+          export AVER_SPECULATIVE_LOG="$RUNNER_TEMP/proof-speculative.log"
           aver proof domain/interp.av --module-root . -o "$RUNNER_TEMP/proof" \
             --check-json \
             --declined-budget "$(cat proof/interp.declined)" \
@@ -310,7 +312,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: proof-summary
-          path: proof.json
+          path: |
+            proof.json
+            ${{ runner.temp }}/proof-speculative.log
           if-no-files-found: ignore
           retention-days: 14
 

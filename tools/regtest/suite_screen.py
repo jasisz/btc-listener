@@ -53,9 +53,13 @@ def screen(s, core):
             wait_until(lambda: txid in bytes(capture[marker:]).decode(errors="replace")
                        and re.search(re.escape(txid) + r" fee [0-9]+ sat(?!  in Mempool)", text()[len(re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", bytes(capture[:marker]).decode(errors="replace"))):]) is not None,
                        60, "same Screen row confirmed")
-        frames = text().count("o overview")
-        time.sleep(3)
-        assert text().count("o overview") >= frames + 2, "Screen redraw clock stopped"
+        # Each quiet frame must arrive within a bounded deadline. A fixed
+        # three-second sleep races the one-second poll, provider work and the
+        # PTY reader on a shared CI runner; two frames can straddle its edge.
+        for _ in range(2):
+            frames = text().count("o overview")
+            wait_until(lambda: text().count("o overview") > frames,
+                       5, "next periodic Screen frame")
         for forbidden in ("mempool admitted", "mempool refused", "dropping peer", "closed the connection", "did not answer", "compact Block"):
             assert forbidden not in text(), forbidden + " leaked into Screen"
         os.write(master, b"q")

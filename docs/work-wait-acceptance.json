@@ -2,9 +2,9 @@
   "date": "2026-09-16",
   "platform": "macOS arm64",
   "averCommit": "f6e8197d6f2c64cbdfc4b61f97e957fc649ea284",
-  "consumerRemoteCi": "not run; workflow steps exercised locally",
-  "nativeProfile": "iteration, replay disabled",
-  "binary_sha256": "8fc0d1eab4b174f110fa7326b1e1eb3bda07c12bee812ca6d6148d5779ad895f",
+  "consumerRemoteCi": "Run 35141615889 on 663cf84: Lean proof gate failed (9 build errors, 12 sorries), Core acceptance failed its fixed-window PTY redraw assertion. All other substantive checks passed. The PTY test now waits for two successive frames with individual five-second deadlines; the full 24-scenario local suite passes on the release binary. Lean fix remains in progress; see PR #361 for live status.",
+  "nativeProfile": "release, opt-level=3, LTO, one codegen unit, replay disabled",
+  "binary_sha256": "50985e232b0edada4c9bb64caa9f27be09fbff75e57a4bead7c77ec2e1950792",
   "core_version": "Bitcoin Core daemon version v31.1.0 bitcoind",
   "nativeRegtest": [
     {
