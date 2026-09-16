@@ -86,7 +86,12 @@ corpus is the only bridge to it.
 - **`proof/interp.declined`** — the declined budget, a number. It only goes
   down. A PR that lifts a decline (a recursion given a measure, a cone that no
   longer reaches a provider) lowers it in the same PR. A PR that raises it has
-  to say why in its own diff; CI will not raise it for you.
+  to say why in its own diff; CI will not raise it for you. Raised once so far,
+  130 → 134 with n1bor/btc-listener#347: two laws over `Domain.Transaction.decode`
+  and two fixture helpers whose cases call it. Every claim on `decode` is
+  declined by construction (the three mutual-recursion groups, #349), and a
+  refusal law about the decoder cannot live anywhere else; they run under
+  `aver verify` and `--hostile` and are the test the fix is measured by.
 - **`proof/interp.manifest.json`** — the per-law baseline: for every law, its
   tier, its theorem and its axiom set. CI runs `--gate` against it and fails on
   any law removed, demoted (universal > bounded > sampled > failed), whose

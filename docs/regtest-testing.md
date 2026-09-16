@@ -2007,6 +2007,71 @@ the same text is what the Screen would print:
 
 `curl | od -c` is the stronger check: no `033` anywhere in the page.
 
+### A body Core would not deserialise: a SegWit flag byte that is not 1, or witnesses that are all empty
+
+n1bor/btc-listener#347. The Transaction decoder used to step over the SegWit
+flag byte without reading it, and to accept a witness-serialised Transaction
+whose every Witness stack was empty. Core refuses both at deserialisation
+(`Unknown transaction optional data`, `Superfluous witness record`). Neither
+re-serialisation changes a Transaction Id, so the Merkle Root still matches
+the Header and `Domain.Body.fault` had nothing to refuse: the body was kept
+under its honest Block Id and served on, and a Core Peer handed those bytes
+disconnects from the node that served them. `liar.py` has one mode for each:
+`witnessflag` serves the honest Block with its coinbase's flag byte set to
+`0x02`; `emptywitness` serves it with the coinbase's Witness stack emptied (a
+regtest coinbase is SegWit-serialised, its Witness the 32-byte reserved
+value). Both answer `getheaders` honestly, so the Header is placed and the
+body is the only lie.
+
+Honest baseline first, on a chain from section 1 (the liar needs
+`bitcoin-cli` to fetch the real Block, so pass the whole command):
+
+```bash
+C="bitcoin-27.0/bin/bitcoin-cli -datadir=$RT -rpcuser=av -rpcpassword=av -regtest"
+timeout -s INT 60 $BIN regtest follow 127.0.0.1:18444 $D
+$BIN regtest audit $D 1 160 | tail -1      # spends resolved 20 ... 20 passed, CLEAN
+```
+
+Then each liar in turn, the liar first on the command line so the node asks
+it for the bodies, and three new Blocks mined after the liar is up:
+
+```bash
+for mode in witnessflag emptywitness; do
+  python3 tools/regtest/liar.py 18455 $mode "$C" 2> liar-$mode.log &
+  sleep 1; before=$($C getblockcount)
+  $C generatetoaddress 3 "$($C getnewaddress)" > /dev/null; after=$($C getblockcount)
+  timeout -s INT 60 $BIN regtest follow 127.0.0.1:18455,127.0.0.1:18444 $D > follow-$mode.out 2>&1
+  wait; grep "liar: sent" liar-$mode.log; grep "dropping peer" follow-$mode.out
+  $BIN regtest show $D $after summary | grep -oE "block  [0-9a-f]{64}"; $C getblockhash $after
+  $BIN regtest audit $D $((before + 1)) $after | tail -1
+done
+```
+
+Both runs end the same way: the liar's first body is refused by name and the
+liar is dropped, the honest Peer supplies the three Blocks, and the tip is
+Core's:
+
+```
+liar: sent 56dd40b6…f60e with flag byte 0x02
+dropping peer 0: Block 56dd40b6…f60e would not decode: Transaction carries unknown optional data
+block  56dd40b63622ce4a2cb74e4e212dd45d2d8bc3919c016ed9cae4c94d0797f60e
+56dd40b63622ce4a2cb74e4e212dd45d2d8bc3919c016ed9cae4c94d0797f60e
+blocks 3  transactions 3  spends resolved 0  coinbase 3  unresolved 0  scripts 0 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+
+liar: sent 38f1d26e…d90f with an empty Witness on each of 1 Input(s)
+dropping peer 0: Block 38f1d26e…d90f would not decode: Transaction carries a superfluous witness record
+block  38f1d26eeb221538920a07e28e39b9b16c69592ee3956df875d77d58a320d90f
+38f1d26eeb221538920a07e28e39b9b16c69592ee3956df875d77d58a320d90f
+blocks 3  transactions 3  spends resolved 0  coinbase 3  unresolved 0  scripts 0 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+```
+
+The audit over the three new Blocks reads `spends resolved 0` because they
+are coinbase-only; the twenty spends from the baseline are the Script
+evidence in this section, and the three Blocks are the body evidence. Before
+the fix the same run shows no `dropping` line, the lying bodies are what
+`show` prints, and the audit is still CLEAN — which is the point: nothing
+downstream can tell, only a Core Peer asking for the Block can.
+
 ### An Address Book that will not fill, and a host that gets one slot
 
 [#291](https://github.com/n1bor/btc-listener/issues/291), two halves. The

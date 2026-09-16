@@ -213,6 +213,116 @@ verify decode
     List.len(inputsOf(decode(Bytes.octets(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510202aabb01cc00000000")?))?)) => 1
     List.len(outputsOf(decode(Bytes.octets(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510202aabb01cc00000000")?))?)) => 1
     lockTimeOf(decode(Bytes.octets(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510202aabb01cc00000000")?))?) => 0
+    decode(withFlag(segwitVector(), 2)) => Result.Err("Transaction carries unknown optional data")
+    decode(withFlag(segwitVector(), 255)) => Result.Err("Transaction carries unknown optional data")
+    decode(withFlag(segwitVector(), 0)) => Result.Err("Transaction carries a SegWit marker and no Inputs")
+    decode(witnessWrapped(legacyVector(1))) => Result.Err("Transaction carries a superfluous witness record")
+    isSegWitOf(decode(legacyVector(1))?) => false
+    txidOf(decode(legacyVector(1))?) => "e563e2177169c448edef27ccdf2db9d66cbbd93f3176560b69d667145c51d79c"
+
+verify decode law refusesAFlagByteThatIsNotOne
+    given flag: Int = [0, 2, 3, 128, 255]
+    when flag != 1
+    refused(decode(withFlag(segwitVector(), flag))) => true
+
+verify decode law refusesAllEmptyWitnesses
+    given inputs: Int = [1, 2, 3]
+    refused(decode(witnessWrapped(legacyVector(inputs)))) => true
+
+fn refused(outcome: Result<Transaction, String>) -> Bool
+    ? "Whether decoding refused, for the laws above."
+    match outcome
+        Result.Ok(transaction) -> false
+        Result.Err(why) -> true
+
+verify refused
+    refused(Result.Err("no")) => true
+    refused(decode(segwitVector())) => false
+
+fn segwitVector() -> List<Int>
+    ? "The one-Input SegWit Transaction the cases above decode, as bytes."
+    Bytes.octets(Result.withDefault(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510202aabb01cc00000000"), Bytes.fromList([])))
+
+verify segwitVector
+    List.len(segwitVector()) => 70
+    List.take(List.drop(segwitVector(), 4), 2) => [0, 1]
+
+fn withFlag(raw: List<Int>, flag: Int) -> List<Int>
+    ? "The same bytes with the flag byte, the sixth, replaced."
+    List.concat(List.take(raw, 5), List.prepend(flag, List.drop(raw, 6)))
+
+verify withFlag
+    withFlag([1, 0, 0, 0, 0, 1, 9], 2) => [1, 0, 0, 0, 0, 2, 9]
+    List.len(withFlag(segwitVector(), 255)) => 70
+
+fn legacyVector(inputs: Int) -> List<Int>
+    ? "A legacy Transaction with this many Inputs, one Output and no Witness."
+      "Version 2, the count and that many Inputs each spending Output 0 of the"
+      "zero Transaction Id with an empty script, one Output of 5,000 satoshis"
+      "to OP_1 OP_1, and a lock time of zero. With one Input it is the SegWit"
+      "vector above less its Witness, and has the same Transaction Id. The"
+      "fixture knows one, two and three Inputs; any other count is built with"
+      "none, which a Witness wrapping still has to refuse."
+    List.concat([2, 0, 0, 0], List.concat(inputSection(inputs), [1, 136, 19, 0, 0, 0, 0, 0, 0, 2, 81, 81, 0, 0, 0, 0]))
+
+verify legacyVector
+    List.len(legacyVector(1)) => 62
+    List.len(legacyVector(2)) => 103
+    List.len(legacyVector(3)) => 144
+    List.len(inputsOf(decode(legacyVector(3))?)) => 3
+    txidOf(decode(legacyVector(2))?) => "faa444a26614544fa6147664abaf12211132a1bdc8a15b24567dd0b0c5623f28"
+
+fn inputSection(inputs: Int) -> List<Int>
+    ? "The Input count and the Inputs behind it, for legacyVector."
+    match inputs
+        1 -> List.prepend(1, inputBytes())
+        2 -> List.prepend(2, List.concat(inputBytes(), inputBytes()))
+        3 -> List.prepend(3, List.concat(inputBytes(), List.concat(inputBytes(), inputBytes())))
+        _ -> [0]
+
+verify inputSection
+    List.len(inputSection(1)) => 42
+    List.len(inputSection(3)) => 124
+    inputSection(0) => [0]
+    inputSection(4) => [0]
+
+fn inputBytes() -> List<Int>
+    ? "One Input: the zero Transaction Id, Output 0, an empty script, sequence 0xffffffff."
+    Bytes.octets(Result.withDefault(Bytes.fromHex("00000000000000000000000000000000000000000000000000000000000000000000000000ffffffff"), Bytes.fromList([])))
+
+verify inputBytes
+    List.len(inputBytes()) => 41
+
+fn emptyStacks(count: Int, acc: List<Int>) -> List<Int>
+    ? "One empty Witness stack -- a count of zero items -- per Input."
+      "A list built by counting down rather than Vector.new, which the wasm-gc"
+      "backend refuses inside a Result at this pin (the CI job named it)."
+    match count <= 0
+        true -> acc
+        false -> emptyStacks(count - 1, List.prepend(0, acc))
+
+verify emptyStacks
+    emptyStacks(0, []) => []
+    emptyStacks(3, []) => [0, 0, 0]
+    emptyStacks(0 - 1, [7]) => [7]
+
+fn witnessWrapped(raw: List<Int>) -> List<Int>
+    ? "A legacy Transaction re-serialised the SegWit way with nothing to say:"
+      "the marker and flag after the version, and one empty Witness stack per"
+      "Input before the lock time. The Transaction Id does not change, so the"
+      "Merkle Root of a Block holding it does not either, which is what makes"
+      "it dangerous (#347). The count is the fifth byte, so the fixture's"
+      "Transactions have to carry fewer than 253 Inputs, and they do."
+    length = List.len(raw)
+    count = Option.withDefault(Vector.get(Vector.fromList(raw), 4), 0)
+    List.concat(List.take(raw, 4), List.concat([0, 1], List.concat(List.take(List.drop(raw, 4), length - 8), List.concat(emptyStacks(count, []), List.drop(raw, length - 4)))))
+
+verify witnessWrapped
+    List.len(witnessWrapped(legacyVector(1))) => 65
+    List.len(witnessWrapped(legacyVector(3))) => 149
+    List.take(List.drop(witnessWrapped(legacyVector(2)), 4), 2) => [0, 1]
+    List.drop(witnessWrapped(legacyVector(2)), 101) => [0, 0, 0, 0, 0, 0]
+    witnessWrapped(legacyVector(1)) => Bytes.octets(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510000000000")?)
 
 fn decodeNext(raw: List<Int>) -> Result<Decoded, String>
     ? "Decode the Transaction at the front, and hand back what follows it."
@@ -220,7 +330,8 @@ fn decodeNext(raw: List<Int>) -> Result<Decoded, String>
       "one is to decode this one and see where it ended. Everything a Block scan"
       "does rests on that."
     afterVersion = List.drop(raw, 4)
-    build(raw, Domain.Message.readLittleEndian(List.take(raw, 4)), afterVersion, isSegWitMarker(afterVersion))
+    segwit = markerFault(afterVersion)?
+    build(raw, Domain.Message.readLittleEndian(List.take(raw, 4)), afterVersion, segwit)
 
 verify decodeNext
     decodeNext(Bytes.octets(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510202aabb01cc00000000")?))?.transaction.txid => "e563e2177169c448edef27ccdf2db9d66cbbd93f3176560b69d667145c51d79c"
@@ -231,17 +342,53 @@ verify decodeNext
     decodeNext(List.concat(Bytes.octets(Bytes.fromHex("0200000000010100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0188130000000000000251510202aabb01cc00000000")?), [7, 8, 9]))?.transaction.lockTime => 0
     decodeNext([]) => Result.Err("Transaction ends before its lock time")
     decodeNext([1, 2, 3]) => Result.Err("Transaction ends before its lock time")
+    decodeNext([1, 0, 0, 0, 0]) => Result.Err("Transaction ends inside its SegWit marker")
+    decodeNext([1, 0, 0, 0, 0, 2]) => Result.Err("Transaction carries unknown optional data")
 
-fn isSegWitMarker(afterVersion: List<Int>) -> Bool
-    ? "A zero byte where the Input count belongs marks SegWit serialisation."
+fn markerFault(afterVersion: List<Int>) -> Result<Bool, String>
+    ? "Whether the bytes after the version open a SegWit serialisation, or refuse to."
+      "A zero where the Input count belongs is the marker, and the flag byte"
+      "behind it has to be exactly one. Core's UnserializeTransaction reads"
+      "that byte as flags, clears bit one when it reads the Witnesses, and"
+      "refuses whatever is left: if (flags) throw std::ios_base::failure"
+      "(\"Unknown transaction optional data\"). This decoder used to step"
+      "over the byte unread (#347), so a flag of 2 or 255 was read as if it"
+      "were 1, and the body was kept under its honest Block Id and served."
     match afterVersion
-        [] -> false
-        [head, ..tail] -> head == 0
+        [] -> Result.Ok(false)
+        [head, ..tail] -> match head == 0
+            true -> flagFault(tail)
+            false -> Result.Ok(false)
 
-verify isSegWitMarker
-    isSegWitMarker([0, 1, 9]) => true
-    isSegWitMarker([1, 9]) => false
-    isSegWitMarker([]) => false
+verify markerFault
+    markerFault([0, 1, 9]) => Result.Ok(true)
+    markerFault([1, 9]) => Result.Ok(false)
+    markerFault([]) => Result.Ok(false)
+    markerFault([0, 2, 9]) => Result.Err("Transaction carries unknown optional data")
+    markerFault([0, 255, 9]) => Result.Err("Transaction carries unknown optional data")
+    markerFault([0, 0, 9]) => Result.Err("Transaction carries a SegWit marker and no Inputs")
+    markerFault([0]) => Result.Err("Transaction ends inside its SegWit marker")
+
+fn flagFault(afterMarker: List<Int>) -> Result<Bool, String>
+    ? "The flag byte behind a SegWit marker, which has to be exactly one."
+      "A zero is not optional data to Core: it reads an empty Input list and"
+      "a flag of nothing, so the Transaction has no Inputs, and CheckTransaction"
+      "refuses it one step later (bad-txns-vin-empty). Refusing it here changes"
+      "no verdict and names what it is. Any other value is optional data Core"
+      "does not know, and the Transaction never deserialises."
+    match afterMarker
+        [] -> Result.Err("Transaction ends inside its SegWit marker")
+        [flag, ..tail] -> match flag
+            1 -> Result.Ok(true)
+            0 -> Result.Err("Transaction carries a SegWit marker and no Inputs")
+            _ -> Result.Err("Transaction carries unknown optional data")
+
+verify flagFault
+    flagFault([1, 9]) => Result.Ok(true)
+    flagFault([0, 9]) => Result.Err("Transaction carries a SegWit marker and no Inputs")
+    flagFault([3, 9]) => Result.Err("Transaction carries unknown optional data")
+    flagFault([128]) => Result.Err("Transaction carries unknown optional data")
+    flagFault([]) => Result.Err("Transaction ends inside its SegWit marker")
 
 fn build(raw: List<Int>, version: Int, afterVersion: List<Int>, segwit: Bool) -> Result<Decoded, String>
     ? "Read the body, then assemble what was found."
@@ -314,15 +461,50 @@ fn attachWitnesses(inputs: List<Input>, segwit: Bool, afterOutputs: List<Int>) -
       "A Transaction with no Witnesses has nothing between its Outputs and its"
       "lock time, so the Outputs' remainder is already the answer."
     match segwit
-        true -> countWitnesses(inputs, afterOutputs, [], 0)
+        true -> witnessed(countWitnesses(inputs, afterOutputs, [], 0)?)
         false -> Result.Ok(WitnessRead(items = inputs, rest = afterOutputs, consumed = 0))
 
 verify attachWitnesses
-    List.len(attachWitnesses([], true, [])?.items) => 0
+    attachWitnesses([], true, []) => Result.Err("Transaction carries a superfluous witness record")
     List.len(attachWitnesses([], false, [])?.items) => 0
+    List.len(attachWitnesses([Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = [])], true, [1, 1, 170])?.items) => 1
+    attachWitnesses([Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = [])], true, [0, 0, 0, 0, 0]) => Result.Err("Transaction carries a superfluous witness record")
     attachWitnesses([], false, [9, 9])?.rest => [9, 9]
     attachWitnesses([], false, [9, 9])?.consumed => 0
     attachWitnesses([Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = [])], true, [255, 255, 255, 255, 255, 255, 255, 255, 255]) => Result.Err("Transaction claims 18446744073709551615 Witness item(s) in 0 byte(s)")
+
+fn witnessed(read: WitnessRead) -> Result<WitnessRead, String>
+    ? "A SegWit serialisation has to put something on at least one Witness stack."
+      "Core, once every stack is read: if (!tx.HasWitness()) throw"
+      "std::ios_base::failure(\"Superfluous witness record\"). A legacy"
+      "Transaction re-serialised with the marker and one empty stack per Input"
+      "keeps its Transaction Id, and so its Block's Merkle Root, so this is the"
+      "only check that sees it (#347): before it the body was kept under the"
+      "honest Block Id and served to any Peer that asked, and a Core Peer"
+      "handed those bytes disconnects from the node that served them."
+    match anyWitness(read.items)
+        true -> Result.Ok(read)
+        false -> Result.Err("Transaction carries a superfluous witness record")
+
+verify witnessed
+    witnessed(WitnessRead(items = [Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = ["aa"])], rest = [9], consumed = 2))?.consumed => 2
+    witnessed(WitnessRead(items = [Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = [])], rest = [9], consumed = 1)) => Result.Err("Transaction carries a superfluous witness record")
+    witnessed(WitnessRead(items = [], rest = [], consumed = 0)) => Result.Err("Transaction carries a superfluous witness record")
+
+fn anyWitness(inputs: List<Input>) -> Bool
+    ? "Whether any Input carries a Witness item at all: Core's HasWitness."
+      "One item of no bytes is an item, as it is to Core, whose stack is then"
+      "not empty."
+    match inputs
+        [] -> false
+        [head, ..tail] -> match head.witness
+            [] -> anyWitness(tail)
+            [item, ..more] -> true
+
+verify anyWitness
+    anyWitness([]) => false
+    anyWitness([Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = [])]) => false
+    anyWitness([Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = []), Input(previousTxid = "", previousIndex = 0, script = "", sequence = 0, witness = [""])]) => true
 
 fn countWitnesses(inputs: List<Input>, rest: List<Int>, acc: List<Input>, consumed: Int) -> Result<WitnessRead, String>
     ? "Walk the Witness stacks in step with the Inputs they belong to."
