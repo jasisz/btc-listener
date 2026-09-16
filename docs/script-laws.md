@@ -359,13 +359,28 @@ as new. The implication law needed stating through `onOrStays` with
 `using [onOrStays.isImplication]`; written as a bare `Bool.or` over the two
 projections it opened at the implication and landed on `sorry`.
 
-Two proposals from #337 did not land and are recorded there: the truthiness
-roundtrip `isTruthy(fromNumber(n)) == (n != 0)` opens at the implication
-because it needs the digit lemmas the number laws are built from, and the
-`isTruthy(item ++ [128]) == anyNonZero(item)` induction hits a `simp`
-heartbeat timeout that the current pin reports as a hard build error rather
-than a caught `sorry` (`../test/ISSUE-law-timeout-is-a-hard-error.md`). A
-third, that `minimalPush` is `isMinimalPush`-minimal, is false as stated:
+## The two truthiness laws (n1bor/btc-listener#344)
+
+Both #337 proposals that did not land the first time now close universally,
+with core axioms only, measured locally at pin `b6a37c82` on top of the
+Rules laws: **117 universal, 3 bounded, 0 open, 130 declined** for the cone
+(113 before the Rules laws are counted; `--gate` reports six new laws and
+no regression).
+
+| law | pins | tier |
+|---|---|---|
+| `StackItem.isTruthy.zeroIsFalse` | `isTruthy(fromNumber(n)) == (n != 0)`; `because truthinessReason` names the most significant digit and follows it through sign placement, citing `mostSignificantDigitIsNotZero`, `outsideByteRangeIsNeverAdded`, `zeroDigitWindow` and `placed.positiveTopIsTruthy` | universal |
+| `StackItem.isTruthy.negativeZeroIsFalse` | `isTruthy(item ++ [128]) == anyNonZero(item)`: a sign byte on nothing is false (BIP62 rule 3); `because negativeZeroReason` reads the reversal, citing `anyNonZero.reversal` | universal |
+| `StackItem.placed.positiveTopIsTruthy` | a positive top digit survives placement as a set byte | universal |
+| `StackItem.anyNonZero.setHeadIsEnough` | a set head decides | universal |
+| `StackItem.anyNonZero.concatenation` | set-in-the-join is set-on-either-side, by induction on the left | universal |
+| `StackItem.anyNonZero.reversal` | reversal does not change whether anything is set | universal |
+
+The `simp` heartbeat timeout #344 recorded for the second law did not
+recur once the reversal was stated as its own law and cited with `using`
+rather than left to the structural induction.
+
+The remaining #337 proposal, that `minimalPush` is `isMinimalPush`-minimal, is false as stated:
 `CScript() << vch` writes `[1]` as a one-byte push, which MINIMALDATA refuses
 in favour of OP_1, and `isMinimalPush.directPushIsMinimalUnlessSmallNumber`
 already pins exactly that.
