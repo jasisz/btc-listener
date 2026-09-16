@@ -1217,6 +1217,9 @@ turns on `<dir>/debug.log`, one line per *decision* — a phase started, a Peer
 seated or dropped and why, a fault and what it was charged to — so a run that
 ends under the Screen can be read afterwards rather than re-run in plain mode
 to see what stopped it ([#218](https://github.com/n1bor/btc-listener/issues/218)).
+Each line opens with the instant twice, `2026-09-14T23:06:16.648Z
+1789427176648`: the date for a person and the milliseconds for `awk`, from one
+read of the clock ([#360](https://github.com/n1bor/btc-listener/issues/360)).
 
 ## Reclaiming space
 

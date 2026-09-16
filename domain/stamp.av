@@ -1,0 +1,142 @@
+module Stamp
+    intent =
+        "A moment in milliseconds since the epoch, written the way a person reads"
+        "one: 2026-09-14T23:06:16.648Z."
+        "debug.log stamped every line with the raw millisecond count, and reading"
+        "why the mainnet node had stopped meant converting each one by hand and"
+        "subtracting two of them to learn that one turn of the loop had run for"
+        "twenty-two minutes (n1bor/btc-listener#359, #360). The audit line already"
+        "printed an ISO 8601 instant from Time.now, which is a second read of the"
+        "clock; this formats the milliseconds the caller already holds, so a line"
+        "carries one instant in two spellings and the two can never disagree."
+        "The civil date comes from the days-since-epoch arithmetic Howard Hinnant"
+        "published (the algorithm every libc++ chrono::year_month_day uses): shift"
+        "the day count so the era starts on 1 March 0000, which puts the leap day"
+        "last in the year, and the month and day fall out of a five-months-in-153-"
+        "days pattern. Every division below is by a literal, so it is total, and"
+        "every case is pinned to an instant Python's datetime produced, not to"
+        "this code."
+        "Negative instants are before 1970 and no clock here produces one; they"
+        "are formatted by the same arithmetic (Euclidean division keeps the day"
+        "count right) and not otherwise special. The laws are scoped to the"
+        "years 1970 to 9999, which is where the stamp is 24 characters; an"
+        "instant past that has a fifth digit in its year and the shape is not"
+        "promised."
+    exposes [isoOf]
+    depends [Domain.Text]
+    effects []
+
+fn isoOf(ms: Int) -> String
+    ? "The instant as YYYY-MM-DDTHH:MM:SS.mmmZ, always 24 characters."
+    days = Int.div(ms, 86400000)
+    inDay = Int.mod(ms, 86400000)
+    "{civilOf(days)}T{clockOf(inDay)}Z"
+
+verify isoOf
+    isoOf(0) => "1970-01-01T00:00:00.000Z"
+    isoOf(1231006505000) => "2009-01-03T18:15:05.000Z"
+    isoOf(951782400000) => "2000-02-29T00:00:00.000Z"
+    isoOf(1709164799999) => "2024-02-28T23:59:59.999Z"
+    isoOf(1789427176648) => "2026-09-14T23:06:16.648Z"
+    isoOf(1789572239928) => "2026-09-16T15:23:59.928Z"
+    isoOf(4102444799999) => "2099-12-31T23:59:59.999Z"
+    isoOf(253402300799999) => "9999-12-31T23:59:59.999Z"
+    isoOf(86399999) => "1970-01-01T23:59:59.999Z"
+    isoOf(86400000) => "1970-01-02T00:00:00.000Z"
+    String.len(isoOf(1789427176648)) => 24
+
+verify isoOf law alwaysTwentyFourCharacters
+    given ms: Int = [0, 1, 999, 1000, 86399999, 86400000, 951782400000, 1789427176648, 253402300799999]
+    when Bool.and(ms >= 0, ms < 253402300800000)
+    String.len(isoOf(ms)) => 24
+
+verify isoOf law dayAndClockAreIndependent
+    given day: Int = [0, 1, 59, 60, 365, 20710, 36524]
+    given inDay: Int = [0, 1, 3600000, 43200000, 86399999]
+    when Bool.and(Bool.and(day >= 0, day < 2932897), Bool.and(inDay >= 0, inDay < 86400000))
+    isoOf(day * 86400000 + inDay) => "{civilOf(day)}T{clockOf(inDay)}Z"
+
+fn clockOf(inDay: Int) -> String
+    ? "HH:MM:SS.mmm from the milliseconds into the day."
+    hours = Int.div(inDay, 3600000)
+    minutes = Int.div(Int.mod(inDay, 3600000), 60000)
+    seconds = Int.div(Int.mod(inDay, 60000), 1000)
+    millis = Int.mod(inDay, 1000)
+    "{two(hours)}:{two(minutes)}:{two(seconds)}.{Domain.Text.padLeft(String.fromInt(millis), 3)}"
+
+verify clockOf
+    clockOf(0) => "00:00:00.000"
+    clockOf(1) => "00:00:00.001"
+    clockOf(83176648) => "23:06:16.648"
+    clockOf(86399999) => "23:59:59.999"
+    clockOf(3661001) => "01:01:01.001"
+
+fn civilOf(days: Int) -> String
+    ? "YYYY-MM-DD from the days since 1970-01-01, by Hinnant's civil_from_days."
+      "719468 days separate 1970-01-01 from 0000-03-01, the start of an era of"
+      "400 years and 146097 days. Within the era the year of era corrects for"
+      "the leap days at 4, 100 and 400; the day of year counts from 1 March, so"
+      "months come out March-first and the last two are folded back."
+    z = days + 719468
+    era = Int.div(z, 146097)
+    doe = Int.mod(z, 146097)
+    yoe = Int.div(doe - Int.div(doe, 1460) + Int.div(doe, 36524) - Int.div(doe, 146096), 365)
+    doy = doe - (365 * yoe + Int.div(yoe, 4) - Int.div(yoe, 100))
+    mp = Int.div(5 * doy + 2, 153)
+    day = doy - Int.div(153 * mp + 2, 5) + 1
+    month = monthOf(mp)
+    year = yoe + era * 400 + yearCarry(month)
+    "{four(year)}-{two(month)}-{two(day)}"
+
+verify civilOf
+    civilOf(0) => "1970-01-01"
+    civilOf(1) => "1970-01-02"
+    civilOf(59) => "1970-03-01"
+    civilOf(11016) => "2000-02-29"
+    civilOf(11017) => "2000-03-01"
+    civilOf(19782) => "2024-02-29"
+    civilOf(20710) => "2026-09-14"
+    civilOf(47481) => "2099-12-31"
+    civilOf(0 - 1) => "1969-12-31"
+
+fn monthOf(mp: Int) -> Int
+    ? "The calendar month for a month counted from March."
+    match mp < 10
+        true -> mp + 3
+        false -> mp - 9
+
+verify monthOf
+    monthOf(0) => 3
+    monthOf(9) => 12
+    monthOf(10) => 1
+    monthOf(11) => 2
+
+fn yearCarry(month: Int) -> Int
+    ? "January and February belong to the next calendar year of the March era."
+    match month <= 2
+        true -> 1
+        false -> 0
+
+verify yearCarry
+    yearCarry(1) => 1
+    yearCarry(2) => 1
+    yearCarry(3) => 0
+    yearCarry(12) => 0
+
+fn two(n: Int) -> String
+    ? "Two digits, zero-padded."
+    Domain.Text.padLeft(String.fromInt(n), 2)
+
+verify two
+    two(0) => "00"
+    two(7) => "07"
+    two(23) => "23"
+
+fn four(n: Int) -> String
+    ? "Four digits, zero-padded."
+    Domain.Text.padLeft(String.fromInt(n), 4)
+
+verify four
+    four(1970) => "1970"
+    four(2026) => "2026"
+    four(1) => "0001"

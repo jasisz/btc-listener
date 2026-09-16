@@ -17,7 +17,7 @@ module Debug
         "Append rather than write, one line at a time, so a run stopped with"
         "Ctrl-C leaves a log whole to its last complete line."
     exposes [Note, none, toFile, opened, noted]
-    depends []
+    depends [Domain.Stamp]
     effects [Disk.appendText, Time.unixMs]
 
 record Note
@@ -55,5 +55,6 @@ fn writtenTo(note: Note, path: String, kind: String, text: String) -> Result<Not
       "words. Two fixed fields and then free text, so grep by kind works and"
       "nothing has to be parsed."
     ! [Disk.appendText, Time.unixMs]
-    _written = Disk.appendText(path, "{Time.unixMs()} {kind} {text}\n")?
+    nowMs = Time.unixMs()
+    _written = Disk.appendText(path, "{Domain.Stamp.isoOf(nowMs)} {nowMs} {kind} {text}\n")?
     Result.Ok(note)

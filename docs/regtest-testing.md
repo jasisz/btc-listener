@@ -2430,8 +2430,8 @@ in single figures however long the flood runs.
 `debug.log` says why each claim went nowhere:
 
 ```
-1788158079031 fault ignoring 0 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
-1788158080533 fault ignoring 1 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
+2026-08-31T06:34:39.031Z 1788158079031 fault ignoring 0 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
+2026-08-31T06:34:40.533Z 1788158080533 fault ignoring 1 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
 ```
 
 Fewer of those than the liar sent is expected and not a failure: a Message
