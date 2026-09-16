@@ -1,0 +1,32 @@
+module ResolverProbe
+    intent = "Run the production DNS adapter against a loopback fake resolver."
+    depends [Infra.Resolver]
+    effects [
+        Args.get,
+        Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+
+fn main() -> Result<Unit, String>
+    ! [
+        Args.get,
+        Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match Args.get()
+        [port, .._] -> show(Infra.Resolver.lookupAt("test.invalid", "127.0.0.1", Int.fromString(port)?))
+        _ -> Result.Err("resolver-probe PORT")
+
+fn show(answer: Result<List<List<Int>>, String>) -> Result<Unit, String>
+    ! [Console.print]
+    match answer
+        Result.Err(why) -> Result.Ok(Console.print("refused {why}"))
+        Result.Ok(addresses) -> Result.Ok(Console.print("resolved {List.len(addresses)}"))

@@ -97,20 +97,92 @@ on loopback with no public peers:
   native verify examples; 17 focused native cases cover deferred dispatch and
   partial-read ticks. These are executable checks, not universal proofs.
 
+## Remaining network waits removed
+
+Four groups of network stalls remained after the first Work slice: inline
+inbound/outbound greetings, peer writes, dashboard readers/writes, and DNS.
+The six blocking TCP call sites have been removed. The application contains no
+calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
+
+- Active inbound and outbound greetings are pool-owned state. Admission reserves
+  the key immediately; peerKeys and normal frame delivery expose a peer only
+  after verack. One ten-second deadline is retained across partial frames and
+  pings. At most four buffered greeting frames per peer are processed per
+  maintenance pass. Pre-verack traffic has the existing eight-frame cap and is
+  released in order only after a successful greeting. Failures discard its
+  pending state and close only that peer. An outbound greeting remains part of
+  the one-at-a-time dial budget; completion does not clear another dial.
+- Framed peer messages enter a FIFO bounded to 8 MiB and 256 messages per peer.
+  Each flush writes at most 64 KiB, accounts actual bytes, retains the exact
+  offset, and watches write readiness only while bytes remain. Overflow or
+  delayed write failure drops the offending peer. Closing a peer removes its
+  outbox, greeting and deferred input. These bounds intentionally refuse a
+  client that accumulates too much output.
+- The board retains up to sixteen clients and accepts at most four per turn.
+  Each client has a bounded 4 KiB request, a response offset and a single
+  five-second lifetime. Partial headers and responses survive across turns.
+  The latest Board travels back from catch-up Eyes; graceful shutdown releases
+  retained readers as well as the listener. Pending board readers get short
+  follow turns and enter the Work owner's combined wait on disjoint keys.
+- DNS uses beginConnect/dialled/readNow/writeNow with a single fifteen-second
+  deadline covering connect, write, prefix and response. Stop is checked between
+  waits of at most 100 ms. Seed discovery remains a sequential facade used at
+  startup or when no peers/candidates remain; it does not run a dashboard turn
+  during the lookup. Startup joined/handshake APIs likewise remain synchronous
+  facades, with bounded waits and cooperative stop checks.
+- The follow loop checks for its first ready peer again after a read turn,
+  because an asynchronous greeting can complete there and require catch-up.
+
+Reproduce the production adapter acceptance tests:
+
+```sh
+aver compile tools/network_probe.av --module-root . --target rust -o /tmp/btc-network-probe
+cargo build --manifest-path /tmp/btc-network-probe/Cargo.toml --profile iteration
+python3 tools/regtest/network-turns.py /tmp/btc-network-probe/target/iteration/network_probe
+
+aver compile tools/resolver_probe.av --module-root . --target rust -o /tmp/btc-resolver-probe
+cargo build --manifest-path /tmp/btc-resolver-probe/Cargo.toml --profile iteration
+python3 tools/regtest/resolver-turns.py /tmp/btc-resolver-probe/target/iteration/resolver_probe
+```
+
+Loopback observations on macOS arm64, iteration profile, 2026-09-16:
+
+- Silent inbound and outbound greetings: other-peer pong 23–30 ms (including
+  the harness's deliberate 20 ms fragmentation gap); owner stop 11–23 ms.
+- Receiver backpressure: another peer's pong 25–30 ms, then exact delivery of
+  4,000,000 payload bytes and the following three-byte marker with both
+  checksums and order verified. A fragmented HTTP request received a complete
+  response matching Content-Length.
+- A greeting sending periodic pings but no verack expired after 10.014 seconds;
+  a duplicate version dropped only its sender.
+- Fragmented DNS answered correctly; mid-body EOF failed without hanging.
+  SIGINT during a partial prefix returned in 45 ms. A one-byte prefix with no
+  remainder expired after 15.101 seconds.
+- Full node against Core: new live blocks 169 → 171 and final build 171 → 173, matching tip hash, all
+  twenty audit scripts passed. The earlier silent-inbound shutdown reproduction
+  improved from 9.771 seconds to 0.039 seconds. The final build also served a
+  complete 1,036-byte HTTP response during a silent greeting, then exited
+  zero 75 ms after SIGINT.
+- Check: 119/119 reachable modules. Focused native verify: 26 peer ownership/
+  queue cases and 37 resolver cases; Outbox VM verify: 9/9 cases.
+- Work regression: a 20,000-transaction decode still answered pong before
+  cancellation and returned cancellation in 100.17 ms. Native record/replay
+  with 10,000 transactions retained the announcement and passed.
+
+These are executable checks and individual latency observations, not universal
+proofs or performance guarantees. They cover the network adapters using real
+loopback sockets and the existing production Work owner.
+
 ## Remaining acceptance work
 
-This is a working migration slice, not a claim that every operation cooperates.
-A silent inbound handshake still runs inline: a real-node test measured
-**9.771 seconds** from SIGINT to exit while that handshake was pending. The
-existing ten-second handshake deadline explains the delay. Outbound handshakes,
-`Tcp.writeBytes` backpressure, synchronous owner-side database I/O and the
-board's per-reader wait are also still blocking paths. They need separate
-stateful nonblocking adapters; moving computation to Work does not fix them.
+Synchronous owner-side database and filesystem operations remain. Moving those
+safely requires preserving storage ownership and durability ordering; this
+change does not claim to make all I/O asynchronous. Native Work cancellation
+still discards a result rather than preempting its computation.
 
-Next acceptance work is loop-driven inbound/outbound handshakes, bounded partial
-writes, board readers retained across turns, and sustained hostile-peer tests.
-Also exercise overflow and the full #328 catch-up/announcement scenario against
-Core; the focused deferred-queue cases and the live two-block smoke do not cover
-every such schedule. Full-project VM verification and the complete standing
-regtest suite have not been run on this branch. Existing generic Work tests
-cover VM/native replay; the consumer probe currently covers native replay only.
+Sustained hostile-peer soak, full #328 catch-up/announcement schedules, and the
+complete standing regtest suite have not been run. Full-project VM verification
+has not been run either: focused consumer verify cases were run as native tests
+(the existing native exporter issue with negative Int expected literals was
+avoided by selecting the relevant peer cases). Generic Aver Work tests cover
+VM/native replay; this consumer probe covers native replay.

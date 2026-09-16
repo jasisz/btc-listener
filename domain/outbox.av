@@ -1,0 +1,60 @@
+module Outbox
+    intent = "A bounded FIFO of framed bytes. Partial writes consume only their accepted prefix; later messages cannot overtake it."
+    depends [Bytes]
+    exposes [Queued, empty, enqueue, front, consumed, byteLimit, messageLimit]
+
+record Queued
+    chunks: List<Bytes>
+    offset: Int
+    bytes: Int
+
+fn byteLimit() -> Int
+    8388608
+
+fn messageLimit() -> Int
+    256
+
+fn empty() -> Queued
+    Queued(chunks = [], offset = 0, bytes = 0)
+
+fn enqueue(queue: Queued, bytes: Bytes) -> Result<Queued, String>
+    ? "Bound both payload memory and the number of waiting frames. Overflow costs the slow peer."
+    match Bool.or(queue.bytes + Bytes.len(bytes) > byteLimit(), List.len(queue.chunks) >= messageLimit())
+        true -> Result.Err("peer outbox is full")
+        false -> Result.Ok(Queued(chunks = List.concat(queue.chunks, [bytes]), offset = queue.offset, bytes = queue.bytes + Bytes.len(bytes)))
+
+verify enqueue
+    enqueue(Queued(chunks = [], offset = 0, bytes = byteLimit()), Bytes.fromList([1])) => Result.Err("peer outbox is full")
+
+fn front(queue: Queued, budget: Int) -> Bytes
+    match queue.chunks
+        [] -> Bytes.empty()
+        [head, ..rest] -> Bytes.take(Bytes.drop(head, queue.offset), budget)
+
+verify front
+    Bytes.octets(front(sample(), 2)) => [1, 2]
+
+fn consumed(queue: Queued, count: Int) -> Queued
+    ? "A write consumes at most the current frame; zero preserves its place."
+    match queue.chunks
+        [] -> empty()
+        [head, ..rest] -> consumedHead(queue, head, rest, Int.min(Int.max(count, 0), Bytes.len(head) - queue.offset))
+
+verify consumed
+    Bytes.octets(front(consumed(sample(), 2), 10)) => [3]
+    Bytes.octets(front(consumed(consumed(sample(), 2), 1), 10)) => [4, 5]
+    consumed(sample(), 0) => sample()
+    consumed(sample(), 2).bytes => 3
+    consumed(consumed(sample(), 3), 2) => empty()
+
+fn consumedHead(queue: Queued, head: Bytes, rest: List<Bytes>, count: Int) -> Queued
+    match queue.offset + count == Bytes.len(head)
+        true -> Queued(chunks = rest, offset = 0, bytes = queue.bytes - count)
+        false -> Queued(chunks = queue.chunks, offset = queue.offset + count, bytes = queue.bytes - count)
+
+verify consumedHead
+    consumedHead(sample(), Bytes.fromList([1, 2, 3]), [Bytes.fromList([4, 5])], 3).bytes => 2
+    Bytes.octets(front(consumedHead(sample(), Bytes.fromList([1, 2, 3]), [Bytes.fromList([4, 5])], 3), 9)) => [4, 5]
+
+fn sample() -> Queued
+    Result.withDefault(enqueue(Result.withDefault(enqueue(empty(), Bytes.fromList([1, 2, 3])), empty()), Bytes.fromList([4, 5])), empty())

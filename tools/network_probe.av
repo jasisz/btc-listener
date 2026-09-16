@@ -1,0 +1,114 @@
+module NetworkProbe
+    intent = "Production network adapters under slow handshakes, partial writes and dashboard readers. No chain or database side effects."
+    depends [Bytes, Domain.Address, Domain.Network, Domain.Snapshot, Infra.Peers, Infra.Board]
+    effects [
+        Args.get,
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+
+fn main() -> Result<Unit, String>
+    ! [
+        Args.get,
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match Args.get()
+        [peer, ..rest] -> match rest
+            [port, ..tail] -> match tail
+                [board, .._] -> exercise(peer, Int.fromString(port)?, Int.fromString(board)?)
+                _ -> Result.Err("missing board port")
+            _ -> Result.Err("missing peer port")
+        _ -> Result.Err("network-probe PEER PORT BOARD")
+
+fn exercise(peer: String, port: Int, board: Int) -> Result<Unit, String>
+    ! [
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    pool = Infra.Peers.listening(Infra.Peers.opened(Network.Regtest), port, 0, 0)?
+    panel = Infra.Board.opened(board)?
+    dialing = Infra.Peers.dialling(pool, 0, Domain.Address.fromPeerText(peer, 18444)?)
+    Console.print("network ready")
+    turns(dialing, panel, 1)
+
+fn turns(pool: Infra.Peers.Pool, board: Infra.Board.Board, next: Int) -> Result<Unit, String>
+    ! [
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match Process.stopRequested()
+        true -> finish(pool, board)
+        false -> turn(pool, board, next)
+
+fn turn(pool: Infra.Peers.Pool, board: Infra.Board.Board, next: Int) -> Result<Unit, String>
+    ! [
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    advanced = Infra.Peers.advanced(pool)?
+    admitted = Infra.Peers.accepting(advanced, next)?
+    tick = Infra.Peers.awaitTick(admitted.pool, 10)?
+    served = dispatched(tick.pool, tick.arrived)?
+    panel = Infra.Board.served(board, Domain.Snapshot.started(0), Time.unixMs())
+    turns(served, panel, nextKey(next, admitted.seated))
+
+fn nextKey(next: Int, seated: Option<Int>) -> Int
+    match seated
+        Option.None -> next
+        Option.Some(key) -> key + 1
+
+verify nextKey
+    nextKey(3, Option.None) => 3
+    nextKey(3, Option.Some(3)) => 4
+
+fn dispatched(pool: Infra.Peers.Pool, arrived: Option<Infra.Peers.Spare>) -> Result<Infra.Peers.Pool, String>
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow]
+    match arrived
+        Option.None -> Result.Ok(pool)
+        Option.Some(one) -> match one.frame.command
+            "ping" -> Infra.Peers.tell(pool, one.key, "pong", Bytes.fromList(one.frame.body)?)
+            "load" -> loading(pool, one.key)
+            _ -> Result.Ok(pool)
+
+fn payload(bytes: Bytes, count: Int) -> Bytes
+    match count <= 0
+        true -> bytes
+        false -> payload(Bytes.concat(bytes, bytes), count - 1)
+
+verify payload
+    Bytes.octets(payload(Bytes.fromList([7]), 2)) => [7, 7, 7, 7]
+
+fn loading(pool: Infra.Peers.Pool, key: Int) -> Result<Infra.Peers.Pool, String>
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow]
+    sent = Infra.Peers.tell(pool, key, "bulk", Bytes.take(payload(Bytes.fromList([7]), 22), 4000000))?
+    marked = Infra.Peers.tell(sent, key, "marker", Bytes.fromList([1, 2, 3]))?
+    Console.print("bulk queued")
+    Result.Ok(marked)
+
+fn finish(pool: Infra.Peers.Pool, board: Infra.Board.Board) -> Result<Unit, String>
+    ! [Console.print, Tcp.close, Tcp.closeDial, Tcp.closeListener]
+    Infra.Board.closed(board)
+    _closed = Infra.Peers.closeAll(pool)?
+    Console.print("network stopped")
+    Result.Ok(Unit)

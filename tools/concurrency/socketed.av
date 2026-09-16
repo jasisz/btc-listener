@@ -3,6 +3,7 @@ module Socketed
     depends [Bytes, Tcp, Wait, Wire, Domain.Message, Domain.Network]
     effects [
         Args.get,
+        Random.int,
         Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
     ]
@@ -22,6 +23,7 @@ fn ping(state: State) -> Tuple<State, Wire.PingReply>
     ? "Bind once, then advance one nonblocking socket operation per answer."
     ! [
         Args.get,
+        Random.int,
         Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
     ]
@@ -53,7 +55,7 @@ fn parked(state: State, socket: Tcp.Socket) -> Tuple<State, Wire.PingReply>
     (state, Wire.PingReply.Later(Wait.Wake.Either(Wait.Item.Socket(socket), 100)))
 
 fn advance(state: State) -> Tuple<State, Wire.PingReply>
-    ! [Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.readNow, Tcp.writeNow]
+    ! [Random.int, Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.readNow, Tcp.writeNow]
     match state.peer
         Option.None -> accepting(state)
         Option.Some(peer) -> match Bytes.len(state.output) > 0
@@ -71,7 +73,7 @@ fn accepting(state: State) -> Tuple<State, Wire.PingReply>
                 Option.Some(peer) -> parked(State.update(state, peer = Option.Some(peer)), Tcp.Socket.Connected(peer))
 
 fn reading(state: State, peer: Tcp.Connection) -> Tuple<State, Wire.PingReply>
-    ! [Tcp.close, Tcp.closeListener, Tcp.readNow, Tcp.writeNow]
+    ! [Random.int, Tcp.close, Tcp.closeListener, Tcp.readNow, Tcp.writeNow]
     match Tcp.readNow(peer, 32 - Bytes.len(state.received))
         Result.Err(why) -> finished(state, Result.Err(why))
         Result.Ok(chunk) -> match chunk

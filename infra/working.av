@@ -1,6 +1,6 @@
 module Working
     intent = "One owned block calculation at a time. Wait on the same socket/job set, serve network turns, and cancel on every failed or stopped exit. Only the caller applies a result to chain state."
-    depends [Work, Wait, Tcp, Infra.BlockJobs, Domain.BlockWorkJob, Infra.Screen, Infra.Tending, Infra.Peers, Infra.Readiness]
+    depends [Work, Wait, Tcp, Infra.BlockJobs, Domain.BlockWorkJob, Infra.Board, Infra.Screen, Infra.Tending, Infra.Peers, Infra.Readiness]
     exposes [Completed, run]
     effects [
         Console.error, Console.print,
@@ -8,7 +8,7 @@ module Working
         Infra.BlockJobs.begin, Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -27,7 +27,7 @@ fn run(eye: Infra.Screen.Eye, task: Infra.BlockJobs.Task) -> Result<Completed, S
         Infra.BlockJobs.begin, Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -45,7 +45,7 @@ fn owned(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
         Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -63,7 +63,7 @@ fn waiting(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
         Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -77,13 +77,13 @@ fn waiting(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
 
 fn interests(eye: Infra.Screen.Eye, job: Work.Job) -> Map<Int, Wait.Item>
     ? "Even keys belong to sockets, including the listener and active dial; odd key 1 belongs only to this job."
-    Map.set(companyItems(eye.company), 1, Wait.Item.Job(job))
+    Map.set(boardItems(eye.board, companyItems(eye.company)), 1, Wait.Item.Job(job))
 
 fn companyItems(company: Option<Infra.Tending.Kept>) -> Map<Int, Wait.Item>
     ? "Watch the current pool's sockets and reserved dial, or only the job when no pool is attached."
     match company
         Option.None -> {}
-        Option.Some(held) -> withDial(socketItems(held.pool.sockets, Map.keys(held.pool.sockets), {}), held.pool.dialing)
+        Option.Some(held) -> withDial(socketItems(held.pool.sockets, Map.keys(held.pool.sockets), socketItems(Infra.Peers.watchSockets(held.pool), Map.keys(Infra.Peers.watchSockets(held.pool)), {})), held.pool.dialing)
 
 verify companyItems
     companyItems(Option.None) => {}
@@ -122,14 +122,14 @@ fn stopped(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
     Result.Ok(Completed(eye = eye, answer = Option.None))
 
 fn serving(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
-    ? "Serve peers, then park until a socket, job, or stop-check deadline wakes us. The existing handshake and write adapters still bound overall responsiveness."
+    ? "Serve peers, then park until a socket, job, or stop-check deadline wakes us. Peer handshakes and partial writes retain their state between bounded turns."
     ! [
         Console.error, Console.print,
         Disk.appendText,
         Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -138,3 +138,22 @@ fn serving(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
     served = Infra.Screen.attended(eye, Time.unixMs())?
     _ready = Wait.poll(interests(served, job), 100)?
     waiting(served, job)
+
+fn boardItems(board: Option<Infra.Board.Board>, items: Map<Int, Wait.Item>) -> Map<Int, Wait.Item>
+    ? "Job key 1 is reserved; board keys use odd integers from 3, disjoint from even peer keys."
+    match board
+        Option.None -> items
+        Option.Some(one) -> boardSockets(Infra.Board.watchSockets(one), Map.keys(Infra.Board.watchSockets(one)), items)
+
+verify boardItems
+    boardItems(Option.None, {}) => {}
+
+fn boardSockets(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, items: Map<Int, Wait.Item>) -> Map<Int, Wait.Item>
+    match keys
+        [] -> items
+        [key, ..rest] -> match Map.get(sockets, key)
+            Option.None -> boardSockets(sockets, rest, items)
+            Option.Some(socket) -> boardSockets(sockets, rest, Map.set(items, key * 2 + 3, Wait.Item.Socket(socket)))
+
+verify boardSockets
+    boardSockets({}, [], {}) => {}

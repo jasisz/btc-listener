@@ -22,7 +22,7 @@ module Bodies
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -80,7 +80,7 @@ fn bodies(network: Network, address: PeerAddress, store: Store, blocks: BlockSto
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -119,7 +119,7 @@ fn bodiesOn(pool: Pool, key: Int, store: Store, blocks: BlockStore, from: Int, t
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -145,7 +145,7 @@ fn wholly(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -227,7 +227,7 @@ fn flying(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -252,7 +252,7 @@ fn flyingWhile(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -281,7 +281,7 @@ fn flyingOn(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -311,7 +311,7 @@ fn tended(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -330,7 +330,7 @@ fn dialStarted(flight: Flight, done: Infra.Peers.Topped, to: Int) -> Result<Flig
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -351,7 +351,7 @@ fn turning(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -368,7 +368,7 @@ fn asking(flight: Flight, live: List<Int>, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -426,14 +426,14 @@ verify samplePlan
 
 fn assigned(flight: Flight, live: List<Int>) -> Result<Flight, String>
     ? "Each Peer given as much as it has room for."
-    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     match live
         [] -> Result.Ok(flight)
         [head, ..tail] -> assignedOn(flight, head, tail)
 
 fn assignedOn(flight: Flight, key: Int, rest: List<Int>) -> Result<Flight, String>
     ? "One Peer topped up, then the others."
-    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     toppedUp = batching(flight, key, perPeer() - owedBy(flight.plan, Map.keys(flight.plan.owed), key, 0), [])?
     assigned(toppedUp, rest)
 
@@ -461,21 +461,21 @@ verify countedFor
 
 fn batching(flight: Flight, key: Int, room: Int, taken: List<Claim>) -> Result<Flight, String>
     ? "Take Heights off the wanted list until this Peer is full."
-    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     match Bool.or(room <= 0, List.len(flight.plan.wanted) == 0)
         true -> requesting(flight, key, taken)
         false -> nextWanted(flight, key, room, taken)
 
 fn nextWanted(flight: Flight, key: Int, room: Int, taken: List<Claim>) -> Result<Flight, String>
     ? "The next Height, or nothing left to want."
-    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     match flight.plan.wanted
         [] -> requesting(flight, key, taken)
         [head, ..tail] -> claiming(withPlan(flight, withWanted(flight.plan, tail)), key, room, taken, head)
 
 fn claiming(flight: Flight, key: Int, room: Int, taken: List<Claim>, height: Int) -> Result<Flight, String>
     ? "A Height the Index does not name cannot be fetched, and ends the walk."
-    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     named = Domain.Index.blockIdIn(Infra.Store.get(flight.progress.store, Domain.IndexKeys.heightKey(height)?)?)
     match named
         Option.None -> Result.Err("no header for height {height}; run the header phase first")
@@ -485,7 +485,7 @@ fn claimingHeld(flight: Flight, key: Int, room: Int, taken: List<Claim>, height:
     ? "A Block already held is skipped, which is what makes the phase"
       "resumable. A skipped Height costs no room, so a walk over a range"
       "mostly held still fills every Peer."
-    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     held = Infra.Store.has(flight.progress.store, Domain.IndexKeys.blockKey(blockId)?)?
     match held
         true -> batching(flight, key, room, taken)
@@ -493,7 +493,7 @@ fn claimingHeld(flight: Flight, key: Int, room: Int, taken: List<Claim>, height:
 
 fn requesting(flight: Flight, key: Int, taken: List<Claim>) -> Result<Flight, String>
     ? "Nothing to ask for is the ordinary end of a top-up."
-    ! [Console.error, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Tcp.close, Tcp.writeNow]
     match taken
         [] -> Result.Ok(flight)
         [head, ..tail] -> requested(flight, key, List.prepend(head, tail))
@@ -503,7 +503,7 @@ fn requested(flight: Flight, key: Int, taken: List<Claim>) -> Result<Flight, Str
       "A getdata carries a list, so a batch is one Message rather than one"
       "each: the Peer sees the whole of what it owes at once and can answer"
       "in whatever order suits it."
-    ! [Console.error, Tcp.close, Tcp.writeBytes]
+    ! [Console.error, Tcp.close, Tcp.writeNow]
     payload = Domain.Inventory.getDataPayload(Domain.Inventory.witnessBlockType(), hashesOf(taken, [])?)?
     sent = Infra.Peers.tell(flight.progress.pool, key, "getdata", payload)?
     Result.Ok(Flight(progress = withPool(flight.progress, sent), plan = owedWith(flight.plan, taken, key), heardMs = flight.heardMs, deadlineMs = flight.deadlineMs))
@@ -531,7 +531,7 @@ fn waitingFor(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -547,7 +547,7 @@ fn landed(flight: Flight, arrived: Option<Spare>, to: Int) -> Result<Flight, Str
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -569,7 +569,7 @@ fn sorted(flight: Flight, one: Spare, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -588,7 +588,7 @@ fn ponged(flight: Flight, key: Int, frame: Frame, to: Int) -> Result<Flight, Str
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -614,7 +614,7 @@ fn blockIn(flight: Flight, frame: Frame, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -635,7 +635,7 @@ fn matched(flight: Flight, payload: Bytes, blockId: String, owed: Option<Owed>, 
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -658,7 +658,7 @@ fn kept(flight: Flight, payload: Bytes, blockId: String, owed: Owed, size: Int, 
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -675,7 +675,7 @@ fn filed(flight: Flight, payload: Bytes, blockId: String, size: Int, to: Int) ->
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -696,7 +696,7 @@ fn poisoned(flight: Flight, owed: Owed, why: String, to: Int) -> Result<Flight, 
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -716,7 +716,7 @@ fn quiet(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -740,7 +740,7 @@ fn stalled(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -804,7 +804,7 @@ fn reporting(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -819,7 +819,7 @@ fn saying(flight: Flight, to: Int, nowMs: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -840,7 +840,7 @@ fn said(flight: Flight, progress: Fetched, at: Int, to: Int, nowMs: Int) -> Resu
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,

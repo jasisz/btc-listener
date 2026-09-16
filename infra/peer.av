@@ -14,8 +14,9 @@ module Peer
     effects [
         Console.error, Console.print,
         Infra.Kv.getAll,
+        Process.stopRequested,
         Random.int,
-        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -32,8 +33,9 @@ fn run(network: Network, address: PeerAddress) -> Result<Unit, String>
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
+        Process.stopRequested,
         Random.int,
-        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -55,7 +57,9 @@ fn listen(pool: Pool) -> Result<Unit, String>
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -68,7 +72,9 @@ fn handle(pool: Pool, key: Int, frame: Frame) -> Result<Unit, String>
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -83,7 +89,9 @@ fn onAnnouncement(pool: Pool, key: Int, body: List<Int>) -> Result<Unit, String>
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -95,7 +103,9 @@ fn request(pool: Pool, key: Int, hashes: List<List<Int>>) -> Result<Unit, String
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -108,7 +118,9 @@ fn sendGetData(pool: Pool, key: Int, hashes: List<List<Int>>) -> Result<Unit, St
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -121,7 +133,9 @@ fn onTransaction(pool: Pool, key: Int, body: List<Int>) -> Result<Unit, String>
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -143,7 +157,9 @@ fn onPing(pool: Pool, key: Int, body: List<Int>) -> Result<Unit, String>
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,
-        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]

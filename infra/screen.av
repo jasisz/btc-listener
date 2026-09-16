@@ -12,8 +12,9 @@ module Screen
     effects [
         Console.error, Console.print,
         Disk.appendText,
+        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.unixMs,
         Wait.poll,
@@ -88,8 +89,9 @@ fn glanced(eye: Eye, nowMs: Int) -> Result<Eye, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
+        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -190,8 +192,9 @@ fn tendedCompany(eye: Eye, nowMs: Int) -> Result<Eye, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
+        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -204,8 +207,9 @@ fn tendedCompanyDue(eye: Eye, company: Kept, nowMs: Int, due: Bool) -> Result<Ey
     ! [
         Console.error, Console.print,
         Disk.appendText,
+        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -220,38 +224,12 @@ fn tendedAt(eye: Eye, company: Kept, nowMs: Int) -> Eye
 verify tendedAt
     tendedAt(unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), Infra.Tending.kept(Infra.Peers.opened(Network.Regtest), Domain.AddressBook.noBook(), 3, Infra.Metrics.none()), 500).tendedMs => 500
 
-fn boardEveryMs() -> Int
-    ? "How often a walk answers the Board: once a second, the loop's own"
-      "cadence, so a page asked for during a catch-up is a second away"
-      "rather than a chunk away (#261)."
-    1000
-
-verify boardEveryMs
-    boardEveryMs() => 1000
-
 fn answeredBoard(eye: Eye, nowMs: Int) -> Eye
-    ? "The Board answered from inside a walk, once a second, from the"
-      "Snapshot the Eye holds; a walk with no Board glances for free."
-    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
+    ? "Advance retained dashboard clients on each owner turn, with no per-reader wait."
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow]
     match eye.board
         Option.None -> eye
-        Option.Some(board) -> answeredBoardDue(eye, board, nowMs, nowMs - eye.boardMs >= boardEveryMs())
-
-fn answeredBoardDue(eye: Eye, board: Board, nowMs: Int, due: Bool) -> Eye
-    ? "Only when a second has passed since the last answer."
-    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
-    match due
-        false -> eye
-        true -> answeredBoardNow(eye, nowMs, Infra.Board.served(board, eye.snapshot, nowMs))
-
-fn answeredBoardNow(eye: Eye, nowMs: Int, served: Result<Unit, String>) -> Eye
-    ? "The clock moved on whatever the Board did: a Reader is its own"
-      "business, never the walk's."
-    Eye(view = eye.view, snapshot = eye.snapshot, shownMs = eye.shownMs, stopped = eye.stopped, log = eye.log, candidates = eye.candidates, board = eye.board, boardMs = nowMs, chunkFrom = eye.chunkFrom, chunkTo = eye.chunkTo, chunkStartedMs = eye.chunkStartedMs, chunkBudgetMs = eye.chunkBudgetMs, chunkSaid = eye.chunkSaid, blockEndedMs = eye.blockEndedMs, stopAskedMs = eye.stopAskedMs, company = eye.company, tendedMs = eye.tendedMs)
-
-verify answeredBoardNow
-    answeredBoardNow(unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), 5000, Result.Ok(Unit)).boardMs => 5000
-    answeredBoardNow(unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), 5000, Result.Err("x")).boardMs => 5000
+        Option.Some(board) -> Eye.update(eye, board = Option.Some(Infra.Board.served(board, eye.snapshot, nowMs)), boardMs = nowMs)
 
 fn glancedAt(eye: Eye, view: View, nowMs: Int) -> Result<Eye, String>
     ? "Keys folded, then the redraw decision."
@@ -353,8 +331,9 @@ fn attended(eye: Eye, nowMs: Int) -> Result<Eye, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
+        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
