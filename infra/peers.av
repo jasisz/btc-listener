@@ -10,15 +10,15 @@ module Peers
         "pings, which go unanswered until they drop us."
         "So bytes are taken as they come, kept per Peer, and Messages cut out"
         "of what has accumulated (Domain.Inbox). Readiness comes from one"
-        "Wait.poll over every socket, which is the primitive this stage was"
-        "waiting for (jasisz/aver#1013)."
+        "Wait.poll over peer read/write interests; the owner adds its dial,"
+        "listener and job interests when waiting during block work."
         "The conversation is still written as straight-line code. A caller"
         "that wants an answer from one Peer says so, and while it waits every"
         "other Peer is read, buffered and kept alive. That is the whole trick:"
         "the schedule is the loop's, the question is the caller's, and neither"
         "has to be written in terms of the other."
-        "Per ADR 0008 this module is the only thing here that touches a"
-        "socket, and it hands values back rather than writing anything down."
+        "Per ADR 0008 this module owns peer sockets and hands values back;"
+        "the caller alone applies results to chain state."
     exposes [watchSockets, popSpare, Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, opened, listening, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers]
     depends [Domain.Outbox, Infra.Readiness, Bytes, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Handshake, Domain.Inbox, Domain.Message, Domain.Network, Domain.Snapshot, Domain.Version]
     effects [
@@ -95,8 +95,8 @@ record Polled
 
 fn readChunk() -> Int
     ? "How many bytes to take off a ready socket at once."
-      "A ceiling rather than a target: Tcp.readSome returns as soon as"
-      "anything is there, so this only bounds how much one Peer can hand over"
+      "A ceiling rather than a target: Tcp.readNow takes available bytes"
+      "or reports no progress, bounding how much one Peer can hand over"
       "before the loop looks at the others. Sixty-four kilobytes is about"
       "what a socket buffer holds, so a bigger number would rarely be filled"
       "and a much smaller one would cut a Block into needless pieces."

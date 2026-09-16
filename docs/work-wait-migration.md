@@ -175,6 +175,12 @@ loopback sockets and the existing production Work owner.
 
 ## Remaining acceptance work
 
+The existing `wasm/host.mjs` conformance harness still implements the legacy
+`tcp_poll` ABI. This branch has not ported its Work/Wait bindings or validated
+the migrated application through wasm CI. The native results above do not establish
+wasm compatibility. The `.aver-version` pin also still needs moving to a
+revision containing the compiler fixes specified above.
+
 Synchronous owner-side database and filesystem operations remain. Moving those
 safely requires preserving storage ownership and durability ordering; this
 change does not claim to make all I/O asynchronous. Native Work cancellation

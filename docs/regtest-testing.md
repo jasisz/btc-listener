@@ -1699,8 +1699,9 @@ $BIN regtest follow $PEERS $D log:/tmp/m.log # somewhere else
 **`polledMs` and `workedMs` are the pair worth having.** Everything else is
 already on the Overview or recoverable from the store afterwards; the split
 between waiting for a Peer and working on what it sent exists only while it is
-happening. `Tcp.poll` is bracketed by two clock readings, so `polledMs` is
-wall clock inside the poll and `workedMs` is the rest of the window.
+happening. The Peers `Wait.poll` is bracketed by two clock readings, so
+`polledMs` is wall clock inside that poll and `workedMs` is the rest of the
+window. This does not aggregate the separate Work-owner and dashboard waits.
 
 Read the shape of a regtest run and you can see what it is telling you:
 
@@ -2043,10 +2044,9 @@ peer 1 dialled us from 127.0.0.1:49810
 refused an inbound Peer from 127.0.0.1:52690: already holding one from that host
 ```
 
-The first caller has to be a Peer, not merely connected: the greeting runs
-inline (#30), so a second caller that arrives while the first is still being
-greeted is accepted only after the first was dropped, and by then the host
-holds nothing.
+In the Work/Wait branch, a pending greeting already reserves the host's slot.
+The first caller can therefore be silent while the second is refused; it no
+longer needs to finish its Handshake before the host cap can be tested.
 
 ### A fault in the chain directory is nobody's fault
 
@@ -2115,18 +2115,23 @@ dropping inbound peer 1 from 127.0.0.1:58086: Peer 1 did not answer before its d
 dropping inbound peer 1 from 127.0.0.1:54576: Peer 1 did not answer before its deadline
 ```
 
-The callers say how long they were held — `early` 0.0 s, `chatty` 1.0 s,
+The original deadline-fix run measured — `early` 0.0 s, `chatty` 1.0 s,
 `silent` 11.0 s, `pinger` 15.0 s (the deadline is ten; the loop accepts on a
 quiet turn, and the pinger only learns it was dropped on its next send) —
 where before it was up to 150 s and for ever.
-What this does not change: the greeting still runs inline, so those ten
-seconds are still the loop's — #30 is the loop-driven Handshake that ends
-that.
+That run still used an inline greeting. The Work/Wait branch now retains
+pending greeting state between bounded turns: ten seconds occupies the
+caller's slot while other Peers and the dashboard remain serviceable. The
+[current network probes](work-wait-migration.md#remaining-network-waits-removed)
+cover silent inbound/outbound callers, the non-renewing deadline and partial
+writes; those measurements are separate from the historical numbers above.
 
 ### A caller that will not finish its Handshake, while another Peer goes
 
-The one above costs the caller its slot. This one costs the node, and it is
-[#304](https://github.com/n1bor/btc-listener/issues/304). It needs two things
+The original failure below cost the node, and was tracked as
+[#304](https://github.com/n1bor/btc-listener/issues/304). The recorded logs
+retain the old `Tcp.poll` name. The scenario remains a useful resource-ownership
+regression for the Work/Wait branch. It needs two things
 at once and neither on its own does anything: a caller whose Handshake does not
 complete, and another Peer disconnecting while that Handshake waits. The
 Handshake reads every Peer while it waits, so the second Peer is closed and
@@ -2170,8 +2175,10 @@ following. Give it a minute before believing it.
 Run it a second time against one node only (`follow 127.0.0.1:18454`), so that
 the disconnect empties the pool. Before, that died the same way; now the node
 carries on and goes back to dialling the Book. What would be a fail either way
-is `Tcp.poll: unknown connection` — the node blaming the runtime for its own
-bookkeeping.
+is an unknown-connection failure escaping the owner (historically
+`Tcp.poll: unknown connection`) — the node blaming the runtime for its own
+bookkeeping. The complete standing suite, including this scenario, has not
+yet been rerun for the Work/Wait migration; see its acceptance document.
 
 Underneath the Handshake, a poll that names a released Connection now sheds
 those Peers, says so, and asks again:

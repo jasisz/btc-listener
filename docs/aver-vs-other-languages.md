@@ -235,16 +235,22 @@ counts its cases.
 | Java / Scala | JIT; no hidden second-stage failures; GC pauses are the only cliff. Scala's compile times are the pain. |
 | Python | No compile step; predictable slowness — the 1.45 M-entry Index open and the twelve-input sighash cases would be painful but not surprising. |
 
-### 11. Concurrency: independent products `(a, b)?!`, `Tcp.poll`, a single-writer loop
+### 11. Concurrency: independent products, Work/Wait, a single-writer loop
 
-**Here.** No threads, async or channels. Several Peers on one loop over
-`Tcp.poll`; `awaitFrom` keeps one conversation straight-line while the other
-Peers are pumped. `?!` gives a thread per branch when compiled, runs
-sequentially under verify, and reverse-order rerun is a falsifier (ADR
-0008). The design is clean and verifiable, but it existed only because the
-author asked for `poll`, `readSome`, `beginConnect`/`dialled` and
-`listen`/`accept` in turn (#1013, #1125, #1131) — each a blocked stage until
-upstream shipped it, usually within a day.
+**Updated for the Work/Wait branch, 16 September 2026.** Several Peers share
+one owner loop over `Wait.poll`, with explicit pending handshakes and partial
+read/write state. A typed Work job can now span serving turns: native workers
+decode Blocks and calculate UTXO changes while the owner handles the network,
+then the owner applies the answer. The single-writer rule is an application
+design discipline, not something `Wait` enforces by itself. Independent
+products still join within one call; their reverse-order rerun is a falsifier,
+not a proof of independence. See the [ADR update](adr/0008-independence-and-a-single-writer-loop.md#update-workwait-migration-16-september-2026)
+and [migration acceptance](work-wait-migration.md).
+
+The comparison below records the earlier August design. Its missing primitives
+arrived through `poll`, `readSome`, `beginConnect`/`dialled` and
+`listen`/`accept` requests (#1013, #1125, #1131); the old module size is a
+historical measurement, not the size after this migration.
 
 | Language | Compared with Aver |
 |---|---|
@@ -254,8 +260,9 @@ upstream shipped it, usually within a day.
 | Scala | Akka actors or fs2 streams — natural for a Peer pool. |
 | Python | asyncio — a good fit, easy; the GIL is irrelevant for I/O. |
 
-Every alternative is easier to write; none gives the reverse-and-reverify
-falsifier or the single-writer invariant for free.
+These alternatives offer established scheduling APIs. The useful comparison
+for this project is how much explicit state and test machinery each requires;
+none of those APIs alone establishes the application's single-writer invariant.
 
 ### 12. Module system: glob imports, `exposes opaque`, `depends`
 

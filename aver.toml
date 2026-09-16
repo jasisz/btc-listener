@@ -50,7 +50,7 @@ reason     = "one entry of script_assets_test.json is a 406 KB tapscript spend w
 # arrived with jasisz/aver#1118, which is closed; this setting is not its
 # workaround and does not retire with it, which is why it is still here now
 # that jasisz/aver#1125 has closed too. What changed with #1125 is who waits:
-# the dial is a key in Tcp.poll (Infra.Peers.joined), so this deadline ends
+# the dial is now a key in Wait.poll (Infra.Peers.dialling/advanced), so it ends
 # one Candidate rather than holding up every Peer for five seconds.
 # Five again: the walk tends its company once a second now (#275), so a dial
 # begun while walking is asked about within a second of connecting. The
