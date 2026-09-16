@@ -150,8 +150,14 @@ def trial(binary, count, cancel=False, record=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("binary")
+    parser.add_argument("binary", nargs="?")
+    parser.add_argument("--payload", type=Path, help="write only the synthetic workload for another host")
     parser.add_argument("--count", type=int, default=20000)
     parser.add_argument("--mode", choices=["deliver", "cancel", "record"], default="deliver")
     args = parser.parse_args()
-    print(json.dumps(trial(str(Path(args.binary).resolve()), args.count, args.mode == "cancel", args.mode == "record")), flush=True)
+    if args.payload:
+        payload(args.payload, args.count)
+    else:
+        if not args.binary:
+            parser.error("binary is required unless --payload is supplied")
+        print(json.dumps(trial(str(Path(args.binary).resolve()), args.count, args.mode == "cancel", args.mode == "record")), flush=True)

@@ -3619,8 +3619,8 @@ fn completed(state: Following, key: Int, compact: Compact, built: Result<Bytes, 
 fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplied: Int) -> Result<Unit, String>
     ? "Put the rebuilt Block where a fetched one would have gone -- once it"
       "is proved to be a Block this node is waiting for (#283). It has to"
-      "be the one being rebuilt, its Header has to be in the tree, which is"
-      "where proof of work was checked, and its body has to pass Domain.Body"
+      "be the one being rebuilt, its carried Header must pass the ordinary"
+      "Header pipeline, and its body has to pass Domain.Body"
       "like any fetched one. Anything else falls back to the ordinary fetch,"
       "which asks for Headers first and checks them."
     ! [
@@ -3636,10 +3636,40 @@ fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplie
         Work.cancel,
     ]
     blockId = Domain.Block.blockIdOf(Result.withDefault(Bytes.fromList(compact.header), Bytes.fromList([])))
-    placed = Infra.Store.get(state.store, Domain.TreeStore.headerKey(blockId)?)?
-    match storable(state.rebuilding, blockId, placed, Domain.Body.fault(payload, blockId))
-        Option.Some(why) -> fellBack(state, key, why)
-        Option.None -> putAway(state, key, compact, payload, supplied, blockId)
+    match compactStore(state.pool.network, state.store, state.rebuilding, compact.header, payload, blockId, Int.div(Time.unixMs(), 1000))
+        Result.Err(why) -> fellBack(state, key, why)
+        Result.Ok(store) -> putAway(Following.update(state, store = store), key, compact, payload, supplied, blockId)
+
+fn compactStore(network: Network, store: Store, rebuilding: Option<Rebuilding>, header: List<Int>, payload: Bytes, blockId: String, nowSecs: Int) -> Result<Store, String>
+    ? "A compact response carries its Header. Validate it through the same Header pipeline as getheaders, after checking the requested Id and body, then require an actual placement before keeping bytes."
+    ! [Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll]
+    _expected = expectedCompact(rebuilding, blockId)?
+    match Domain.Body.fault(payload, blockId)
+        Option.Some(why) -> Result.Err(why)
+        Option.None -> placedCompact(network, store, header, blockId, nowSecs)
+
+fn expectedCompact(rebuilding: Option<Rebuilding>, blockId: String) -> Result<Unit, String>
+    ? "An unrequested or mismatched compact response cannot change the Header tree."
+    match rebuilding
+        Option.None -> Result.Err("a compact Block {blockId} was rebuilt with nothing being rebuilt")
+        Option.Some(pending) -> match pending.blockId == blockId
+            true -> Result.Ok(Unit)
+            false -> Result.Err("a compact Block {blockId} arrived while {pending.blockId} was being rebuilt")
+
+verify expectedCompact
+    expectedCompact(Option.None, "aa") => Result.Err("a compact Block aa was rebuilt with nothing being rebuilt")
+    expectedCompact(Option.Some(sampleRebuilding("bb")), "aa") => Result.Err("a compact Block aa arrived while bb was being rebuilt")
+    expectedCompact(Option.Some(sampleRebuilding("aa")), "aa") => Result.Ok(Unit)
+
+fn placedCompact(network: Network, store: Store, header: List<Int>, blockId: String, nowSecs: Int) -> Result<Store, String>
+    ? "Apply ordinary proof-of-work, parent, target and timestamp checks; an orphan remains unstoreable."
+    ! [Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll]
+    decoded = Domain.Block.decodeHeader(header)?
+    settled = Infra.Headers.absorbed(network, store, [decoded], nowSecs)?
+    placed = Infra.Store.get(settled.store, Domain.TreeStore.headerKey(blockId)?)?
+    match storablePlaced(blockId, placed, Option.None)
+        Option.Some(why) -> Result.Err(why)
+        Option.None -> Result.Ok(settled.store)
 
 fn storable(rebuilding: Option<Rebuilding>, blockId: String, placed: Option<Bytes>, fault: Option<String>) -> Option<String>
     ? "Why a rebuilt Block may not be kept, or nothing."

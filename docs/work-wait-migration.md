@@ -25,11 +25,12 @@ branch does not claim that cancellation terminates native computation.
 
 ## Compiler requirement and build
 
-Use Aver PR [#1382](https://github.com/jasisz/aver/pull/1382), tested at
-`14b8ff6d`, or a revision containing it. The compiler fixes nested capability
-wrapper identifiers, composed-program binding checks, and native replay of
-records containing Bytes-keyed maps. Current Aver main without the PR does not
-build this consumer slice correctly.
+The `.aver-version` pin is `2f1eb8066b7ffb63aaa4d232ce287a019baa74eb`,
+containing merged Aver PRs [#1382](https://github.com/jasisz/aver/pull/1382)
+and [#1383](https://github.com/jasisz/aver/pull/1383). The first fixes nested
+capability wrapper identifiers, composed-program binding checks and native
+replay of records containing Bytes-keyed maps. The second lets the Work host
+preserve an explicitly supplied JSPI `wait_poll` import.
 
 The upstream provider Cargo manifests already contain the author's absolute
 local aver-rt path. For a local build, set both `providers/primitives/Cargo.toml`
@@ -173,22 +174,63 @@ These are executable checks and individual latency observations, not universal
 proofs or performance guarantees. They cover the network adapters using real
 loopback sockets and the existing production Work owner.
 
-## Remaining acceptance work
+## Node wasm acceptance
 
-The existing `wasm/host.mjs` conformance harness still implements the legacy
-`tcp_poll` ABI. This branch has not ported its Work/Wait bindings or validated
-the migrated application through wasm CI. The native results above do not establish
-wasm compatibility. The `.aver-version` pin also still needs moving to a
-revision containing the compiler fixes specified above.
+`wasm/host.mjs` now supplies `Wait.poll`, `Tcp.readNow` and `Tcp.writeNow`.
+The Work adapter is copied unchanged from the pinned Aver source under
+`wasm/aver-work/`; CI checks its bytes against that source. Socket wait
+subscriptions are removed when a job wins the wait. Drain events resume
+backpressured writers, and SIGINT/SIGTERM stop the Work owner.
+
+The production Work probe decodes 2,000 synthetic transactions in a Node worker
+while the main instance handles a fragmented ping. Delivery and cancellation
+both preserve the deferred inv; pong must precede the result, and cancellation
+must not deliver a decoded result. The full CLI separately rejects a corrupt
+frame and exits promptly after its final peer disappears. A real Core regtest
+run synced through height 175 and stopped cooperatively.
+
+The host uses temporary Disk and in-memory KV. These tests establish this
+application's Work/Wait path in Node, not durable deployment parity with native
+RocksDB. Native cancellation still discards an answer without preempting the
+running computation.
+
+## Repeatable native acceptance
+
+`tools/regtest/suite.py` automates fresh isolated Core nodes, the four script
+types, reorganisations and undo, relay, compact reconstruction, inbound sync,
+catch-up announcements, hostile peers, the terminal Screen and storage guards.
+It keeps a JSON report and logs after cleaning up its processes. CI consumes
+the existing native build artifact and runs this suite against pinned Core 31.1.
+See [the standing regtest guide](regtest-testing.md) for invocation and scope.
+
+This run caught two application issues: an empty peer pool waited for a full
+timeout, and a valid compact response arriving before its separate Header was
+needlessly fetched whole. The owner now rejects an empty pool immediately.
+A compact response first checks the requested Id and body, then sends its
+carried Header through the ordinary proof-of-work/parent/target/timestamp
+pipeline and requires a placement before writing the body.
+
+Full VM verification now passes for the main program: 9,866 examples passed,
+zero failed, 464 skipped by their `when` guards. The Core-corpus graph also
+passes: 12,621 examples, zero failed, 464 guarded skips. These totals overlap
+because both graphs include shared modules; they must not be added together.
 
 Synchronous owner-side database and filesystem operations remain. Moving those
-safely requires preserving storage ownership and durability ordering; this
-change does not claim to make all I/O asynchronous. Native Work cancellation
-still discards a result rather than preempting its computation.
+requires preserving storage ownership and durability ordering. These executable
+checks are not universal proofs or latency guarantees.
 
-Sustained hostile-peer soak, full #328 catch-up/announcement schedules, and the
-complete standing regtest suite have not been run. Full-project VM verification
-has not been run either: focused consumer verify cases were run as native tests
-(the existing native exporter issue with negative Int expected literals was
-avoided by selecting the relevant peer cases). Generic Aver Work tests cover
-VM/native replay; this consumer probe covers native replay.
+Static checks use `python3 tools/check-projects.py`: the production project
+and the historical `tools/concurrency` experiment have distinct module roots.
+Every nested project is checked separately, rather than treating its short
+imports as production imports.
+
+The separate production idle-deadline test passed after 1,200.413 seconds: a
+quiet inbound was closed, its owner stayed alive, and SIGINT then stopped the
+listener cleanly. Both provider suites pass (8 primitives and 23 KV cases).
+
+The final fresh-node run passed all 24 automated scenarios in one run.
+[Machine-readable acceptance results](work-wait-acceptance.json) record the
+Aver pin, exact tested binary hash, platform, counts and separate idle deadline.
+Consumer GitHub CI has not been run for this local branch; its updated commands
+were exercised locally. Aver PRs #1382 and #1383 passed their remote checks
+before merging.

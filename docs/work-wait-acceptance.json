@@ -1,0 +1,174 @@
+{
+  "date": "2026-09-16",
+  "platform": "macOS arm64",
+  "averCommit": "2f1eb8066b7ffb63aaa4d232ce287a019baa74eb",
+  "consumerRemoteCi": "not run; workflow steps exercised locally",
+  "nativeProfile": "iteration, replay enabled",
+  "binary_sha256": "34444d358ed9c047c7d290888b73015471f9c92d9352f765697c5703781565fd",
+  "core_version": "Bitcoin Core daemon version v31.1.0 bitcoind",
+  "nativeRegtest": [
+    {
+      "case": "commands-and-four-script-types",
+      "status": "passed",
+      "blocks": 160,
+      "spends": 20
+    },
+    {
+      "case": "five-block-reorg-and-undo",
+      "status": "passed",
+      "tip": 167
+    },
+    {
+      "case": "mempool-relay",
+      "status": "passed",
+      "transactions": 3
+    },
+    {
+      "case": "fragmented-dashboard",
+      "status": "passed",
+      "bytes": 1601
+    },
+    {
+      "case": "compact-block-and-mempool-confirmation",
+      "status": "passed"
+    },
+    {
+      "case": "inbound-core-sync",
+      "status": "passed",
+      "blocks": 168
+    },
+    {
+      "case": "disconnect-during-pending-handshake",
+      "status": "passed"
+    },
+    {
+      "case": "abandoned-branch-transaction-restored",
+      "status": "passed"
+    },
+    {
+      "case": "serve-abandoned-fork",
+      "status": "passed"
+    },
+    {
+      "case": "multi-peer-catchup-announcement-and-disconnect",
+      "status": "passed",
+      "tip": 2001
+    },
+    {
+      "case": "hostile-checksum",
+      "status": "passed"
+    },
+    {
+      "case": "hostile-network",
+      "status": "passed"
+    },
+    {
+      "case": "hostile-lowbits",
+      "status": "passed"
+    },
+    {
+      "case": "hostile-hugetx",
+      "status": "passed"
+    },
+    {
+      "case": "empty-and-known-header-flood",
+      "status": "passed",
+      "claims": 40
+    },
+    {
+      "case": "invalid-body-refetched-from-honest-peer",
+      "status": "passed"
+    },
+    {
+      "case": "address-flood-beside-full-outbound-pool",
+      "status": "passed",
+      "addresses": 10000
+    },
+    {
+      "case": "explicit-bootstrap-and-option-errors",
+      "status": "passed"
+    },
+    {
+      "case": "refused-candidate-does-not-consume-peer-key",
+      "status": "passed"
+    },
+    {
+      "case": "hangups-pending-host-cap-and-subsequent-peer",
+      "status": "passed"
+    },
+    {
+      "case": "pty-screen-peer-mempool-confirmation-redraw-and-restoration",
+      "status": "passed"
+    },
+    {
+      "case": "corrupt-local-body-does-not-blame-honest-peer",
+      "status": "passed"
+    },
+    {
+      "case": "prune-set-and-undo-boundaries",
+      "status": "passed"
+    },
+    {
+      "case": "assumevalid-description",
+      "status": "passed"
+    },
+    {
+      "case": "suite-complete",
+      "status": "passed"
+    }
+  ],
+  "idleDeadline": {
+    "case": "quiet-inbound-production-deadline",
+    "status": "passed",
+    "seconds": 1200.413,
+    "binary_sha256": "34444d358ed9c047c7d290888b73015471f9c92d9352f765697c5703781565fd"
+  },
+  "vmVerify": {
+    "main": {
+      "passed": 9866,
+      "failed": 0,
+      "skippedWhen": 464
+    },
+    "corpusGraph": {
+      "passed": 12621,
+      "failed": 0,
+      "skippedWhen": 464
+    },
+    "workingProbeGraph": {
+      "passed": 5258,
+      "failed": 0,
+      "skippedWhen": 464
+    },
+    "note": "Graphs share modules; counts are not additive."
+  },
+  "providers": {
+    "primitivesPassed": 8,
+    "kvPassed": 23
+  },
+  "nodeWasm": {
+    "nodeVersion": "26.8.1",
+    "cliChecksum": "passed",
+    "workDelivery2000": "passed",
+    "workCancellation2000": "passed",
+    "realCoreFollowHeight": 175
+  },
+  "nativeNetwork": {
+    "fragmentedInbound": "passed",
+    "fragmentedOutbound": "passed",
+    "backpressureOrderedBytes": 4000003,
+    "handshakeDeadlineSeconds": 10.012,
+    "duplicateVersion": "passed",
+    "dns": [
+      "fragmented",
+      "eof",
+      "cancel",
+      "15-second deadline"
+    ]
+  },
+  "nativeWork": {
+    "replayTransactions": 10000,
+    "cancellationTransactions": 20000,
+    "cancellationMilliseconds": 100.82,
+    "deferredAnnouncementRetained": true
+  }
+}

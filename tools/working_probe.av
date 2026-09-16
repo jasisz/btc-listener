@@ -4,13 +4,13 @@ module WorkingProbe
     effects [
         Args.get,
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytes, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Disk.appendText, Disk.readBytes,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
         Wait.poll,
         Work.cancel,
     ]
@@ -19,13 +19,13 @@ fn main() -> Result<Unit, String>
     ! [
         Args.get,
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytes, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Disk.appendText, Disk.readBytes,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
         Wait.poll,
         Work.cancel,
     ]
@@ -38,15 +38,14 @@ fn main() -> Result<Unit, String>
 fn exercise(peer: String, path: String) -> Result<Unit, String>
     ? "Use exactly the production worker binding and owner loop; only the input payload is artificial."
     ! [
-        Args.get,
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytes, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Disk.appendText, Disk.readBytes,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
         Wait.poll,
         Work.cancel,
     ]
@@ -73,6 +72,7 @@ fn finishPool(pool: Infra.Peers.Pool) -> Result<Unit, String>
     Result.Ok(Unit)
 
 fn answerText(answer: Option<Infra.BlockJobs.Reply>) -> String
+    ? "Keep cancellation, failure and delivered results visibly distinct in the probe."
     match answer
         Option.None -> "cancelled"
         Option.Some(one) -> match one
@@ -80,7 +80,16 @@ fn answerText(answer: Option<Infra.BlockJobs.Reply>) -> String
             Infra.BlockJobs.Reply.Refused(why) -> "refused {why}"
             Infra.BlockJobs.Reply.Connected(_) -> "unexpected connect result"
 
+verify answerText
+    answerText(Option.None) => "cancelled"
+    answerText(Option.Some(Infra.BlockJobs.Reply.Decoded([]))) => "decoded 0"
+    answerText(Option.Some(Infra.BlockJobs.Reply.Refused("bad"))) => "refused bad"
+
 fn deferredText(spare: List<Infra.Peers.Spare>) -> String
+    ? "Report retained peer messages in delivery order."
     match spare
         [] -> ""
         [one, ..rest] -> "{one.key}:{one.frame.command}:{List.len(one.frame.body)} {deferredText(rest)}"
+
+verify deferredText
+    deferredText([]) => ""

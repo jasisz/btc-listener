@@ -2159,7 +2159,12 @@ fn pumpedAny(pool: Pool) -> Result<WaitedFrom, String>
         Time.unixMs,
         Wait.poll,
     ]
-    awaitAnyPeer(pumped(pool)?)
+    match Map.len(pollable(pool)) == 0
+        true -> Result.Err("every Peer is gone")
+        false -> awaitAnyPeer(pumped(pool)?)
+
+verify pumpedAny
+    pumpedAny(opened(Network.Regtest)) => Result.Err("every Peer is gone")
 
 fn awaitTick(pool: Pool, tickMs: Int) -> Result<Tick, String>
     ? "The next Message from whichever Peer speaks first, or a tick of"

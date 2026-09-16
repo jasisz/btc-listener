@@ -10,6 +10,55 @@ This document is the standing end-to-end test. **Run it before you commit a
 change**, and when you find something it does not cover, add the new test here
 so the next person inherits it. The point is that coverage only ever grows.
 
+
+## Automated acceptance
+
+The Work/Wait regression suite below creates three isolated Bitcoin Core nodes
+on loopback, fresh data directories and dynamically allocated ports. It stops
+every process it starts, including after a failure, and retains the report and
+logs. Pass a new output directory each time.
+
+```sh
+python3 tools/regtest/suite.py --binary /path/to/main --core-bin /path/to/bitcoin-31.1/bin --output /tmp/btc-regtest-acceptance
+```
+
+It covers the command baseline and four script types; five-block undo;
+transaction relay, confirmation and restoration from an abandoned branch;
+compact reconstruction without fetched transactions; serving Core from zero
+and from an old fork; a single announcement during a 2,000-block catch-up with
+a peer disconnect; hostile wire data, header/address floods and admission caps;
+a real PTY Screen; a corrupt local body; prune boundaries and assumevalid.
+The fresh catch-up directory needs `txindex` before `audit`, just like the
+manual command sequence below.
+
+The CI `regtest` job runs the release binary from the `compile` artifact.
+It downloads official Core 31.1 with a pinned checksum and uploads its JSON
+report, binary hash and logs on success or failure.
+
+The actual 20-minute quiet-inbound deadline is a separate, deliberately long
+check against an already running regtest Core and a closed listener directory:
+
+```sh
+python3 tools/regtest/idle-peer.py --binary /path/to/main --peer 127.0.0.1:18444 --chain /path/to/closed/listener-data --output /tmp/btc-idle-acceptance
+```
+
+The migration's socket backpressure, fragmented greetings and DNS deadline
+tests are in [work-wait-migration.md](work-wait-migration.md). The Node wasm CI
+job runs the complete CLI's checksum test plus Work delivery/cancellation:
+
+```sh
+aver compile tools/working_probe.av --module-root . --target wasm-gc -o /tmp/btc-work-wasm
+python3 tools/regtest/work-wait.py --payload /tmp/work-payload.bin --count 2000
+node wasm/host.mjs /tmp/btc-work-wasm/working_probe.wasm --work-probe /tmp/work-payload.bin 2000
+node wasm/host.mjs /tmp/btc-work-wasm/working_probe.wasm --work-probe /tmp/work-payload.bin 2000 cancel
+```
+
+The automated suite is not a claim to reproduce every historical manual
+measurement below: sustained hostile-peer soak, external-network dial timing,
+memory/RSS comparisons and Linux syscall-trace durability inspection remain
+separate recipes. The 20-minute deadline is not shortened or counted as covered
+by the fast CI job.
+
 ## Why regtest, and not signet
 
 Signet is real data and worth using, but two things it cannot do:
@@ -2481,7 +2530,7 @@ The language gates come first, and none of them is optional:
 
 ```bash
 aver format .
-aver check   . --module-root .
+python3 tools/check-projects.py  # each aver.toml has its own module root
 aver verify  . --module-root .
 aver compile main.av --module-root . -o ../btc-listener-build
 cd ../btc-listener-build && cargo build --release

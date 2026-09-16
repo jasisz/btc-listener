@@ -4,7 +4,7 @@ module Cli
         "Argument handling lives here so that address parsing in the domain stays"
         "pure and verifiable, and so the entrypoint has one thing to call."
     exposes [runCli]
-    depends [App.Lookup, App.Maintain, App.Node, App.Show, App.Usage, Domain.Index, Infra.Lock, Domain.Address, Domain.Network, Infra.Blocks, Infra.Chain, Infra.Bodies, Infra.Download, Infra.Peer, Infra.Prune, Infra.Resolver, Infra.Store]
+    depends [App.Lookup, App.Maintain, App.Node, App.Show, App.Usage, Domain.Index, Domain.BlockWorkJob, Infra.Lock, Domain.Address, Domain.Network, Infra.Blocks, Infra.Chain, Infra.Bodies, Infra.Download, Infra.Peer, Infra.Prune, Infra.Resolver, Infra.Store]
     effects [
         Args.get,
         Console.error, Console.print,

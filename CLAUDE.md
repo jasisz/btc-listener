@@ -296,7 +296,7 @@ four frames per turn. Admission and active dials no longer wait inline for
 `verack`; the startup `joined` facade still waits, with stop checks.
 `Domain.Handshake` rejects frames before `version` and permits at most eight
 kept Messages before `verack`. See [migration acceptance](docs/work-wait-migration.md)
-for compiler requirements, native tests and remaining wasm-host work.
+for compiler requirements, native and wasm tests and remaining synchronous storage work.
 
 **A Peer that misbehaves costs itself** (#27, Stage 5): every frame's magic
 bytes and checksum are verified in `domain/inbox.av` — neither was checked

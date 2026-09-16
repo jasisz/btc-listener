@@ -73,12 +73,12 @@ because anything that opens the Index is several times faster that way. See
 
 ## Requirements
 
-- **This Work/Wait branch needs Aver PR [#1382](https://github.com/jasisz/aver/pull/1382)**
-  (tested at `14b8ff6d`) or a revision containing it. The existing
-  [`.aver-version`](.aver-version) pin has not yet been moved to that revision;
-  follow the [migration build instructions](docs/work-wait-migration.md#compiler-requirement-and-build).
-  The project normally pins a SHA because the version string does not move
-  between upstream commits. See [Moving the Aver pin](#moving-the-aver-pin).
+- **Aver at the commit in [`.aver-version`](.aver-version)** (`2f1eb806`
+  at this update). It contains the merged compiler/provider fixes from
+  [#1382](https://github.com/jasisz/aver/pull/1382) and the JSPI Work host fix
+  from [#1383](https://github.com/jasisz/aver/pull/1383).
+  Follow the [migration build instructions](docs/work-wait-migration.md#compiler-requirement-and-build).
+  See [Moving the Aver pin](#moving-the-aver-pin).
 - `clang` and `libclang-dev`, for the RocksDB bindings.
 - A reachable Bitcoin node. Any peer will do; one you run yourself is easier to
   debug against.
@@ -1309,13 +1309,13 @@ sha256sum -c --ignore-missing SHA256SUMS
 chmod +x main && ./main help
 ```
 
-### The wasm-gc conformance harness (before Work/Wait migration)
+### The wasm-gc conformance harness
 
-**The following describes the existing release harness. This branch's Work/Wait
-migration has been validated on native Rust only.** `wasm/host.mjs` still binds
-the old `tcp_poll` ABI; its job/readiness bindings and the wasm CI path have not
-been migrated and validated against this source. The commands below are for
-the earlier release artifact, not acceptance evidence for this branch.
+The Work/Wait owner also runs through the Node host. `Wait.poll` combines
+socket readiness with jobs executed in isolated Node workers; JSPI suspends the
+main wasm call while the Node event loop handles sockets. The harness tests
+fragmented pings, deferred announcements, result delivery and cancellation.
+Its in-memory KV and temporary Disk still make it a conformance harness.
 
 The same release carries `main.wasm`: the whole listener compiled to
 WebAssembly, and **the exact module CI ran a Peer handshake through** rather
@@ -1902,10 +1902,9 @@ directory, `Infra.Kv` uses an in-memory Map, and `Tcp` implements the full
 listener/dial/connection reactor over Node sockets and JSPI. The ABI carries
 `Bytes`, `Result`, `Option`, lists, tuples and opaque resources without JSON.
 
-The pre-migration wasm CI harness starts a local regtest Bitcoin Peer and invokes the real CLI as
+The wasm CI harness starts a local regtest Bitcoin Peer and invokes the real CLI as
 `regtest 127.0.0.1 <port>`. The actual program performs its non-blocking dial,
-legacy `Tcp.poll` loop and `version`/`verack` handshake. This harness still needs
-adapting to the Work/Wait branch described [above](#the-wasm-gc-conformance-harness-before-workwait-migration).
+`Wait.poll` loop and `version`/`verack` handshake.
 The Peer then sends a `ping`
 whose checksum is deliberately wrong; the test succeeds only after the real
 framing and inbox code diagnoses it, drops the Peer, closes the connection and
