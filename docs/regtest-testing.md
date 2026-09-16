@@ -1929,6 +1929,49 @@ capability retired; the ordering above is what this repository still owns
 naming it rather than a silence — because whether an fsync reached the platter
 is not a claim Aver can evaluate.
 
+### A Block announced into a busy node
+
+n1bor/btc-listener#328. A Message that arrives during a Catch-up is kept as
+spare and acted on only if it is an `addr`; a Block announced while the node
+is walking is thrown away, and Peers announce a Block once. After a long
+walk the node therefore sat a Block behind until the *next* one was mined.
+Two things now close that window, both routed through the #300 gate as a
+Peer's word: a Peer seated advertising a Height above the tree's is a claim
+the chain moved, and a Catch-up that ran longer than sixty seconds asks the
+Peer it ran against once more when it ends, for whatever was announced
+meanwhile.
+
+Reproducing it needs a walk longer than a minute, so a long chain: the
+Core here holds 17,850 Blocks (mined in a few minutes with
+`generatetoaddress`, with a handful of spends in the first 160). Start
+`follow` with `log`, wait for the Set walk to begin, mine one Block into it,
+and watch what happens after the walk ends with no second Block mined:
+
+```bash
+timeout -s INT 900 $BIN regtest follow 127.0.0.1:18444 $D log > follow.out 2>&1 &
+until grep -q "set connecting" $D/debug.log; do sleep 0.5; done; sleep 5
+$C generatetoaddress 1 "$($C getnewaddress)" > /dev/null          # into the walk
+until grep -q "following at Height" follow.out; do sleep 1; done
+sleep 60; grep -oE "following at Height [0-9]+" follow.out | tail -1; $C getblockcount
+grep "held claim" $D/debug.log
+```
+
+Before the fix the node ends its walk at 17850 and stays there — two minutes
+later `following at Height 17850` against Core's 17851, and nothing in the
+log, because the `inv` was discarded before anything could see it. With the
+fix the walk ends the same way and the node then asks:
+
+```
+following at Height 17852: 1 connected, 0 disconnected, set +1 -0
+acting on a held claim: the last Catch-up ran 63 s and kept no Announcement made meanwhile; asking peer 0 what it holds (#328)
+```
+
+five seconds after the walk, and `show $D 17852 summary` names Core's
+`getblockhash 17852`. The claim is held rather than acted on at once because
+it is gated like every other (#300); a Catch-up shorter than a minute does
+not ask, and a Peer that seats later advertising a higher Height is the
+other route to the same Catch-up.
+
 ## A Peer that lies
 
 Bitcoin Core is cooperative by construction: you cannot ask it for a bad

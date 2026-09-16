@@ -704,6 +704,10 @@ fn session(state: Following, screened: Bool) -> Result<Unit, String>
       "waited would sit idle for as long as it took the next Block to be"
       "mined, and would then connect it onto a Set that was hours or years"
       "behind -- which is to say it would refuse it, correctly, and stop."
+      "It is timed (#328). This is the Catch-up that runs for an hour after"
+      "a reindex, and a Block announced into it is thrown away with the rest"
+      "of the spare; if it ran long, the gate holds one more ask of the"
+      "Peer it ran against, and the first turn of the loop acts on it."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
@@ -715,10 +719,13 @@ fn session(state: Following, screened: Bool) -> Result<Unit, String>
         Time.now, Time.unixMs,
     ]
     withScreen = screenedInto(state, screened)?
-    started = caughtUp(withScreen, firstKey(withScreen.pool))?
-    match started.watch.leaving
-        true -> stopping(started)
-        false -> listen(started)
+    startedMs = Time.unixMs()
+    first = firstKey(withScreen.pool)
+    started = caughtUp(withScreen, first)?
+    recovered = withGate(started, Domain.Catchup.recovering(started.gate, Domain.Catchup.whoToAsk(first, Infra.Peers.peerKeys(started.pool)), startedMs, Time.unixMs()))
+    match recovered.watch.leaving
+        true -> stopping(recovered)
+        false -> listen(recovered)
 
 fn screenedInto(state: Following, screened: Bool) -> Result<Following, String>
     ? "Take the terminal and open the Overview, when a Screen was asked for."
@@ -1980,6 +1987,11 @@ fn turning(state: Following) -> Result<Unit, String>
       "and a tick of silence hands the loop to its own clock -- the silence"
       "rule, the Snapshot, and whichever lines have come due. The deadline"
       "means what it meant; it is only noticed in one-second steps now."
+      "Before the tick, every Peer's Handshake Height is weighed against the"
+      "tree's best (#328) and one due claim, if the gate holds one, is acted"
+      "on instead of waiting. The tip is read from the Store rather than the"
+      "Snapshot because it is the tree's answer that a Peer's claim is"
+      "measured against, and one read a second costs nothing."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
@@ -1993,7 +2005,48 @@ fn turning(state: Following) -> Result<Unit, String>
     told = firstAfterNone(dialsAsked(state)?, List.len(Infra.Peers.peerKeys(state.pool)))?
     knownAt = saidAdvertised(told, Infra.Peers.told(told.pool, Time.unixMs())?)
     drained = drainSpare(knownAt)
-    topped = toppedUp(drained)?
+    weighed = withGate(drained, Domain.Catchup.weighingAll(drained.gate, Infra.Peers.claimsOf(drained.pool), heightOf(Infra.Headers.tipOf(drained.store)?)))
+    match Domain.Catchup.dueNow(weighed.gate, Time.unixMs())
+        Option.Some(due) -> actingOn(weighed, due)
+        Option.None -> ticking(weighed)
+
+fn actingOn(state: Following, due: Due) -> Result<Unit, String>
+    ? "A claim the gate is holding whose Peer may be obeyed now: an"
+      "Announcement that arrived inside a cooldown (#300), a Handshake"
+      "Height above the tree's, or the ask that follows a long Catch-up"
+      "(#328). Noted, so a Catch-up nobody announced can be read back to"
+      "the claim that started it."
+      "Acted on at the top of a turn rather than only on a quiet one. A"
+      "turn is quiet when nothing arrived in its tick, and a node with"
+      "thirty Peers offering Transactions has no quiet turns, so a claim"
+      "acted on only then was a claim acted on never."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+    ]
+    noted = Infra.Metrics.noting(state.log, "chain", "acting on a held claim: {due.why}")?
+    onMoved(withLog(state, noted), due.key, due.why)
+
+fn ticking(state: Following) -> Result<Unit, String>
+    ? "The rest of an ordinary turn: start a dial if the pool is short, then"
+      "wait a tick."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+    ]
+    topped = toppedUp(state)?
     ticked = Infra.Peers.awaitTick(topped.pool, tickMs())?
     onTicked(withWatch(Following(pool = ticked.pool, store = topped.store, blocks = topped.blocks, book = topped.book, nextKey = topped.nextKey, watch = topped.watch, mempool = topped.mempool, rebuilding = topped.rebuilding, log = state.log, board = state.board, gate = topped.gate), topped.watch), ticked.arrived)
 
@@ -2107,6 +2160,9 @@ fn quietTurn(state: Following, nowMs: Int) -> Result<Unit, String>
 
 fn ontoRebuild(state: Following, nowMs: Int) -> Result<Unit, String>
     ? "A rebuild nobody has answered for too long, or another turn."
+      "A held claim used to be acted on here too, and only here -- on a"
+      "quiet turn, which a busy node never has. It is the top of every turn"
+      "now (actingOn, #328)."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
@@ -2119,29 +2175,7 @@ fn ontoRebuild(state: Following, nowMs: Int) -> Result<Unit, String>
     ]
     match staleRebuild(state.rebuilding, nowMs)
         Option.Some(pending) -> fellBack(state, pending.key, "peer {pending.key} did not send the compact Block for {pending.blockId} within {Int.div(rebuildDeadlineMs(), 1000)} seconds")
-        Option.None -> ontoHeld(state, nowMs)
-
-fn ontoHeld(state: Following, nowMs: Int) -> Result<Unit, String>
-    ? "A claim held back while its Peer was quieted, now that the cooldown"
-      "has passed (#300)."
-      "One a turn, however many are due: acting on one runs a whole"
-      "Catch-up, and the next turn comes a second later. A Peer dropped in"
-      "the meantime took its claim with it -- Domain.Catchup.forgotten is"
-      "called wherever a Peer goes -- so nothing here asks a Peer that is"
-      "no longer in the pool."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
-        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-    ]
-    match Domain.Catchup.dueNow(state.gate, nowMs)
         Option.None -> listen(state)
-        Option.Some(due) -> onMoved(state, due.key, "{due.why}, held back while peer {due.key} was quieted")
 
 fn afterAccepting(state: Following, taken: Accepted) -> Following
     ? "A caller admitted takes the next key, so the one after it is free."
@@ -2581,7 +2615,8 @@ fn holdingBack(state: Following, key: Int, why: String) -> Result<Unit, String>
       "Kept rather than dropped: a node following one Peer -- which is how"
       "this program is usually started, and how it is usually run -- would"
       "otherwise sit a Block behind until the next one was mined. The claim"
-      "is acted on the moment the cooldown passes, in ontoHeld."
+      "is acted on the moment the cooldown passes, at the top of the next"
+      "turn (actingOn)."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
@@ -2600,6 +2635,11 @@ fn movingOn(state: Following, key: Int, why: String, nowMs: Int) -> Result<Unit,
       "Where the node stands is read either side of the run, so the gate is"
       "armed by waste and never by being asked. A Peer announcing real"
       "Blocks moves the chain every time and is never quieted."
+      "The run is timed as well (#328): one that ran long discarded every"
+      "Announcement made into it, so the gate holds one more ask of the"
+      "Peer -- after the charge, because a Catch-up that moved the chain"
+      "clears what the gate holds for that Peer, and the ask has to outlive"
+      "that."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
@@ -2615,7 +2655,8 @@ fn movingOn(state: Following, key: Int, why: String, nowMs: Int) -> Result<Unit,
     moved = caughtUp(withGate(state, Domain.Catchup.taken(state.gate, key)), key)?
     stands = standingNow(moved.store)?
     seated = List.contains(Infra.Peers.peerKeys(moved.pool), key)
-    listen(withGate(moved, Domain.Catchup.charging(moved.gate, key, seated, stood == stands, nowMs)))
+    charged = Domain.Catchup.charging(moved.gate, key, seated, stood == stands, nowMs)
+    listen(withGate(moved, Domain.Catchup.recovering(charged, Domain.Catchup.whoToAsk(key, Infra.Peers.peerKeys(moved.pool)), nowMs, Time.unixMs())))
 
 fn standingNow(store: Store) -> Result<String, String>
     ? "Where the node stands, as one string: the tip of the branch with the"

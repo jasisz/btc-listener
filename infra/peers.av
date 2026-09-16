@@ -19,7 +19,7 @@ module Peers
         "has to be written in terms of the other."
         "Per ADR 0008 this module is the only thing here that touches a"
         "socket, and it hands values back rather than writing anything down."
-    exposes [Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, opened, listening, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers]
+    exposes [Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, opened, listening, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers, claimsOf]
     depends [Bytes, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Handshake, Domain.Inbox, Domain.Message, Domain.Network, Domain.Snapshot, Domain.Version]
     effects [
         Console.error, Console.print,
@@ -281,8 +281,8 @@ fn viewOf(key: Int, standing: Option<Standing>, heardMs: Int) -> PeerView
 
 verify viewOf
     viewOf(2, Option.None, 7) => PeerView(key = 2, address = "unknown", version = 0, agent = "", lastHeardMs = 7, sent = 0, received = 0, inbound = false)
-    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 120, received = 4096, inbound = false)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 120, received = 4096, inbound = false)
-    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 0, received = 0, inbound = true)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 0, received = 0, inbound = true)
+    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 120, received = 4096, inbound = false, height = 0)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 120, received = 4096, inbound = false)
+    viewOf(2, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 0, received = 0, inbound = true, height = 0)), 7) => PeerView(key = 2, address = "1.2.3.4:8333", version = 70016, agent = "/Satoshi/", lastHeardMs = 7, sent = 0, received = 0, inbound = true)
 
 fn drawnElsewhere(pool: Pool) -> Pool
     ? "The pool told that something else owns the terminal, so its own lines"
@@ -569,6 +569,40 @@ verify keptIfPeer
     keptIfPeer(0, []) => [0]
     keptIfPeer(listenerKey(), []) => []
 
+fn claimsOf(pool: Pool) -> List<Tuple<Int, Int>>
+    ? "Every Peer's key with the Height it said it held at its Handshake"
+      "(#328), oldest key first."
+      "What the loop weighs against the tree: a Peer claiming more than the"
+      "tree holds is telling us the chain moved, and the claim is worth"
+      "exactly what any other claim is worth -- a getheaders to that Peer,"
+      "gated the way an Announcement is (Domain.Catchup)."
+    claimsAmong(pool.standing, peerKeys(pool), [])
+
+verify claimsOf
+    claimsOf(opened(Network.Regtest)) => []
+
+fn claimsAmong(standing: Map<Int, Standing>, keys: List<Int>, acc: List<Tuple<Int, Int>>) -> List<Tuple<Int, Int>>
+    ? "Each key in turn; a key with no Standing claims nothing."
+    match keys
+        [] -> List.reverse(acc)
+        [head, ..tail] -> claimsAmong(standing, tail, claimedInto(head, Domain.Inbox.standingAt(standing, head), acc))
+
+verify claimsAmong
+    claimsAmong(Domain.Inbox.noStanding(), [], []) => []
+    claimsAmong(Domain.Inbox.noStanding(), [7], []) => []
+    claimsAmong(Domain.Inbox.greeted(Domain.Inbox.seated(Domain.Inbox.noStanding(), 1, "1.2.3.4:8333", false), 1, 70016, "/Satoshi/", 179), [1], []) => [(1, 179)]
+    claimsAmong(Domain.Inbox.greeted(Domain.Inbox.seated(Domain.Inbox.seated(Domain.Inbox.noStanding(), 1, "1.2.3.4:8333", false), 2, "1.2.3.5:8333", true), 2, 70016, "/Satoshi/", 965226), [1, 2], []) => [(1, 0), (2, 965226)]
+
+fn claimedInto(key: Int, standing: Option<Standing>, acc: List<Tuple<Int, Int>>) -> List<Tuple<Int, Int>>
+    ? "One Peer's claim onto the front, when it has a Standing."
+    match standing
+        Option.None -> acc
+        Option.Some(held) -> List.prepend((key, held.height), acc)
+
+verify claimedInto
+    claimedInto(3, Option.None, []) => []
+    claimedInto(3, Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 70016, agent = "/Satoshi/", sent = 0, received = 0, inbound = false, height = 42)), []) => [(3, 42)]
+
 record Accepted
     pool: Pool
     seated: Option<Int>
@@ -779,7 +813,7 @@ fn seatingIn(pool: Pool, key: Int, connection: Tcp.Connection, address: String) 
     ]
     seated = Pool(network = pool.network, sockets = Map.set(pool.sockets, key, Tcp.Socket.Connected(connection)), standing = Domain.Inbox.seated(pool.standing, key, address, true), spare = pool.spare, serves = pool.serves, height = pool.height, heardMs = pool.heardMs, anyHeardMs = pool.anyHeardMs, polledMs = pool.polledMs, plain = pool.plain, dialing = pool.dialing, settled = pool.settled, port = pool.port, seenAs = pool.seenAs, toldMs = pool.toldMs, inboundCap = pool.inboundCap)
     _said = saidIfPlain(pool, "peer {key} dialled us from {address}")
-    greetedOrDropped(seated, key, address, greeting(seated, key, 0, "", true, Time.unixMs() + handshakeDeadlineMs(), 0))
+    greetedOrDropped(seated, key, address, greeting(seated, key, 0, "", 0, true, Time.unixMs() + handshakeDeadlineMs(), 0))
 
 fn greetedOrDropped(pool: Pool, key: Int, address: String, greeted: Result<Joined, String>) -> Result<Accepted, String>
     ? "A caller that will not complete a Handshake costs itself its slot, and"
@@ -936,8 +970,8 @@ fn oneIfOutbound(standing: Option<Standing>) -> Int
 
 verify oneIfOutbound
     oneIfOutbound(Option.None) => 0
-    oneIfOutbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = false))) => 1
-    oneIfOutbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true))) => 0
+    oneIfOutbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = false, height = 0))) => 1
+    oneIfOutbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true, height = 0))) => 0
 
 fn oneIfInbound(standing: Option<Standing>) -> Int
     ? "One for a Peer that dialled us, nothing for one we dialled."
@@ -947,8 +981,8 @@ fn oneIfInbound(standing: Option<Standing>) -> Int
 
 verify oneIfInbound
     oneIfInbound(Option.None) => 0
-    oneIfInbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true))) => 1
-    oneIfInbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = false))) => 0
+    oneIfInbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true, height = 0))) => 1
+    oneIfInbound(Option.Some(Standing(address = "", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = false, height = 0))) => 0
 
 fn countedDirection(inbound: Bool) -> Int
     ? "A Bool as the number it contributes to the count."
@@ -1591,7 +1625,7 @@ fn introduced(pool: Pool, key: Int, address: PeerAddress) -> Result<Joined, Stri
     ]
     match ourVersionOut(pool, key, address)
         Result.Err(why) -> Result.Ok(Joined(pool = pool, seated = false, why = why))
-        Result.Ok(sent) -> greeting(sent, key, 0, "", false, Time.unixMs() + handshakeDeadlineMs(), 0)
+        Result.Ok(sent) -> greeting(sent, key, 0, "", 0, false, Time.unixMs() + handshakeDeadlineMs(), 0)
 
 fn ourVersionOut(pool: Pool, key: Int, address: PeerAddress) -> Result<Pool, String>
     ? "Our version, addressed to the Candidate we dialled."
@@ -1613,7 +1647,7 @@ fn handshakeDeadlineMs() -> Int
 verify handshakeDeadlineMs
     handshakeDeadlineMs() => 10000
 
-fn greeting(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
+fn greeting(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, seenHeight: Int, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
     ? "Read this Peer's Messages until its verack arrives, or the one deadline does."
       "A Handshake that does not complete is a fact about the other side, so"
       "it comes back as a Joined that did not seat, carrying the pool as it"
@@ -1631,9 +1665,9 @@ fn greeting(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, inbound: 
         Time.unixMs,
     ]
     heard = awaitAny(pool, key, deadlineMs)?
-    handshaking(heard, key, seenVersion, seenAgent, inbound, deadlineMs, kept)
+    handshaking(heard, key, seenVersion, seenAgent, seenHeight, inbound, deadlineMs, kept)
 
-fn handshaking(heard: Heard, key: Int, seenVersion: Int, seenAgent: String, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
+fn handshaking(heard: Heard, key: Int, seenVersion: Int, seenAgent: String, seenHeight: Int, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
     ? "A Message to sort, or a Peer that stopped answering mid-Handshake."
     ! [
         Console.error, Console.print,
@@ -1643,9 +1677,9 @@ fn handshaking(heard: Heard, key: Int, seenVersion: Int, seenAgent: String, inbo
     ]
     match heard.frame
         Option.None -> Result.Ok(Joined(pool = heard.pool, seated = false, why = heard.why))
-        Option.Some(frame) -> handshakingOn(heard.pool, key, seenVersion, seenAgent, frame, inbound, deadlineMs, kept)
+        Option.Some(frame) -> handshakingOn(heard.pool, key, seenVersion, seenAgent, seenHeight, frame, inbound, deadlineMs, kept)
 
-fn handshakingOn(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, frame: Frame, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
+fn handshakingOn(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, seenHeight: Int, frame: Frame, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
     ? "verack ends the Handshake; version says who we are talking to."
       "Anything else after the version is a Peer being chatty before it"
       "agrees -- Core sends wtxidrelay and sendaddrv2 there -- and is put"
@@ -1659,10 +1693,10 @@ fn handshakingOn(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, fram
         Time.unixMs,
     ]
     match Domain.Handshake.stepOf(frame.command, seenVersion > 0, kept)
-        Step.Done -> Result.Ok(Joined(pool = withStanding(pool, Domain.Inbox.greeted(pool.standing, key, seenVersion, seenAgent)), seated = true, why = ""))
+        Step.Done -> Result.Ok(Joined(pool = withStanding(pool, Domain.Inbox.greeted(pool.standing, key, seenVersion, seenAgent, seenHeight)), seated = true, why = ""))
         Step.Version -> acknowledged(pool, key, frame.body, inbound, deadlineMs, kept)
-        Step.Ping -> pongThen(pool, key, seenVersion, seenAgent, frame, inbound, deadlineMs, kept)
-        Step.Spared -> greeting(sparing(pool, key, frame), key, seenVersion, seenAgent, inbound, deadlineMs, kept + 1)
+        Step.Ping -> pongThen(pool, key, seenVersion, seenAgent, seenHeight, frame, inbound, deadlineMs, kept)
+        Step.Spared -> greeting(sparing(pool, key, frame), key, seenVersion, seenAgent, seenHeight, inbound, deadlineMs, kept + 1)
         Step.Refused(why) -> Result.Ok(Joined(pool = pool, seated = false, why = "peer {key} {why}"))
 
 fn acknowledged(pool: Pool, key: Int, body: List<Int>, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
@@ -1682,7 +1716,7 @@ fn acknowledged(pool: Pool, key: Int, body: List<Int>, inbound: Bool, deadlineMs
     ]
     match presenting(pool, key, inbound)
         Result.Err(why) -> Result.Ok(Joined(pool = pool, seated = false, why = why))
-        Result.Ok(sent) -> greeting(noticedSelf(sent, body), key, Domain.Version.peerVersionOf(body), Domain.Version.peerUserAgentOf(body), inbound, deadlineMs, kept)
+        Result.Ok(sent) -> greeting(noticedSelf(sent, body), key, Domain.Version.peerVersionOf(body), Domain.Version.peerUserAgentOf(body), Domain.Version.peerStartHeightOf(body), inbound, deadlineMs, kept)
 
 fn presenting(pool: Pool, key: Int, inbound: Bool) -> Result<Pool, String>
     ? "Our version if this Peer dialled us, then the verack that answers its."
@@ -1738,9 +1772,9 @@ fn addressTextOf(standing: Option<Standing>) -> String
 
 verify addressTextOf
     addressTextOf(Option.None) => ""
-    addressTextOf(Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true))) => "1.2.3.4:8333"
+    addressTextOf(Option.Some(Standing(address = "1.2.3.4:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = true, height = 0))) => "1.2.3.4:8333"
 
-fn pongThen(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, frame: Frame, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
+fn pongThen(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, seenHeight: Int, frame: Frame, inbound: Bool, deadlineMs: Int, kept: Int) -> Result<Joined, String>
     ? "Answer a ping that arrived mid-Handshake, then carry on."
     ! [
         Console.error, Console.print,
@@ -1750,7 +1784,7 @@ fn pongThen(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, frame: Fr
     ]
     match ponged(pool, key, frame)
         Result.Err(why) -> Result.Ok(Joined(pool = pool, seated = false, why = why))
-        Result.Ok(sent) -> greeting(sent, key, seenVersion, seenAgent, inbound, deadlineMs, kept)
+        Result.Ok(sent) -> greeting(sent, key, seenVersion, seenAgent, seenHeight, inbound, deadlineMs, kept)
 
 fn ponged(pool: Pool, key: Int, frame: Frame) -> Result<Pool, String>
     ? "The nonce echoed back to whoever sent it."
