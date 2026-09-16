@@ -36,7 +36,7 @@ module Store
         "Write in batches. One putAll is one RocksDB write batch, so the cost"
         "of a write is round trips rather than copying, and a loop over put"
         "hands back a Store per call where putAll hands back one."
-    exposes [Entry, open, get, getAll, has, size, put, putAll, applyAll, delete, deleteAll, fixture]
+    exposes [Entry, open, openExisting, get, getAll, has, size, put, putAll, applyAll, delete, deleteAll, fixture]
     exposes opaque [Store]
     depends [Bytes, Infra.Kv]
     effects [
@@ -63,6 +63,19 @@ fn open(dir: String) -> Result<Store, String>
     ! [Disk.exists, Disk.makeDir, Infra.Kv.open]
     _made = Disk.makeDir(dir)?
     openBacking(dir, Disk.exists(databaseMark(dir)))
+
+fn openExisting(dir: String) -> Result<Store, String>
+    ? "Open the database a directory already holds, and refuse one that holds none."
+      "For every command that reads a chain rather than makes one: prune,"
+      "reindex, txindex, outputs, utxo, assumevalid, audit, show, tx, spend."
+      "open creates what is absent, which is right for headers and follow and"
+      "wrong for a mistyped directory handed to prune, which used to get a"
+      "fresh empty database and nothing to say (n1bor/btc-listener#280, item"
+      "20). The mark asked about is the one open itself leaves."
+    ! [Disk.exists, Infra.Kv.open]
+    match Disk.exists(databaseMark(dir))
+        true -> holding(Infra.Kv.open(databasePath(dir)))
+        false -> Result.Err("{dir} holds no chain: there is no database in it; headers or follow makes one")
 
 fn openBacking(dir: String, database: Bool) -> Result<Store, String>
     ? "Open the database that is here, or decide what its absence means."

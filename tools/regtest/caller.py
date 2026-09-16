@@ -9,6 +9,7 @@ import socket, struct, hashlib, time, sys
 #     python3 tools/regtest/caller.py 18456 early     # a ping before any version
 #     python3 tools/regtest/caller.py 18456 polite    # a proper Handshake, then stay connected
 #     python3 tools/regtest/caller.py 18456 lurker    # a proper Handshake, then silence past the sweep (#330)
+#     python3 tools/regtest/caller.py 18456 locator   # a proper Handshake, then a getheaders of 102 Ids (#280)
 #
 # A third argument binds the source address, which is how one machine seats
 # more than one inbound Peer (#333): hostLimit is one slot per host, and every
@@ -55,6 +56,17 @@ def dial(port, mode, source=None):
             s.settimeout(10); s.recv(65536)               # their version
             s.sendall(msg('verack', b''))
             return held(s, started, 1500)
+        elif mode == 'locator':
+            # A proper Handshake, then one getheaders whose Locator carries
+            # 102 Ids -- one over Core's MAX_LOCATOR_SZ (#280, item 15). Every
+            # Id in a Locator is a Store read on the served path, and a
+            # Message over the protocol's own limit is dropped by name.
+            s.sendall(msg('version', version_payload()))
+            s.settimeout(10); s.recv(65536)               # their version
+            s.sendall(msg('verack', b''))
+            locator = struct.pack('<I', 70016) + bytes([102]) + b'\x00' * (32 * 102) + b'\x00' * 32
+            s.sendall(msg('getheaders', locator))
+            return held(s, started, 60)
         elif mode == 'pinger':
             s.sendall(msg('version', version_payload()))
             for i in range(100):

@@ -3560,7 +3560,24 @@ fn onAskedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Unit, S
         Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.now, Time.unixMs,
     ]
-    from = agreedHeight(state.store, Domain.Block.locatorIn(body))?
+    locator = Domain.Block.locatorIn(body)
+    match Domain.Block.locatorFault(locator)
+        Option.Some(why) -> listen(withoutPeer(state, key, why)?)
+        Option.None -> answeringHeaders(state, key, locator)
+
+fn answeringHeaders(state: Following, key: Int, locator: List<List<Int>>) -> Result<Unit, String>
+    ? "The Headers above the newest Id in a Locator we know, to the Peer that asked."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+    ]
+    from = agreedHeight(state.store, locator)?
     headers = headersFrom(state.store, from + 1, Domain.Block.headersCap(), [])?
     headersOut = sendingHeaders(state, key, headers)?
     listen(headersOut)

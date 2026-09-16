@@ -1971,6 +1971,65 @@ five seconds after the walk, and `show $D 17852 summary` names Core's
 it is gated like every other (#300); a Catch-up shorter than a minute does
 not ask, and a Peer that seats later advertising a higher Height is the
 other route to the same Catch-up.
+### Three small things from the security review
+
+n1bor/btc-listener#280, items 15, 18 and 20, in one run because each is a
+line or two.
+
+**A directory that holds no chain** (item 20). `prune /typo 100` used to
+create an empty database in the typo and say nothing. Every command that
+reads a chain rather than makes one — `prune`, `reindex`, `txindex`,
+`outputs`, `utxo`, `assumevalid`, `audit`, `show`, `tx`, `spend` — now opens
+with `Infra.Store.openExisting` and refuses:
+
+```bash
+$BIN regtest prune /tmp/no-such-chain 100
+$BIN regtest reindex /tmp/no-such-chain
+```
+
+```
+error: /tmp/no-such-chain holds no chain: there is no database in it; headers or follow makes one
+```
+
+`headers` and `follow` still create, which is their job.
+
+**The word UNSETTLED** (item 18). The audit headline said `CLEAN` over a run
+with unresolved spends or undecided Scripts, which is the one collapse this
+program is built not to make. It now says `CLEAN` only when every spend
+resolved and every Script was decided, `UNSETTLED` when nothing was found
+wrong but something could not be told, and `FAILED` as before. The same
+chain, before and after its Transaction index exists:
+
+```bash
+$BIN regtest audit $D 1 160 | tail -1
+$BIN regtest txindex $D 1 160 | tail -1; $BIN regtest outputs $D 1 160 | tail -1
+$BIN regtest audit $D 1 160 | tail -1
+```
+
+```
+blocks 160  transactions 180  spends resolved 0  coinbase 160  unresolved 20  scripts 0 passed / 0 failed / 0 undecided  UNSETTLED (faults 0, script failures 0)
+blocks 160  transactions 180  spends resolved 20  coinbase 160  unresolved 0  scripts 20 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+```
+
+**A Locator over Core's cap** (item 15). Every Id in a `getheaders` Locator
+is a Store read on the served path, and the Message admits some 125,000 of
+them; Core reads at most `MAX_LOCATOR_SZ = 101` and drops the Peer. So does
+this node now. `caller.py locator` makes a proper Handshake and then sends a
+Locator of 102 Ids; run it beside a polite caller against the served port:
+
+```bash
+timeout -s INT 40 $BIN regtest follow 127.0.0.1:18444 $D serve:18457 > follow.out 2>&1 &
+sleep 6
+python3 tools/regtest/caller.py 18457 polite 127.0.0.2 2> polite.log &
+python3 tools/regtest/caller.py 18457 locator 127.0.0.3 2> locator.log &
+wait; cat polite.log locator.log; grep "dropping peer" follow.out
+```
+
+```
+caller: still connected after 34.1 s      <- polite, until the node was stopped
+caller: dropped after 0.0 s               <- locator
+dropping peer 1: a getheaders Locator of 102 Ids, more than the 101 Core allows
+```
 
 ## A Peer that lies
 
