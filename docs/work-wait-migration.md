@@ -73,9 +73,9 @@ Observed on macOS arm64, iteration profile, 2026-09-16:
 
 | Trial | Transactions | Pong latency | Owner result from start | Cancellation result |
 | --- | ---: | ---: | ---: | ---: |
-| Delivery | 20,000 | 42.91 ms | 850.06 ms | — |
-| SIGINT during work | 20,000 | 31.30 ms | 131.50 ms | 100.16 ms after SIGINT |
-| Native recording/replay | 10,000 | 107.23 ms | 488.85 ms | — |
+| Delivery | 20,000 | 30.69 ms | 941.13 ms | — |
+| SIGINT during work | 20,000 | 31.19 ms | 131.35 ms | 100.13 ms after SIGINT |
+| Native recording/replay | 10,000 | 110.87 ms | 593.33 ms | — |
 
 These individual observations establish progress while this workload runs;
 they are not latency guarantees or evidence of increased validation throughput.
