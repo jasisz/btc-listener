@@ -80,7 +80,7 @@ jobs:
         if: steps.aver-cache.outputs.cache-hit != 'true'
         run: cargo install --path /home/owensr/aver/aver aver-lang --locked
       - name: Check
-        run: python3 tools/check-projects.py
+        run: aver check . --module-root .
 
   provider-tests:
     name: provider tests

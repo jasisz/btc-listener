@@ -35,16 +35,7 @@ The CI `regtest` job runs the release binary from the `compile` artifact.
 It downloads official Core 31.1 with a pinned checksum and uploads its JSON
 report, binary hash and logs on success or failure.
 
-The actual 20-minute quiet-inbound deadline is a separate, deliberately long
-check against an already running regtest Core and a closed listener directory:
-
-```sh
-python3 tools/regtest/idle-peer.py --binary /path/to/main --peer 127.0.0.1:18444 --chain /path/to/closed/listener-data --output /tmp/btc-idle-acceptance
-```
-
-The migration's socket backpressure, fragmented greetings and DNS deadline
-tests are in [work-wait-migration.md](work-wait-migration.md). The Node wasm CI
-job runs the complete CLI's checksum test plus Work delivery/cancellation:
+The Node wasm CI job runs the complete CLI's checksum test plus Work delivery/cancellation:
 
 ```sh
 aver compile tools/working_probe.av --module-root . --target wasm-gc -o /tmp/btc-work-wasm
@@ -2530,7 +2521,7 @@ The language gates come first, and none of them is optional:
 
 ```bash
 aver format .
-python3 tools/check-projects.py  # each aver.toml has its own module root
+aver check . --module-root .
 aver verify  . --module-root .
 aver compile main.av --module-root . -o ../btc-listener-build
 cd ../btc-listener-build && cargo build --release
