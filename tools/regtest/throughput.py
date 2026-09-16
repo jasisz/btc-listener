@@ -94,6 +94,16 @@ def measure(args, label, binary, trial, height):
     data = args.output / "trial-chain"
     assert not data.exists(), "unfinished trial directory; inspect it before retrying"
     shutil.copytree(args.output / "seed", data)
+    # Optional maturity-only prefix excludes tiny coinbase jobs from the timed
+    # window. Build it with the same binary, outside the measured interval.
+    if args.warm_prefix:
+        prefix = subprocess.run(
+            [str(binary), "regtest", "utxo", str(data), str(args.warm_prefix)],
+            capture_output=True, text=True, timeout=300,
+        )
+        assert prefix.returncode == 0, prefix.stdout + prefix.stderr
+        expected_prefix = f"{args.warm_prefix} Blocks connected to Height {args.warm_prefix}; Set +{args.warm_prefix} -0 Outputs, 0 satoshis in fees"
+        assert expected_prefix in prefix.stdout, prefix.stdout
     log = args.output / f"{label}-{trial}.log"
     started = time.monotonic()
     with log.open("w") as stream:
@@ -118,9 +128,9 @@ def measure(args, label, binary, trial, height):
     output = log.read_text()
     expected = json.loads((args.output / "fixture.json").read_text())
     pairs, outputs = expected["pairs"], expected["fanout"]
-    summary = f"{height} Blocks connected to Height {height}; Set +{height + pairs * (outputs + 2)} -{pairs * (outputs + 1)} Outputs, {pairs * 2_000_000} satoshis in fees"
+    summary = f"{height - args.warm_prefix} Blocks connected to Height {height}; Set +{height - args.warm_prefix + pairs * (outputs + 2)} -{pairs * (outputs + 1)} Outputs, {pairs * 2_000_000} satoshis in fees"
     assert summary in output, output
-    result = {"variant": label, "trial": trial, "wall_seconds": wall,
+    result = {"variant": label, "trial": trial, "from_height": args.warm_prefix + 1, "wall_seconds": wall,
               "user_seconds": usage.ru_utime, "system_seconds": usage.ru_stime,
               "max_rss_bytes": usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024,
               "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
@@ -137,7 +147,9 @@ def main():
     parser.add_argument("--pairs", type=int, default=8)
     parser.add_argument("--outputs", type=int, default=4000)
     parser.add_argument("--trials", type=int, default=3)
+    parser.add_argument("--warm-prefix", type=int, default=0, help="Connect 0..150 maturity blocks before timing; 150 times only the large-block pairs")
     args = parser.parse_args()
+    assert 0 <= args.warm_prefix <= 150
     assert 1 <= args.pairs <= 49 and 1 <= args.outputs <= 10000
     binaries = [(item.split("=", 1)[0], Path(item.split("=", 1)[1]).resolve()) for item in args.binary]
     args.output.mkdir(parents=True, exist_ok=True)

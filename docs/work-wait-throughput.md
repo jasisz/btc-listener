@@ -71,3 +71,40 @@ Median of three timed runs after warmup. Replay support is compiled in but recor
 | owned-replay | 1.388 s | 1.617 s | 53.3 MiB |
 
 `pipeline` restores the lookahead, `lazy` additionally removes idle replay snapshots, and `owned` additionally transfers native Work arguments without the extra copy. `plain` omits replay support. These changes reduce overhead; the final plain build still takes about 12% longer than upstream in this fixture. It should not be presented as a throughput improvement over upstream.
+
+## Release follow-up and alternative transfer
+
+All three variants below use the same Aver compiler/runtime commit `f6e8197d`,
+Rust release profile (opt-level 3, LTO, one codegen unit), dependencies and
+fixture. Seven timed trials per variant follow one warmup, with alternating
+order. The second window first connects the 150 maturity blocks outside the
+measurement, then times only the 16 transaction-heavy blocks. No Cargo build
+runs alongside these measurements.
+
+| Heights | Variant | Wall median | CPU median | Peak RSS median |
+|---|---|---:|---:|---:|
+| 1–166 | upstream-release | 0.889 s | 0.983 s | 38.1 MiB |
+| 1–166 | migrated-release | 0.999 s | 1.157 s | 54.6 MiB |
+| 1–166 | native-transfer-experiment | 0.892 s | 1.014 s | 39.2 MiB |
+| 151–166 | upstream-release | 0.872 s | 0.961 s | 38.4 MiB |
+| 151–166 | migrated-release | 0.982 s | 1.129 s | 54.2 MiB |
+| 151–166 | native-transfer-experiment | 0.869 s | 0.982 s | 38.8 MiB |
+
+Release preserves the regression: the migrated program takes about 12–13%
+longer than upstream. The isolated native-transfer experiment removes almost
+all of the elapsed-time gap in both windows. Its wall time is within the observed
+run-to-run spread of upstream; this is not evidence that it is faster. CPU time
+still exceeds upstream slightly. The full-run wall ranges are 0.880–0.896 s for
+upstream and 0.888–0.909 s for the experiment.
+
+The experiment skips the Work task/reply `ProviderValue` tree conversions,
+keeping the same worker threads, limits, readiness and domain algorithms. It
+also answers loopback pings during catch-up. This supports implementing a typed
+native Work transfer path in Aver instead of merely tuning the current codecs
+or adding more threads. It is **not included in the production compiler or
+application** and has not passed the complete acceptance/replay matrix.
+
+[Raw release measurements](work-wait-release-throughput.json) include every
+trial, binary hashes and the separate peer probe. The
+[experiment and reproduction patch](work-native-transfer-experiment.md) explain
+its scope and the requirements before adopting it as a general optimization.
