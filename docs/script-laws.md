@@ -273,6 +273,19 @@ needed no new compiler mechanism. The claims concern identical contributions;
 they do not establish header validity or the correctness of compact-target work
 arithmetic, and do not assert that two different tips can share a valid extension.
 
+Four more landed with n1bor/btc-listener#345, which found `usable` asking
+whether the *mantissa* was zero where Core's `GetBlockProof` asks whether the
+*target* is: bits `0x01000001` have a mantissa of one and a target of zero, and
+were credited with the whole space. `usable` now refuses on the target, after
+the cheap refusals (a negative field, a negative mantissa, an overflowing
+exponent), so every Int is answered without unpacking it:
+
+- `ofBits.zeroTargetProvesNothing`: `when zeroTarget(bits)`, the work is 0.
+- `ofBits.neverNegative`: the work is never below zero, on any Int, which is
+  what makes `added` and `over` monotone along a branch.
+- `negative.isTheMantissaTopBit` and `overflowing.isAnExponentAboveThirtyFour`:
+  the two refusals against the bit forms Core's `SetCompact` uses.
+
 Check this cone separately:
 
 ```sh

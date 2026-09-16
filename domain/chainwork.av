@@ -64,6 +64,16 @@ verify ofBits
     ofBits(486539264) => 0
     ofBits(494927872) => 0
     ofBits(587202561) => 0
+    ofBits(16777217) => 0
+
+verify ofBits law zeroTargetProvesNothing
+    given bits: Int = [0, 16777217, 33554433, 33554687, 65535, 33619967, 486604799]
+    when zeroTarget(bits)
+    ofBits(bits) => 0
+
+verify ofBits law neverNegative
+    given bits: Int = [0 - 1, 0, 16777217, 486604799, 545259519, 2147483647, 4294967295]
+    ofBits(bits) >= 0 => true
 
 fn perTarget(target: Int) -> Int
     ? "The whole space divided by the values the target admits."
@@ -79,11 +89,18 @@ fn usable(bits: Int) -> Bool
     ? "Whether these bits name a target at all."
       "Core's SetCompact reports negative and overflow separately and"
       "GetBlockProof discards the Header on either, along with a target of"
-      "zero. A zero mantissa is what makes a target zero, and it is the one of"
-      "the three that has actually appeared: an all-zero bits field."
-    match Int.mod(bits, 16777216) == 0
+      "zero. The target is what is asked, not the mantissa: an exponent below"
+      "three shifts the mantissa down, so bits 0x01000001 have a mantissa of"
+      "one and a target of zero, and asking the mantissa credited that Header"
+      "with the whole space -- n1bor/btc-listener#345. A zero mantissa is the"
+      "one of the three that has actually appeared, an all-zero bits field,"
+      "and it is a zero target too."
+      "The cheap refusals come first, and a negative Int is one of them: the"
+      "field is four unsigned bytes on the wire, so a negative value names"
+      "nothing, and unpacking it would shift by a negative exponent's worth."
+    match Bool.or(bits < 0, Bool.or(negative(bits), overflowing(bits)))
         true -> false
-        false -> Bool.and(negative(bits) == false, overflowing(bits) == false)
+        false -> Domain.Block.targetOf(bits) != 0
 
 verify usable
     usable(486604799) => true
@@ -92,6 +109,28 @@ verify usable
     usable(486539264) => false
     usable(494927872) => false
     usable(587202561) => false
+    usable(16777217) => false
+    usable(33554433) => false
+    usable(33554687) => false
+    usable(33619967) => true
+    usable(0 - 1) => false
+
+fn zeroTarget(bits: Int) -> Bool
+    ? "Whether these bits unpack to a target of zero, asked only where unpacking"
+      "is cheap: a negative or overflowing field is answered false before the"
+      "target is computed, so the question costs nothing on any Int."
+    match Bool.or(bits < 0, overflowing(bits))
+        true -> false
+        false -> Domain.Block.targetOf(bits) == 0
+
+verify zeroTarget
+    zeroTarget(0) => true
+    zeroTarget(16777217) => true
+    zeroTarget(33554687) => true
+    zeroTarget(33619967) => false
+    zeroTarget(486604799) => false
+    zeroTarget(587202561) => false
+    zeroTarget(0 - 1) => false
 
 fn negative(bits: Int) -> Bool
     ? "Whether the mantissa's top bit is set, which would make the target negative."
@@ -104,6 +143,11 @@ verify negative
     negative(494927872) => true
     negative(494993407) => true
     negative(545259519) => false
+    negative(33554687) => false
+
+verify negative law isTheMantissaTopBit
+    given bits: Int = [0, 8388607, 8388608, 486604799, 494927872, 494993407, 545259519, 2147483647, 4294967295]
+    negative(bits) => Bits.and(bits, 8388608) == 8388608
 
 fn overflowing(bits: Int) -> Bool
     ? "Whether the exponent shifts the mantissa past the 256 bits there are."
@@ -114,6 +158,11 @@ verify overflowing
     overflowing(486604799) => false
     overflowing(570425345) => false
     overflowing(587202561) => true
+    overflowing(33554687) => false
+
+verify overflowing law isAnExponentAboveThirtyFour
+    given bits: Int = [0, 486604799, 570425345, 587202559, 587202560, 587202561, 4294967295]
+    overflowing(bits) => bits >= 587202560
 
 fn added(parent: Int, bits: Int) -> Int
     ? "A branch's work is everything behind it plus what this Header proves."
