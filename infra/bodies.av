@@ -22,9 +22,10 @@ module Bodies
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
 
 record Fetched
@@ -79,9 +80,10 @@ fn bodies(network: Network, address: PeerAddress, store: Store, blocks: BlockSto
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     pool = Infra.Peers.joinedOnly(Infra.Peers.opened(network), soleKey(), address)?
     closed(pool, bodiesOn(pool, soleKey(), store, blocks, from, to, Infra.Screen.unwatched(Domain.Snapshot.started(Time.unixMs()), Infra.Metrics.none()), Domain.AddressBook.noBook(), soleKey() + 1))
@@ -117,9 +119,10 @@ fn bodiesOn(pool: Pool, key: Int, store: Store, blocks: BlockStore, from: Int, t
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     started = Fetched(pool = pool, store = store, blocks = blocks, pending = [], waiting = 0, count = 0, bytes = 0, pace = Infra.Pace.pacedFrom(Time.unixMs()), eye = eye, reached = from, book = book, nextKey = nextKey)
     settled(reachedAt(wholly(takingOff(started, from, to), to)?, to))
@@ -142,9 +145,10 @@ fn wholly(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     flying(flight, to)
 
@@ -223,9 +227,10 @@ fn flying(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match Bool.or(Process.stopRequested(), flight.progress.eye.stopped)
         true -> Result.Ok(flight)
@@ -247,9 +252,10 @@ fn flyingWhile(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match spent(flight.deadlineMs, Time.unixMs())
         true -> Result.Ok(flight)
@@ -275,9 +281,10 @@ fn flyingOn(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match Bool.and(List.len(flight.plan.wanted) == 0, Map.len(flight.plan.owed) == 0)
         true -> Result.Ok(flight)
@@ -304,9 +311,10 @@ fn tended(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     polled = withPool2(flight, Infra.Peers.advanced(flight.progress.pool)?)
     dialStarted(polled, Infra.Peers.toppedUp(polled.progress.pool, polled.progress.book, polled.progress.nextKey)?, to)
@@ -322,9 +330,10 @@ fn dialStarted(flight: Flight, done: Infra.Peers.Topped, to: Int) -> Result<Flig
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     turning(withBook(flight, done.pool, done.book, done.nextKey), to)
 
@@ -342,9 +351,10 @@ fn turning(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match Infra.Peers.peerKeys(flight.progress.pool)
         [] -> Result.Err("no Peer is left to fetch Blocks from")
@@ -358,9 +368,10 @@ fn asking(flight: Flight, live: List<Int>, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     filled = assigned(flight, live)?
     waitingFor(filled, to)
@@ -520,9 +531,10 @@ fn waitingFor(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     ticked = Infra.Peers.awaitTick(flight.progress.pool, tickMs())?
     landed(withPool2(flight, ticked.pool), ticked.arrived, to)
@@ -535,9 +547,10 @@ fn landed(flight: Flight, arrived: Option<Spare>, to: Int) -> Result<Flight, Str
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match arrived
         Option.None -> quiet(flight, to)
@@ -556,9 +569,10 @@ fn sorted(flight: Flight, one: Spare, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match one.frame.command
         "block" -> blockIn(flight, one.frame, to)
@@ -574,9 +588,10 @@ fn ponged(flight: Flight, key: Int, frame: Frame, to: Int) -> Result<Flight, Str
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     payload = Bytes.fromList(frame.body)?
     sent = Infra.Peers.tell(flight.progress.pool, key, "pong", payload)?
@@ -599,9 +614,10 @@ fn blockIn(flight: Flight, frame: Frame, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     payload = Bytes.fromList(frame.body)?
     arrived = Domain.Block.idOfWholeBlock(payload)
@@ -619,9 +635,10 @@ fn matched(flight: Flight, payload: Bytes, blockId: String, owed: Option<Owed>, 
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match owed
         Option.None -> flying(flight, to)
@@ -641,9 +658,10 @@ fn kept(flight: Flight, payload: Bytes, blockId: String, owed: Owed, size: Int, 
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match Domain.Body.fault(payload, blockId)
         Option.Some(why) -> poisoned(flight, owed, why, to)
@@ -657,9 +675,10 @@ fn filed(flight: Flight, payload: Bytes, blockId: String, size: Int, to: Int) ->
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     appended = Infra.Blocks.append(flight.progress.blocks, payload)?
     held = Fetched(pool = flight.progress.pool, store = flight.progress.store, blocks = appended.store, pending = List.prepend(Entry(key = Domain.IndexKeys.blockKey(blockId)?, value = Domain.Index.encodeLocation(appended.location)), flight.progress.pending), waiting = flight.progress.waiting + 1, count = flight.progress.count + 1, bytes = flight.progress.bytes + size, pace = flight.progress.pace, eye = flight.progress.eye, reached = flight.progress.reached, book = flight.progress.book, nextKey = flight.progress.nextKey)
@@ -677,9 +696,10 @@ fn poisoned(flight: Flight, owed: Owed, why: String, to: Int) -> Result<Flight, 
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     _said = Console.error("dropping peer {owed.key}: {why}")
     shed = Infra.Peers.dropOne(flight.progress.pool, owed.key)?
@@ -696,9 +716,10 @@ fn quiet(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     match Bool.and(Time.unixMs() - flight.heardMs > stallMs(), Map.len(flight.plan.owed) > 0)
         true -> stalled(flight, to)
@@ -719,9 +740,10 @@ fn stalled(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     shed = dropping(flight.progress.pool, owingKeys(flight.plan, Map.keys(flight.plan.owed), []))?
     flying(Flight(progress = withPool(flight.progress, shed), plan = Plan(wanted = List.concat(owedHeights(flight.plan, Map.keys(flight.plan.owed), []), flight.plan.wanted), owed = Map.fromList([])), heardMs = Time.unixMs(), deadlineMs = flight.deadlineMs), to)
@@ -782,9 +804,10 @@ fn reporting(flight: Flight, to: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     saying(flight, to, Time.unixMs())
 
@@ -796,9 +819,10 @@ fn saying(flight: Flight, to: Int, nowMs: Int) -> Result<Flight, String>
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     at = positionOf(flight.plan, to)
     recorded = Infra.Metrics.marked(flight.progress.eye.log, "bodies", at, to, flight.progress.count, flight.progress.bytes, Infra.Peers.polledMsOf(flight.progress.pool), List.len(Infra.Peers.peerKeys(flight.progress.pool)), flight.progress.eye.candidates, 0, 0, false)?
@@ -816,9 +840,10 @@ fn said(flight: Flight, progress: Fetched, at: Int, to: Int, nowMs: Int) -> Resu
         Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     _said = Console.print("{lineAt(at, to, progress.count, progress.pace, nowMs)}")
     flying(withProgress(flight, Fetched(pool = progress.pool, store = progress.store, blocks = progress.blocks, pending = progress.pending, waiting = progress.waiting, count = progress.count, bytes = progress.bytes, pace = Infra.Pace.advanced(progress.pace, nowMs, progress.count, 0), eye = progress.eye, reached = progress.reached, book = progress.book, nextKey = progress.nextKey)), to)

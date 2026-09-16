@@ -1,0 +1,15 @@
+module Wire
+    kind = capability
+    semantics = effectful
+    intent = "One bounded socket probe, using Bitcoin regtest ping and pong frames. This is not a Bitcoin handshake or a node."
+    exposes [PingReply, ping]
+
+type PingReply
+    Now(Result<Unit, String>)
+    Later(Wait.Wake)
+    Then(Wait.Wake, Result<Unit, String>)
+
+operation ping() -> Result<Unit, String>
+    ? "Read the fixed test ping and write its pong through nonblocking socket operations."
+    oracle = generativeOutput
+    replay = recorded

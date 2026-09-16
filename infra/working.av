@@ -1,0 +1,140 @@
+module Working
+    intent = "One owned block calculation at a time. Wait on the same socket/job set, serve network turns, and cancel on every failed or stopped exit. Only the caller applies a result to chain state."
+    depends [Work, Wait, Tcp, Infra.BlockJobs, Domain.BlockWorkJob, Infra.Screen, Infra.Tending, Infra.Peers, Infra.Readiness]
+    exposes [Completed, run]
+    effects [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+
+record Completed
+    eye: Infra.Screen.Eye
+    answer: Option<Infra.BlockJobs.Reply>
+
+fn run(eye: Infra.Screen.Eye, task: Infra.BlockJobs.Task) -> Result<Completed, String>
+    ? "Begin one job and retain its handle until delivery, cancellation, or failure."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match Bool.or(eye.stopped, Process.stopRequested())
+        true -> Result.Ok(Completed(eye = eye, answer = Option.None))
+        false -> owned(eye, Infra.BlockJobs.begin(task)?)
+
+fn owned(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
+    ? "An error in serving or polling must also release the pending job."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.BlockJobs.take,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match waiting(eye, job)
+        Result.Err(why) -> failed(job, why)
+        Result.Ok(done) -> Result.Ok(done)
+
+fn waiting(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
+    ? "Readiness is a hint: take may still return None. A stop never applies a late result."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.BlockJobs.take,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match Bool.or(eye.stopped, Process.stopRequested())
+        true -> stopped(eye, job)
+        false -> match Infra.BlockJobs.take(job)?
+            Option.Some(answer) -> Result.Ok(Completed(eye = eye, answer = Option.Some(answer)))
+            Option.None -> serving(eye, job)
+
+fn interests(eye: Infra.Screen.Eye, job: Work.Job) -> Map<Int, Wait.Item>
+    ? "Even keys belong to sockets, including the listener and active dial; odd key 1 belongs only to this job."
+    Map.set(companyItems(eye.company), 1, Wait.Item.Job(job))
+
+fn companyItems(company: Option<Infra.Tending.Kept>) -> Map<Int, Wait.Item>
+    ? "Watch the current pool's sockets and reserved dial, or only the job when no pool is attached."
+    match company
+        Option.None -> {}
+        Option.Some(held) -> withDial(socketItems(held.pool.sockets, Map.keys(held.pool.sockets), {}), held.pool.dialing)
+
+verify companyItems
+    companyItems(Option.None) => {}
+
+fn socketItems(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, acc: Map<Int, Wait.Item>) -> Map<Int, Wait.Item>
+    ? "Inject caller socket keys into the even integers without collisions."
+    match keys
+        [] -> acc
+        [key, ..rest] -> match Map.get(sockets, key)
+            Option.None -> socketItems(sockets, rest, acc)
+            Option.Some(socket) -> socketItems(sockets, rest, Map.set(acc, key * 2, Wait.Item.Socket(socket)))
+
+verify socketItems
+    socketItems({}, [], {}) => {}
+    socketItems({}, [0, -1, 1], {}) => {}
+
+fn withDial(items: Map<Int, Wait.Item>, dialing: Option<Infra.Peers.Dialing>) -> Map<Int, Wait.Item>
+    ? "A pending dial shares its reserved peer key with no connected peer."
+    match dialing
+        Option.None -> items
+        Option.Some(pending) -> Map.set(items, pending.key * 2, Wait.Item.Socket(Tcp.Socket.Dialing(pending.dial)))
+
+verify withDial
+    withDial({}, Option.None) => {}
+
+fn failed(job: Work.Job, why: String) -> Result<Completed, String>
+    ? "Release a job before returning an owner-side failure."
+    ! [Work.cancel]
+    Work.cancel(job)
+    Result.Err(why)
+
+fn stopped(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
+    ? "Discard uncommitted work and return the current owner for its normal flush."
+    ! [Work.cancel]
+    Work.cancel(job)
+    Result.Ok(Completed(eye = eye, answer = Option.None))
+
+fn serving(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
+    ? "Serve peers, then park until a socket, job, or stop-check deadline wakes us. The existing handshake and write adapters still bound overall responsiveness."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.BlockJobs.take,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    served = Infra.Screen.attended(eye, Time.unixMs())?
+    _ready = Wait.poll(interests(served, job), 100)?
+    waiting(served, job)

@@ -1,0 +1,39 @@
+module Probe
+    intent = "A real btc-listener CPU workload alongside a yielding pulse process."
+    depends [Pulse, Wire]
+    effects [Console.print, Pulse.tick, Wire.ping, yield]
+
+fn peer() -> Unit
+    ? "Answer a wire-format ping while the block worker is still busy."
+    ! [Console.print, Wire.ping, yield]
+    match Wire.ping()
+        Result.Ok(_) -> Console.print("pong sent")
+        Result.Err(why) -> Console.print("wire failed: {why}")
+
+fn pulse() -> Unit
+    ? "Report progress before the worker finishes, then its result and the number of served pulses."
+    ! [Console.print, Pulse.tick, yield]
+    again = reported(Pulse.tick())
+    match again
+        true -> pulse()
+        false -> Unit
+
+fn reported(tick: Pulse.Tick) -> Bool
+    ! [Console.print]
+    match tick
+        Pulse.Tick.Busy(n) -> busy(n)
+        Pulse.Tick.Finished(result, ticks) -> finished(result, ticks)
+
+fn finished(result: Result<Int, String>, ticks: Int) -> Bool
+    ! [Console.print]
+    match result
+        Result.Ok(count) -> Console.print("prepared={count} pulses={ticks}")
+        Result.Err(why) -> Console.print("preparation failed: {why}")
+    false
+
+fn busy(n: Int) -> Bool
+    ! [Console.print]
+    match n
+        2 -> Console.print("pulse progressed while preparation was pending")
+        _ -> Unit
+    true

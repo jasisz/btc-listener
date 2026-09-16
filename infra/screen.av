@@ -7,15 +7,16 @@ module Screen
         "purpose: restore is the last thing done on every way out, and a"
         "restore that fails has nowhere better to send its complaint than"
         "the terminal it failed to restore (#130)."
-    exposes [keeping, chunking, chunkDone, blockWatched, stopAskedAt, Eye, entered, restored, shown, drainedKeys, unwatched, watchedBy, glanced, eyeing, logging, counting]
+    exposes [attended, keeping, chunking, chunkDone, blockWatched, stopAskedAt, Eye, entered, restored, shown, drainedKeys, unwatched, watchedBy, glanced, eyeing, logging, counting]
     depends [Domain.AddressBook, Domain.Network, Domain.Screen, Domain.Snapshot, Domain.Watchdog, Infra.Board, Infra.Metrics, Infra.Peers, Infra.Tending]
     effects [
         Console.error, Console.print,
         Disk.appendText,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.unixMs,
+        Wait.poll,
     ]
 
 record Eye
@@ -88,9 +89,10 @@ fn glanced(eye: Eye, nowMs: Int) -> Result<Eye, String>
         Console.error, Console.print,
         Disk.appendText,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
+        Wait.poll,
     ]
     boarded = answeredBoard(chunkWatched(tendedCompany(eye, nowMs)?, nowMs)?, nowMs)
     match boarded.view
@@ -189,8 +191,9 @@ fn tendedCompany(eye: Eye, nowMs: Int) -> Result<Eye, String>
         Console.error, Console.print,
         Disk.appendText,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Time.unixMs,
+        Wait.poll,
     ]
     match eye.company
         Option.None -> Result.Ok(eye)
@@ -202,8 +205,9 @@ fn tendedCompanyDue(eye: Eye, company: Kept, nowMs: Int, due: Bool) -> Result<Ey
         Console.error, Console.print,
         Disk.appendText,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Time.unixMs,
+        Wait.poll,
     ]
     match due
         false -> Result.Ok(eye)
@@ -228,14 +232,14 @@ verify boardEveryMs
 fn answeredBoard(eye: Eye, nowMs: Int) -> Eye
     ? "The Board answered from inside a walk, once a second, from the"
       "Snapshot the Eye holds; a walk with no Board glances for free."
-    ! [Tcp.accept, Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
     match eye.board
         Option.None -> eye
         Option.Some(board) -> answeredBoardDue(eye, board, nowMs, nowMs - eye.boardMs >= boardEveryMs())
 
 fn answeredBoardDue(eye: Eye, board: Board, nowMs: Int, due: Bool) -> Eye
     ? "Only when a second has passed since the last answer."
-    ! [Tcp.accept, Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
     match due
         false -> eye
         true -> answeredBoardNow(eye, nowMs, Infra.Board.served(board, eye.snapshot, nowMs))
@@ -343,3 +347,18 @@ fn drainedOne(budget: Int, acc: List<String>, got: Option<String>) -> Result<Lis
     match got
         Option.None -> Result.Ok(List.reverse(acc))
         Option.Some(key) -> draining(budget - 1, List.prepend(key, acc))
+
+fn attended(eye: Eye, nowMs: Int) -> Result<Eye, String>
+    ? "Serve a network turn while a block job owns only immutable inputs. Keep the resulting pool and log on the owner."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match eye.company
+        Option.None -> glanced(eye, nowMs)
+        Option.Some(company) -> glanced(tendedAt(eye, Infra.Tending.tended(Infra.Tending.kept(company.pool, company.book, company.nextKey, eye.log))?, nowMs), nowMs)

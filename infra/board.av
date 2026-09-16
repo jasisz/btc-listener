@@ -16,10 +16,11 @@ module Board
         "Nothing a Reader does reaches the ? -- an accept, a read or a"
         "write that fails costs that Reader, never the node, the same rule"
         "Infra.Peers keeps for a Peer (#227)."
-    depends [Bytes, Domain.Message, Domain.Page, Domain.Screen, Domain.Snapshot]
+    depends [Infra.Readiness, Bytes, Domain.Message, Domain.Page, Domain.Screen, Domain.Snapshot]
     exposes [Board, opened, served, closed, readersATurn, patienceMs, requestBytes]
     effects [
-        Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Wait.poll,
     ]
 
 record Board
@@ -67,8 +68,8 @@ verify requestBytes
 fn served(board: Board, snapshot: Snapshot, nowMs: Int) -> Result<Unit, String>
     ? "Everyone queued on the Board, answered or closed, and never waited"
       "for. Asked once a turn by the follow loop."
-    ! [Tcp.accept, Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
-    match Tcp.poll(Map.fromList([(0, Tcp.Socket.Listening(board.listener))]), 0)
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
+    match Wait.poll(Infra.Readiness.items(Map.fromList([(0, Tcp.Socket.Listening(board.listener))])), 0)
         Result.Err(why) -> Result.Ok(Unit)
         Result.Ok(ready) -> match ready
             [] -> Result.Ok(Unit)
@@ -77,7 +78,7 @@ fn served(board: Board, snapshot: Snapshot, nowMs: Int) -> Result<Unit, String>
 fn answering(board: Board, snapshot: Snapshot, nowMs: Int, left: Int) -> Result<Unit, String>
     ? "Readers off the listener one at a time until it is empty or the"
       "turn's allowance is spent."
-    ! [Tcp.accept, Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
     match left > 0
         false -> Result.Ok(Unit)
         true -> answeringOne(board, snapshot, nowMs, left, Tcp.accept(board.listener))
@@ -85,7 +86,7 @@ fn answering(board: Board, snapshot: Snapshot, nowMs: Int, left: Int) -> Result<
 fn answeringOne(board: Board, snapshot: Snapshot, nowMs: Int, left: Int, taken: Result<Option<Tcp.Connection>, String>) -> Result<Unit, String>
     ? "An empty backlog or a failed accept ends the turn's answering;"
       "a Reader is answered and the next asked for."
-    ! [Tcp.accept, Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
     match taken
         Result.Err(why) -> Result.Ok(Unit)
         Result.Ok(queued) -> match queued
@@ -94,25 +95,34 @@ fn answeringOne(board: Board, snapshot: Snapshot, nowMs: Int, left: Int, taken: 
 
 fn answeringNext(board: Board, snapshot: Snapshot, nowMs: Int, left: Int, done: Unit) -> Result<Unit, String>
     ? "One fewer to answer this turn."
-    ! [Tcp.accept, Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
     answering(board, snapshot, nowMs, left - 1)
 
 fn answered(connection: Tcp.Connection, snapshot: Snapshot, nowMs: Int) -> Unit
     ? "One Reader: its request read if it has sent one within patience,"
       "the page written, and the connection closed whatever happened."
-    ! [Tcp.close, Tcp.poll, Tcp.readSome, Tcp.writeBytes]
-    _sent = respondedIf(connection, snapshot, nowMs, Tcp.poll(Map.fromList([(0, Tcp.Socket.Connected(connection))]), patienceMs()))
+    ! [Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes, Wait.poll]
+    _sent = respondedIf(connection, snapshot, nowMs, Wait.poll(Infra.Readiness.items(Map.fromList([(0, Tcp.Socket.Connected(connection))])), patienceMs()))
     _closed = Tcp.close(connection)
     Unit
 
 fn respondedIf(connection: Tcp.Connection, snapshot: Snapshot, nowMs: Int, ready: Result<List<Int>, String>) -> Result<Unit, String>
     ? "A Reader that has said nothing within patience is closed unanswered."
-    ! [Tcp.readSome, Tcp.writeBytes]
+    ! [Tcp.readNow, Tcp.readSome, Tcp.writeBytes]
     match ready
         Result.Err(why) -> Result.Err(why)
         Result.Ok(keys) -> match keys
             [] -> Result.Ok(Unit)
-            [key, ..rest] -> responded(connection, snapshot, nowMs, Tcp.readSome(connection, requestBytes()))
+            [key, ..rest] -> respondedNow(connection, snapshot, nowMs, Tcp.readNow(connection, requestBytes()))
+
+fn respondedNow(connection: Tcp.Connection, snapshot: Snapshot, nowMs: Int, read: Result<Option<Bytes>, String>) -> Result<Unit, String>
+    ? "A false readiness notification must not block the whole node on a dashboard reader."
+    ! [Tcp.writeBytes]
+    match read
+        Result.Err(why) -> Result.Err(why)
+        Result.Ok(arrived) -> match arrived
+            Option.None -> Result.Ok(Unit)
+            Option.Some(bytes) -> responded(connection, snapshot, nowMs, Result.Ok(bytes))
 
 fn responded(connection: Tcp.Connection, snapshot: Snapshot, nowMs: Int, read: Result<Bytes, String>) -> Result<Unit, String>
     ? "What the Reader sent, answered by Domain.Page; the answer is ASCII"

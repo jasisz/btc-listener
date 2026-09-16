@@ -1,0 +1,88 @@
+module Prepared
+    intent = "Run the consumer's unmodified BlockWork away from the coordinator. Repeated genesis blocks are a reproducible responsiveness workload, not a mainnet throughput benchmark."
+    depends [Bytes, Domain.BlockWork, Domain.Checks, Pulse, Wait]
+    effects []
+
+record State
+    offered: Bool
+    outcome: Option<Result<Int, String>>
+    pulses: Int
+
+fn fresh() -> State
+    State(offered = false, outcome = Option.None, pulses = 0)
+
+fn nextTask(state: State) -> Option<Int>
+    match state.offered
+        false -> Option.Some(50000)
+        true -> Option.None
+
+verify nextTask
+    nextTask(fresh()) => Option.Some(50000)
+    nextTask(taskStarted(fresh(), 50000)) => Option.None
+
+fn taskStarted(state: State, task: Int) -> State
+    State.update(state, offered = true)
+
+verify taskStarted law aStartedTaskIsNotAskedAgain
+    given state: State = [fresh(), State.update(fresh(), offered = true)]
+    given task: Int = [50000]
+    when nextTask(state) == Option.Some(task)
+    nextTask(taskStarted(state, task)) != Option.Some(task) holds
+
+fn landed(state: State, outcome: Result<Result<Int, String>, String>) -> State
+    match outcome
+        Result.Err(why) -> State.update(state, outcome = Option.Some(Result.Err(why)))
+        Result.Ok(result) -> State.update(state, outcome = Option.Some(result))
+
+verify landed
+    landed(fresh(), Result.Ok(Result.Ok(7))).outcome => Option.Some(Result.Ok(7))
+    landed(fresh(), Result.Ok(Result.Err("decode failed"))).outcome => Option.Some(Result.Err("decode failed"))
+    landed(fresh(), Result.Err("cancelled")).outcome => Option.Some(Result.Err("cancelled"))
+
+fn tick(state: State) -> Tuple<State, Pulse.TickReply>
+    match state.outcome
+        Option.Some(result) -> (state, Pulse.TickReply.Now(Pulse.Tick.Finished(result, state.pulses)))
+        Option.None -> (State.update(state, pulses = state.pulses + 1), Pulse.TickReply.Then(Wait.Wake.After(10), Pulse.Tick.Busy(state.pulses + 1)))
+
+verify tick
+    tick(fresh()) => (State.update(fresh(), pulses = 1), Pulse.TickReply.Then(Wait.Wake.After(10), Pulse.Tick.Busy(1)))
+    tick(landed(fresh(), Result.Ok(Result.Ok(7)))) => (landed(fresh(), Result.Ok(Result.Ok(7))), Pulse.TickReply.Now(Pulse.Tick.Finished(Result.Ok(7), 0)))
+
+fn prepare(count: Int) -> Result<Int, String>
+    ? "Exercise the real decoder, transaction representation, Merkle and header checks; no fake CPU loop."
+    payload = Bytes.fromHex(Domain.Checks.genesisHexFor())?
+    repeat(count, payload, 0)
+
+verify prepare
+    prepare(0) => Result.Ok(0)
+    prepare(1) => Result.Ok(1)
+
+fn repeat(left: Int, payload: Bytes, total: Int) -> Result<Int, String>
+    match left <= 0
+        true -> Result.Ok(total)
+        false -> oneMore(left, payload, total)
+
+verify repeat
+    repeat(0, Bytes.fromList([]), 7) => Result.Ok(7)
+    repeat(-1, Bytes.fromList([]), 7) => Result.Ok(7)
+    repeat(1, Bytes.fromList([]), 7) => Result.Err("Block Header must be 80 bytes, got 0")
+
+fn oneMore(left: Int, payload: Bytes, total: Int) -> Result<Int, String>
+    prepared = Domain.BlockWork.preparedAcross([Domain.BlockWork.Unchecked(height = left, blockId = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f", parentBlockId = Option.None, payload = payload)])?
+    counted = checked(prepared)?
+    repeat(left - 1, payload, total + counted)
+
+verify oneMore
+    oneMore(1, Bytes.fromHex(Domain.Checks.genesisHexFor())?, 7) => Result.Ok(8)
+    oneMore(1, Bytes.fromList([]), 7) => Result.Err("Block Header must be 80 bytes, got 0")
+
+fn checked(blocks: List<Domain.BlockWork.Prepared>) -> Result<Int, String>
+    match blocks
+        [] -> Result.Err("preparation returned no block")
+        [head, ..rest] -> match Bool.and(rest == [], Bool.and(List.len(head.transactions) == 1, head.findings == [Finding.IdAgrees, Finding.MerkleAgrees, Finding.ParentUnrecorded, Finding.WorkMet]))
+            true -> Result.Ok(1)
+            false -> Result.Err("unexpected genesis preparation result")
+
+verify checked
+    checked([]) => Result.Err("preparation returned no block")
+    checked([Domain.BlockWork.Prepared(height = 0, blockId = "bad", transactions = [], findings = [])]) => Result.Err("unexpected genesis preparation result")

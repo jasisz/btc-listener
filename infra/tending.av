@@ -24,8 +24,9 @@ module Tending
         Console.error, Console.print,
         Disk.appendText,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Time.unixMs,
+        Wait.poll,
     ]
 
 record Kept
@@ -58,8 +59,9 @@ fn tended(held: Kept) -> Result<Kept, String>
         Console.error, Console.print,
         Disk.appendText,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.poll, Tcp.readSome, Tcp.writeBytes,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
         Time.unixMs,
+        Wait.poll,
     ]
     drained = drainedPool(held.pool, drainBudget())?
     advanced = Infra.Peers.advanced(drained)?
@@ -86,17 +88,29 @@ fn advertisedInto(held: Kept, advertised: Infra.Peers.Advertised) -> Result<Kept
 
 fn drainedPool(pool: Pool, budget: Int) -> Result<Pool, String>
     ? "Read what is already there, Message by Message, up to the budget."
-    ! [Console.error, Console.print, Tcp.close, Tcp.poll, Tcp.readSome, Time.unixMs]
+    ! [
+        Console.error, Console.print,
+        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Time.unixMs,
+        Wait.poll,
+    ]
     match budget <= 0
         true -> Result.Ok(pool)
         false -> drainedOne(Infra.Peers.awaitTick(pool, 0)?, budget)
 
 fn drainedOne(ticked: Tick, budget: Int) -> Result<Pool, String>
     ? "Nothing there ends the drain; a Message is kept for the loop."
-    ! [Console.error, Console.print, Tcp.close, Tcp.poll, Tcp.readSome, Time.unixMs]
+    ! [
+        Console.error, Console.print,
+        Tcp.close, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Time.unixMs,
+        Wait.poll,
+    ]
     match ticked.arrived
         Option.None -> Result.Ok(ticked.pool)
-        Option.Some(one) -> drainedPool(Infra.Peers.spared(ticked.pool, one.key, one.frame), budget - 1)
+        Option.Some(one) -> match one.frame.command
+            "ping" -> drainedPool(Infra.Peers.tell(ticked.pool, one.key, "pong", Bytes.fromList(one.frame.body)?)?, budget - 1)
+            _ -> drainedPool(Infra.Peers.spared(ticked.pool, one.key, one.frame), budget - 1)
 
 fn saidAll(held: Kept, outcomes: List<Outcome>) -> Result<Kept, String>
     ? "Every dial that settled, oldest first."

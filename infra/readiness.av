@@ -1,0 +1,24 @@
+module Readiness
+    intent = "Lift caller-owned socket keys into the shared socket/job wait set without changing readiness or timeout semantics."
+    depends [Tcp, Wait]
+    exposes [items]
+    effects []
+
+fn items(sockets: Map<Int, Tcp.Socket>) -> Map<Int, Wait.Item>
+    ? "The same keys and socket interests, ready to share one wait with jobs."
+    fromKeys(sockets, Map.keys(sockets), {})
+
+verify items
+    items({}) => {}
+
+fn fromKeys(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, acc: Map<Int, Wait.Item>) -> Map<Int, Wait.Item>
+    ? "Copy each present socket once, preserving Connected versus Sending interest."
+    match keys
+        [] -> acc
+        [key, ..rest] -> match Map.get(sockets, key)
+            Option.None -> fromKeys(sockets, rest, acc)
+            Option.Some(socket) -> fromKeys(sockets, rest, Map.set(acc, key, Wait.Item.Socket(socket)))
+
+verify fromKeys
+    fromKeys({}, [], {}) => {}
+    fromKeys({}, [1], {}) => {}

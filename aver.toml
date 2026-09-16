@@ -60,3 +60,10 @@ reason     = "one entry of script_assets_test.json is a 406 KB tapscript spend w
 # at between chunks.
 [effects.Tcp]
 connect_timeout_secs = 5
+
+[[providers.bindings]]
+capability = "Infra.BlockJobs"
+work = "Domain.BlockWorkJob.run"
+
+[work]
+max-jobs = 1

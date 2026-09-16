@@ -1,0 +1,86 @@
+module WorkingProbe
+    intent = "Exercise the production Work owner with real typed decode jobs, fragmented Bitcoin pings and deferred announcements. This is a scheduler test, not a consensus-valid synthetic block."
+    depends [Bytes, Domain.Address, Domain.AddressBook, Domain.BlockWorkJob, Domain.Network, Domain.Snapshot, Infra.BlockJobs, Infra.Metrics, Infra.Peers, Infra.Screen, Infra.Tending, Infra.Working]
+    effects [
+        Args.get,
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytes, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+
+fn main() -> Result<Unit, String>
+    ! [
+        Args.get,
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytes, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match Args.get()
+        [peer, ..rest] -> match rest
+            [path, .._] -> exercise(peer, path)
+            [] -> Result.Err("missing payload path")
+        _ -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
+
+fn exercise(peer: String, path: String) -> Result<Unit, String>
+    ? "Use exactly the production worker binding and owner loop; only the input payload is artificial."
+    ! [
+        Args.get,
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytes, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.connect, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    payload = Disk.readBytes(path)?
+    address = Domain.Address.fromPeerText(peer, 18444)?
+    pool = Infra.Peers.joinedOnly(Infra.Peers.opened(Network.Regtest), 0, address)?
+    eye = Infra.Screen.keeping(Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), Infra.Tending.kept(pool, Domain.AddressBook.noBook(), 1, Infra.Metrics.none()))
+    Console.print("work starting")
+    finished(Infra.Working.run(eye, Infra.BlockJobs.Task.Decode(payload))?)
+
+fn finished(done: Infra.Working.Completed) -> Result<Unit, String>
+    ? "Report only a delivered result; a cancelled result cannot enter owner state."
+    ! [Console.print, Tcp.close, Tcp.closeDial, Tcp.closeListener]
+    Console.print(answerText(done.answer))
+    match done.eye.company
+        Option.None -> Result.Err("owner lost its pool")
+        Option.Some(held) -> finishPool(held.pool)
+
+fn finishPool(pool: Infra.Peers.Pool) -> Result<Unit, String>
+    ? "Show deferred input and close every connection on the normal owner exit."
+    ! [Console.print, Tcp.close, Tcp.closeDial, Tcp.closeListener]
+    Console.print("deferred {deferredText(Infra.Peers.spareOf(pool))}")
+    _closed = Infra.Peers.closeAll(pool)?
+    Result.Ok(Unit)
+
+fn answerText(answer: Option<Infra.BlockJobs.Reply>) -> String
+    match answer
+        Option.None -> "cancelled"
+        Option.Some(one) -> match one
+            Infra.BlockJobs.Reply.Decoded(txs) -> "decoded {List.len(txs)}"
+            Infra.BlockJobs.Reply.Refused(why) -> "refused {why}"
+            Infra.BlockJobs.Reply.Connected(_) -> "unexpected connect result"
+
+fn deferredText(spare: List<Infra.Peers.Spare>) -> String
+    match spare
+        [] -> ""
+        [one, ..rest] -> "{one.key}:{one.frame.command}:{List.len(one.frame.body)} {deferredText(rest)}"

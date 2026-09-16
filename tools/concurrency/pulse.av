@@ -1,0 +1,19 @@
+module Pulse
+    kind = capability
+    semantics = effectful
+    intent = "Observe whether the coordinator stays responsive during real block preparation."
+    exposes [Tick, TickReply, tick]
+
+type Tick
+    Busy(Int)
+    Finished(Result<Int, String>, Int)
+
+type TickReply
+    Now(Pulse.Tick)
+    Later(Wait.Wake)
+    Then(Wait.Wake, Pulse.Tick)
+
+operation tick() -> Pulse.Tick
+    ? "A ten millisecond pulse while preparation runs, followed by its actual result."
+    oracle = generative
+    replay = recorded

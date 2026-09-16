@@ -1,0 +1,248 @@
+module BlockWorkJob
+    intent = "Typed adapters between the job contract and the existing block/UTXO domain functions. Calculation remains Domain.Block.transactionsOf and Domain.Connect.connected; application and persistence remain with the calling owner."
+    depends [Bytes, Infra.BlockJobs, Domain.Block, Domain.Connect, Domain.Network, Domain.Transaction, Domain.UtxoStore]
+    exposes [run, connectionTask, connection, transactions]
+    effects []
+
+fn run(task: Infra.BlockJobs.Task) -> Infra.BlockJobs.Reply
+    ? "Execute the exact existing pure operation named by this task."
+    match task
+        Infra.BlockJobs.Task.Decode(payload) -> decoded(Domain.Block.transactionsOf(payload))
+        Infra.BlockJobs.Task.Connect(chain, height, txs, coins) -> connected(Domain.Connect.connected(network(chain), height, transactions(txs, []), coinMap(coins, {})))
+
+verify run
+    run(Infra.BlockJobs.Task.Decode(Bytes.fromHex("0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c01")?)) => Infra.BlockJobs.Reply.Refused("Transaction ends before its lock time")
+    run(Infra.BlockJobs.Task.Decode(Bytes.empty())) => Infra.BlockJobs.Reply.Decoded([])
+
+fn decoded(answer: Result<List<Domain.Transaction.Transaction>, String>) -> Infra.BlockJobs.Reply
+    ? "Preserve the domain value across the owned job boundary (decoded)."
+    match answer
+        Result.Err(why) -> Infra.BlockJobs.Reply.Refused(why)
+        Result.Ok(txs) -> Infra.BlockJobs.Reply.Decoded(toTransactions(txs, []))
+
+verify decoded
+    decoded(Result.Err("broken")) => Infra.BlockJobs.Reply.Refused("broken")
+    decoded(Result.Ok([])) => Infra.BlockJobs.Reply.Decoded([])
+
+fn connected(answer: Domain.Connect.Connecting) -> Infra.BlockJobs.Reply
+    ? "Preserve the domain value across the owned job boundary (connected)."
+    match answer
+        Domain.Connect.Connecting.Refused(why) -> Infra.BlockJobs.Reply.Refused(why)
+        Domain.Connect.Connecting.Applied(change) -> Infra.BlockJobs.Reply.Connected(toChange(change))
+
+verify connected
+    connection(connected(Domain.Connect.Connecting.Applied(fixtureChange()))) => Domain.Connect.Connecting.Applied(fixtureChange())
+    connected(Domain.Connect.Connecting.Refused("bad spend")) => Infra.BlockJobs.Reply.Refused("bad spend")
+
+fn connection(answer: Infra.BlockJobs.Reply) -> Domain.Connect.Connecting
+    ? "Preserve the domain value across the owned job boundary (connection)."
+    match answer
+        Infra.BlockJobs.Reply.Refused(why) -> Domain.Connect.Connecting.Refused(why)
+        Infra.BlockJobs.Reply.Connected(change) -> Domain.Connect.Connecting.Applied(fromChange(change))
+        Infra.BlockJobs.Reply.Decoded(_) -> Domain.Connect.Connecting.Refused("a decode result cannot settle a connection job")
+
+verify connection
+    connection(Infra.BlockJobs.Reply.Refused("invalid")) => Domain.Connect.Connecting.Refused("invalid")
+    connection(Infra.BlockJobs.Reply.Decoded([])) => Domain.Connect.Connecting.Refused("a decode result cannot settle a connection job")
+
+verify connection
+    connection(Infra.BlockJobs.Reply.Connected(toChange(fixtureChange()))) => Domain.Connect.Connecting.Applied(fixtureChange())
+
+fn connectionTask(chain: Domain.Network.Network, height: Int, txs: List<Domain.Transaction.Transaction>, coins: Map<Bytes, Domain.UtxoStore.Unspent>) -> Infra.BlockJobs.Task
+    ? "Preserve the domain value across the owned job boundary (connectionTask)."
+    Infra.BlockJobs.Task.Connect(toNetwork(chain), height, toTransactions(txs, []), toCoins(Map.values(coins), []))
+
+fn coinMap(coins: List<Infra.BlockJobs.Coin>, acc: Map<Bytes, Domain.UtxoStore.Unspent>) -> Map<Bytes, Domain.UtxoStore.Unspent>
+    ? "Preserve the domain value across the owned job boundary (coinMap)."
+    match coins
+        [] -> acc
+        [coin, ..rest] -> coinMap(rest, Map.set(acc, Domain.UtxoStore.keyAt(coin.txid, coin.index), fromCoin(coin)))
+
+verify coinMap
+    Map.get(coinMap(toCoins([fixtureCoin()], []), {}), Domain.UtxoStore.keyAt(fixtureCoin().txid, fixtureCoin().index)) => Option.Some(fixtureCoin())
+
+fn network(chain: Infra.BlockJobs.Chain) -> Domain.Network.Network
+    ? "Preserve the domain value across the owned job boundary (network)."
+    match chain
+        Infra.BlockJobs.Chain.Mainnet -> Domain.Network.Network.Mainnet
+        Infra.BlockJobs.Chain.Testnet -> Domain.Network.Network.Testnet
+        Infra.BlockJobs.Chain.Signet -> Domain.Network.Network.Signet
+        Infra.BlockJobs.Chain.Regtest -> Domain.Network.Network.Regtest
+
+verify network law roundTrip
+    given chain: Domain.Network.Network = [Domain.Network.Network.Mainnet, Domain.Network.Network.Testnet, Domain.Network.Network.Signet, Domain.Network.Network.Regtest]
+    network(toNetwork(chain)) => chain
+
+fn toNetwork(chain: Domain.Network.Network) -> Infra.BlockJobs.Chain
+    ? "Preserve the domain value across the owned job boundary (toNetwork)."
+    match chain
+        Domain.Network.Network.Mainnet -> Infra.BlockJobs.Chain.Mainnet
+        Domain.Network.Network.Testnet -> Infra.BlockJobs.Chain.Testnet
+        Domain.Network.Network.Signet -> Infra.BlockJobs.Chain.Signet
+        Domain.Network.Network.Regtest -> Infra.BlockJobs.Chain.Regtest
+
+verify toNetwork
+    toNetwork(Domain.Network.Network.Mainnet) => Infra.BlockJobs.Chain.Mainnet
+    toNetwork(Domain.Network.Network.Testnet) => Infra.BlockJobs.Chain.Testnet
+    toNetwork(Domain.Network.Network.Signet) => Infra.BlockJobs.Chain.Signet
+    toNetwork(Domain.Network.Network.Regtest) => Infra.BlockJobs.Chain.Regtest
+
+fn toInput(value: Domain.Transaction.Input) -> Infra.BlockJobs.Input
+    ? "Preserve the domain value across the owned job boundary (toInput)."
+    Infra.BlockJobs.Input(previousTxid = value.previousTxid, previousIndex = value.previousIndex, script = value.script, sequence = value.sequence, witness = value.witness)
+
+fn toInputs(values: List<Domain.Transaction.Input>, acc: List<Infra.BlockJobs.Input>) -> List<Infra.BlockJobs.Input>
+    ? "Preserve the domain value across the owned job boundary (toInputs)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> toInputs(rest, List.prepend(toInput(head), acc))
+
+verify toInputs
+    fromInputs(toInputs(fixtureTransaction().inputs, []), []) => fixtureTransaction().inputs
+    toInputs([], []) => []
+
+fn fromInput(value: Infra.BlockJobs.Input) -> Domain.Transaction.Input
+    ? "Preserve the domain value across the owned job boundary (fromInput)."
+    Domain.Transaction.Input(previousTxid = value.previousTxid, previousIndex = value.previousIndex, script = value.script, sequence = value.sequence, witness = value.witness)
+
+fn fromInputs(values: List<Infra.BlockJobs.Input>, acc: List<Domain.Transaction.Input>) -> List<Domain.Transaction.Input>
+    ? "Preserve the domain value across the owned job boundary (fromInputs)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> fromInputs(rest, List.prepend(fromInput(head), acc))
+
+verify fromInputs
+    fromInputs(toInputs(fixtureTransaction().inputs, []), []) => fixtureTransaction().inputs
+    fromInputs([], []) => []
+
+fn toOutput(value: Domain.Transaction.Output) -> Infra.BlockJobs.Output
+    ? "Preserve the domain value across the owned job boundary (toOutput)."
+    Infra.BlockJobs.Output(value = value.value, script = value.script)
+
+fn toOutputs(values: List<Domain.Transaction.Output>, acc: List<Infra.BlockJobs.Output>) -> List<Infra.BlockJobs.Output>
+    ? "Preserve the domain value across the owned job boundary (toOutputs)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> toOutputs(rest, List.prepend(toOutput(head), acc))
+
+verify toOutputs
+    fromOutputs(toOutputs(fixtureTransaction().outputs, []), []) => fixtureTransaction().outputs
+    toOutputs([], []) => []
+
+fn fromOutput(value: Infra.BlockJobs.Output) -> Domain.Transaction.Output
+    ? "Preserve the domain value across the owned job boundary (fromOutput)."
+    Domain.Transaction.Output(value = value.value, script = value.script)
+
+fn fromOutputs(values: List<Infra.BlockJobs.Output>, acc: List<Domain.Transaction.Output>) -> List<Domain.Transaction.Output>
+    ? "Preserve the domain value across the owned job boundary (fromOutputs)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> fromOutputs(rest, List.prepend(fromOutput(head), acc))
+
+verify fromOutputs
+    fromOutputs(toOutputs(fixtureTransaction().outputs, []), []) => fixtureTransaction().outputs
+    fromOutputs([], []) => []
+
+fn toTransaction(value: Domain.Transaction.Transaction) -> Infra.BlockJobs.Transaction
+    ? "Preserve the domain value across the owned job boundary (toTransaction)."
+    Infra.BlockJobs.Transaction(version = value.version, inputs = toInputs(value.inputs, []), outputs = toOutputs(value.outputs, []), lockTime = value.lockTime, txid = value.txid, size = value.size, isSegWit = value.isSegWit)
+
+fn toTransactions(values: List<Domain.Transaction.Transaction>, acc: List<Infra.BlockJobs.Transaction>) -> List<Infra.BlockJobs.Transaction>
+    ? "Preserve the domain value across the owned job boundary (toTransactions)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> toTransactions(rest, List.prepend(toTransaction(head), acc))
+
+verify toTransactions
+    transactions(toTransactions([fixtureTransaction(), Domain.Transaction.Transaction.update(fixtureTransaction(), version = 1, isSegWit = false)], []), []) => [fixtureTransaction(), Domain.Transaction.Transaction.update(fixtureTransaction(), version = 1, isSegWit = false)]
+    toTransactions([], []) => []
+
+fn fromTransaction(value: Infra.BlockJobs.Transaction) -> Domain.Transaction.Transaction
+    ? "Preserve the domain value across the owned job boundary (fromTransaction)."
+    Domain.Transaction.Transaction(version = value.version, inputs = fromInputs(value.inputs, []), outputs = fromOutputs(value.outputs, []), lockTime = value.lockTime, txid = value.txid, size = value.size, isSegWit = value.isSegWit)
+
+fn transactions(values: List<Infra.BlockJobs.Transaction>, acc: List<Domain.Transaction.Transaction>) -> List<Domain.Transaction.Transaction>
+    ? "Preserve the domain value across the owned job boundary (transactions)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> transactions(rest, List.prepend(fromTransaction(head), acc))
+
+verify transactions
+    transactions(toTransactions([fixtureTransaction(), Domain.Transaction.Transaction.update(fixtureTransaction(), version = 1, isSegWit = false)], []), []) => [fixtureTransaction(), Domain.Transaction.Transaction.update(fixtureTransaction(), version = 1, isSegWit = false)]
+    transactions([], []) => []
+
+fn toCoin(value: Domain.UtxoStore.Unspent) -> Infra.BlockJobs.Coin
+    ? "Preserve the domain value across the owned job boundary (toCoin)."
+    Infra.BlockJobs.Coin(txid = value.txid, index = value.index, value = value.value, script = value.script, height = value.height, coinbase = value.coinbase)
+
+fn toCoins(values: List<Domain.UtxoStore.Unspent>, acc: List<Infra.BlockJobs.Coin>) -> List<Infra.BlockJobs.Coin>
+    ? "Preserve the domain value across the owned job boundary (toCoins)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> toCoins(rest, List.prepend(toCoin(head), acc))
+
+verify toCoins
+    fromCoins(toCoins([fixtureCoin(), Domain.UtxoStore.Unspent.update(fixtureCoin(), coinbase = false)], []), []) => [fixtureCoin(), Domain.UtxoStore.Unspent.update(fixtureCoin(), coinbase = false)]
+    toCoins([], []) => []
+
+fn fromCoin(value: Infra.BlockJobs.Coin) -> Domain.UtxoStore.Unspent
+    ? "Preserve the domain value across the owned job boundary (fromCoin)."
+    Domain.UtxoStore.Unspent(txid = value.txid, index = value.index, value = value.value, script = value.script, height = value.height, coinbase = value.coinbase)
+
+fn fromCoins(values: List<Infra.BlockJobs.Coin>, acc: List<Domain.UtxoStore.Unspent>) -> List<Domain.UtxoStore.Unspent>
+    ? "Preserve the domain value across the owned job boundary (fromCoins)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> fromCoins(rest, List.prepend(fromCoin(head), acc))
+
+verify fromCoins
+    fromCoins(toCoins([fixtureCoin(), Domain.UtxoStore.Unspent.update(fixtureCoin(), coinbase = false)], []), []) => [fixtureCoin(), Domain.UtxoStore.Unspent.update(fixtureCoin(), coinbase = false)]
+    fromCoins([], []) => []
+
+fn toFee(value: Domain.Connect.TxFee) -> Infra.BlockJobs.Fee
+    ? "Preserve the domain value across the owned job boundary (toFee)."
+    Infra.BlockJobs.Fee(txid = value.txid, fee = value.fee, coinbase = value.coinbase)
+
+fn toFees(values: List<Domain.Connect.TxFee>, acc: List<Infra.BlockJobs.Fee>) -> List<Infra.BlockJobs.Fee>
+    ? "Preserve the domain value across the owned job boundary (toFees)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> toFees(rest, List.prepend(toFee(head), acc))
+
+verify toFees
+    fromFees(toFees(fixtureChange().confirmed, []), []) => fixtureChange().confirmed
+    toFees([], []) => []
+
+fn fromFee(value: Infra.BlockJobs.Fee) -> Domain.Connect.TxFee
+    ? "Preserve the domain value across the owned job boundary (fromFee)."
+    Domain.Connect.TxFee(txid = value.txid, fee = value.fee, coinbase = value.coinbase)
+
+fn fromFees(values: List<Infra.BlockJobs.Fee>, acc: List<Domain.Connect.TxFee>) -> List<Domain.Connect.TxFee>
+    ? "Preserve the domain value across the owned job boundary (fromFees)."
+    match values
+        [] -> List.reverse(acc)
+        [head, ..rest] -> fromFees(rest, List.prepend(fromFee(head), acc))
+
+verify fromFees
+    fromFees(toFees(fixtureChange().confirmed, []), []) => fixtureChange().confirmed
+    fromFees([], []) => []
+
+fn toChange(value: Domain.Connect.Change) -> Infra.BlockJobs.Change
+    ? "Preserve the domain value across the owned job boundary (toChange)."
+    Infra.BlockJobs.Change(added = toCoins(value.added, []), removed = toCoins(value.removed, []), fees = value.fees, confirmed = toFees(value.confirmed, []))
+
+fn fromChange(value: Infra.BlockJobs.Change) -> Domain.Connect.Change
+    ? "Preserve the domain value across the owned job boundary (fromChange)."
+    Domain.Connect.Change(added = fromCoins(value.added, []), removed = fromCoins(value.removed, []), fees = value.fees, confirmed = fromFees(value.confirmed, []))
+
+fn fixtureTransaction() -> Domain.Transaction.Transaction
+    ? "Distinct fields and ordering make lost adapter data observable."
+    Domain.Transaction.Transaction(version = 2, inputs = [Domain.Transaction.Input(previousTxid = "01", previousIndex = 3, script = "aa", sequence = 4294967295, witness = ["bb", "cc"]), Domain.Transaction.Input(previousTxid = "02", previousIndex = 7, script = "dd", sequence = 9, witness = [])], outputs = [Domain.Transaction.Output(value = 5000000000, script = "0014"), Domain.Transaction.Output(value = 123, script = "5120")], lockTime = 42, txid = "abcd", size = 311, isSegWit = true)
+
+fn fixtureCoin() -> Domain.UtxoStore.Unspent
+    ? "A coin whose origin, amount, script, and maturity must all survive."
+    Domain.UtxoStore.Unspent(txid = Bytes.fromList([1, 2]), index = 4, value = 5000000000, script = Bytes.fromList([81]), height = 123, coinbase = true)
+
+fn fixtureChange() -> Domain.Connect.Change
+    ? "Nonempty additions, removals, and fees exercise both list directions."
+    Domain.Connect.Change(added = [fixtureCoin()], removed = [Domain.UtxoStore.Unspent.update(fixtureCoin(), height = 2, coinbase = false)], fees = 19, confirmed = [Domain.Connect.TxFee(txid = "a", fee = 19, coinbase = false), Domain.Connect.TxFee(txid = "b", fee = 0, coinbase = true)])

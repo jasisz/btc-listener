@@ -1,0 +1,8 @@
+module WorkVerify
+    intent = "Verification entry for the typed pure block worker and its domain dependencies, using the real project job binding."
+    depends [Domain.BlockWorkJob]
+    exposes [main]
+    effects []
+
+fn main() -> Unit
+    Unit

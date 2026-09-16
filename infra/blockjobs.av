@@ -1,0 +1,70 @@
+module BlockJobs
+    kind = capability
+    semantics = effectful
+    intent = "Pure block decoding and UTXO calculation, off the serving turn. The contract owns its data layouts; adapters preserve the existing domain types. No socket, Store, or commit crosses this boundary."
+    depends [Bytes, Work]
+    exposes [Task, Reply, Chain, Input, Output, Transaction, Coin, Fee, Change, begin, take]
+
+type Chain
+    Mainnet
+    Testnet
+    Signet
+    Regtest
+
+type Task
+    Decode(Bytes)
+    Connect(Chain, Int, List<Transaction>, List<Coin>)
+
+type Reply
+    Decoded(List<Transaction>)
+    Connected(Change)
+    Refused(String)
+
+record Input
+    previousTxid: String
+    previousIndex: Int
+    script: String
+    sequence: Int
+    witness: List<String>
+
+record Output
+    value: Int
+    script: String
+
+record Transaction
+    version: Int
+    inputs: List<Input>
+    outputs: List<Output>
+    lockTime: Int
+    txid: String
+    size: Int
+    isSegWit: Bool
+
+record Coin
+    txid: Bytes
+    index: Int
+    value: Int
+    script: Bytes
+    height: Int
+    coinbase: Bool
+
+record Fee
+    txid: String
+    fee: Int
+    coinbase: Bool
+
+record Change
+    added: List<Coin>
+    removed: List<Coin>
+    fees: Int
+    confirmed: List<Fee>
+
+operation begin(task: Task) -> Result<Work.Job, String>
+    ? "Start one pure calculation without waiting for its answer."
+    oracle = generativeOutput
+    replay = recorded
+
+operation take(job: Work.Job) -> Result<Option<Reply>, String>
+    ? "Collect one answer, or None while the calculation is still running."
+    oracle = generativeOutput
+    replay = recorded

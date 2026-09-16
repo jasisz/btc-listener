@@ -8,10 +8,11 @@ module Resolver
         "makes the exchange exactly the shape exact-length reads are for: read"
         "two bytes to learn the size, then read precisely that many."
     exposes [discover, discoverAll, seedsOf, resolverHost]
-    depends [Bytes, Domain.Dns, Domain.Address, Domain.Network]
+    depends [Infra.Readiness, Bytes, Domain.Dns, Domain.Address, Domain.Network]
     effects [
         Random.int,
-        Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes,
+        Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Wait.poll,
     ]
 
 fn resolverHost() -> String
@@ -65,7 +66,7 @@ fn discover(network: Network) -> Result<PeerAddress, String>
       "One address is what the bare listener wants: one question to one"
       "server, one Peer to listen to. A node that means to keep company"
       "wants the whole answer, which is discoverAll."
-    ! [Random.int, Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.writeBytes]
+    ! [Random.int, Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.writeBytes, Wait.poll]
     match seedsOf(network)
         [] -> Result.Err("the {Domain.Network.nameOf(network)} Network has no DNS seeds")
         [head, ..rest] -> chooseAddress(lookup(pick(List.prepend(head, rest), head))?, Domain.Network.portOf(network))
@@ -81,14 +82,22 @@ fn discoverAll(network: Network) -> Result<List<PeerAddress>, String>
       "That is worth knowing and is not fixed here: n1bor/btc-listener#118"
       "is where eclipse resistance belongs, and until it lands the Address"
       "Book is a convenience rather than a defence."
-    ! [Random.int, Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes]
+    ! [
+        Random.int,
+        Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Wait.poll,
+    ]
     match seedsOf(network)
         [] -> Result.Err("the {Domain.Network.nameOf(network)} Network has no DNS seeds")
         [head, ..rest] -> askingSeeds(shuffled(List.prepend(head, rest), []), network, [])
 
 fn askingSeeds(seeds: List<String>, network: Network, tried: List<String>) -> Result<List<PeerAddress>, String>
     ? "Each seed in turn, until one answers with addresses."
-    ! [Random.int, Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes]
+    ! [
+        Random.int,
+        Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Wait.poll,
+    ]
     match seeds
         [] -> Result.Err("no DNS seed for the {Domain.Network.nameOf(network)} Network answered with an address; tried {List.len(tried)}")
         [head, ..rest] -> askedSeed(head, rest, network, tried)
@@ -96,7 +105,11 @@ fn askingSeeds(seeds: List<String>, network: Network, tried: List<String>) -> Re
 fn askedSeed(seed: String, rest: List<String>, network: Network, tried: List<String>) -> Result<List<PeerAddress>, String>
     ? "One seed asked. A lookup that fails outright is the same as one that"
       "answers nothing: try the next."
-    ! [Random.int, Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes]
+    ! [
+        Random.int,
+        Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Wait.poll,
+    ]
     gave = lookup(seed)
     match gave
         Result.Err(why) -> askingSeeds(rest, network, List.prepend(seed, tried))
@@ -105,7 +118,11 @@ fn askedSeed(seed: String, rest: List<String>, network: Network, tried: List<Str
 fn seedAnswered(octets: List<List<Int>>, seed: String, rest: List<String>, network: Network, tried: List<String>) -> Result<List<PeerAddress>, String>
     ? "An empty answer sends us to the next seed; anything else is what we"
       "came for."
-    ! [Random.int, Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.readSome, Tcp.writeBytes]
+    ! [
+        Random.int,
+        Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.readNow, Tcp.readSome, Tcp.writeBytes,
+        Wait.poll,
+    ]
     match octets
         [] -> askingSeeds(rest, network, List.prepend(seed, tried))
         [head, ..tail] -> addressesOn(octets, Domain.Network.portOf(network), [])
@@ -220,7 +237,7 @@ verify octetsAt
 
 fn lookup(name: String) -> Result<List<List<Int>>, String>
     ? "Put the question to the resolver and read the addresses back."
-    ! [Random.int, Tcp.close, Tcp.connect, Tcp.poll, Tcp.readBytes, Tcp.writeBytes]
+    ! [Random.int, Tcp.close, Tcp.connect, Tcp.readBytes, Tcp.writeBytes, Wait.poll]
     connection = Tcp.connect(resolverHost(), resolverPort())?
     answer = exchange(connection, name)
     closeAfter(connection, answer)
@@ -233,7 +250,7 @@ fn closeAfter(connection: Tcp.Connection, answer: Result<List<List<Int>>, String
 
 fn exchange(connection: Tcp.Connection, name: String) -> Result<List<List<Int>>, String>
     ? "Send the question, then read the length-prefixed answer."
-    ! [Random.int, Tcp.poll, Tcp.readBytes, Tcp.writeBytes]
+    ! [Random.int, Tcp.readBytes, Tcp.writeBytes, Wait.poll]
     question = Domain.Dns.question(name, Random.int(0, 65535))?
     framed = Bytes.fromList(List.concat(lengthPrefix(List.len(Bytes.octets(question))), Bytes.octets(question)))?
     _written = Tcp.writeBytes(connection, framed)?
@@ -252,8 +269,8 @@ fn readAnswer(connection: Tcp.Connection) -> Result<List<List<Int>>, String>
       "Behind a deadline, as Infra.Peer reads are: a resolver that never"
       "answers would otherwise block the whole discovery forever, and DNS"
       "answers in milliseconds or not at all."
-    ! [Tcp.poll, Tcp.readBytes]
-    ready = Tcp.poll(Map.fromList([(0, Tcp.Socket.Connected(connection))]), answerDeadlineMs())?
+    ! [Tcp.readBytes, Wait.poll]
+    ready = Wait.poll(Infra.Readiness.items(Map.fromList([(0, Tcp.Socket.Connected(connection))])), answerDeadlineMs())?
     _got = answered(List.len(ready) > 0)?
     size = Bytes.octets(Tcp.readBytes(connection, 2)?)
     body = Tcp.readBytes(connection, sizeOf(size))?

@@ -1,0 +1,126 @@
+module Socketed
+    intent = "A bounded loopback test adapter; the consumer's Message.frame creates both expected ping and response. Partial reads and writes park on socket readiness."
+    depends [Bytes, Tcp, Wait, Wire, Domain.Message, Domain.Network]
+    effects [
+        Args.get,
+        Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+    ]
+
+record State
+    listener: Option<Tcp.Listener>
+    peer: Option<Tcp.Connection>
+    received: Bytes
+    output: Bytes
+    sent: Int
+    deadline: Int
+
+fn fresh() -> State
+    State(listener = Option.None, peer = Option.None, received = Bytes.fromList([]), output = Bytes.fromList([]), sent = 0, deadline = 0)
+
+fn ping(state: State) -> Tuple<State, Wire.PingReply>
+    ? "Bind once, then advance one nonblocking socket operation per answer."
+    ! [
+        Args.get,
+        Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+    ]
+    match state.deadline
+        0 -> opened(state)
+        _ -> match Time.unixMs() >= state.deadline
+            true -> finished(state, Result.Err("socket probe timed out"))
+            false -> advance(state)
+
+fn opened(state: State) -> Tuple<State, Wire.PingReply>
+    ! [Args.get, Tcp.listen, Time.unixMs]
+    match Tcp.listen(port(Args.get()), 1)
+        Result.Err(why) -> (state, Wire.PingReply.Now(Result.Err(why)))
+        Result.Ok(listener) -> parked(State.update(state, listener = Option.Some(listener), deadline = Time.unixMs() + 10000), Tcp.Socket.Listening(listener))
+
+fn port(args: List<String>) -> Int
+    match args
+        [] -> 0
+        [first, .._] -> match Int.fromString(first)
+            Result.Ok(n) -> n
+            Result.Err(_) -> 0
+
+verify port
+    port([]) => 0
+    port(["not a port"]) => 0
+    port(["18444"]) => 18444
+
+fn parked(state: State, socket: Tcp.Socket) -> Tuple<State, Wire.PingReply>
+    (state, Wire.PingReply.Later(Wait.Wake.Either(Wait.Item.Socket(socket), 100)))
+
+fn advance(state: State) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.readNow, Tcp.writeNow]
+    match state.peer
+        Option.None -> accepting(state)
+        Option.Some(peer) -> match Bytes.len(state.output) > 0
+            true -> writing(state, peer)
+            false -> reading(state, peer)
+
+fn accepting(state: State) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.accept, Tcp.close, Tcp.closeListener]
+    match state.listener
+        Option.None -> finished(state, Result.Err("no listener"))
+        Option.Some(listener) -> match Tcp.accept(listener)
+            Result.Err(why) -> finished(state, Result.Err(why))
+            Result.Ok(client) -> match client
+                Option.None -> parked(state, Tcp.Socket.Listening(listener))
+                Option.Some(peer) -> parked(State.update(state, peer = Option.Some(peer)), Tcp.Socket.Connected(peer))
+
+fn reading(state: State, peer: Tcp.Connection) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.close, Tcp.closeListener, Tcp.readNow, Tcp.writeNow]
+    match Tcp.readNow(peer, 32 - Bytes.len(state.received))
+        Result.Err(why) -> finished(state, Result.Err(why))
+        Result.Ok(chunk) -> match chunk
+            Option.None -> parked(state, Tcp.Socket.Connected(peer))
+            Option.Some(bytes) -> match Bytes.len(bytes) == 0
+                true -> finished(state, Result.Err("peer closed before ping"))
+                false -> received(State.update(state, received = Bytes.concat(state.received, bytes)), peer)
+
+fn received(state: State, peer: Tcp.Connection) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.close, Tcp.closeListener, Tcp.writeNow]
+    match Bytes.len(state.received) < 32
+        true -> parked(state, Tcp.Socket.Connected(peer))
+        false -> framed(state, peer, response(state.received))
+
+fn response(incoming: Bytes) -> Result<Bytes, String>
+    ? "Accept exactly the fixed eight-byte test nonce, including the real network header and checksum."
+    nonce = Bytes.fromList([1, 0, 0, 0, 0, 0, 0, 0])
+    expected = Domain.Message.frame(Network.Regtest, "ping", nonce)?
+    match incoming == expected
+        true -> Domain.Message.frame(Network.Regtest, "pong", nonce)
+        false -> Result.Err("unexpected ping frame")
+
+verify response
+    response(Bytes.fromList([])) => Result.Err("unexpected ping frame")
+    response(Domain.Message.frame(Network.Regtest, "ping", Bytes.fromList([1, 0, 0, 0, 0, 0, 0, 0]))?) => Domain.Message.frame(Network.Regtest, "pong", Bytes.fromList([1, 0, 0, 0, 0, 0, 0, 0]))
+
+fn framed(state: State, peer: Tcp.Connection, frame: Result<Bytes, String>) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.close, Tcp.closeListener, Tcp.writeNow]
+    match frame
+        Result.Err(why) -> finished(state, Result.Err(why))
+        Result.Ok(bytes) -> writing(State.update(state, output = bytes), peer)
+
+fn writing(state: State, peer: Tcp.Connection) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.close, Tcp.closeListener, Tcp.writeNow]
+    match Tcp.writeNow(peer, Bytes.drop(state.output, state.sent))
+        Result.Err(why) -> finished(state, Result.Err(why))
+        Result.Ok(count) -> match state.sent + count >= Bytes.len(state.output)
+            true -> finished(state, Result.Ok(Unit))
+            false -> parked(State.update(state, sent = state.sent + count), Tcp.Socket.Connected(peer))
+
+fn finished(state: State, result: Result<Unit, String>) -> Tuple<State, Wire.PingReply>
+    ! [Tcp.close, Tcp.closeListener]
+    match state.peer
+        Option.None -> Unit
+        Option.Some(peer) -> ignored(Tcp.close(peer))
+    match state.listener
+        Option.None -> Unit
+        Option.Some(listener) -> ignored(Tcp.closeListener(listener))
+    (State.update(state, peer = Option.None, listener = Option.None), Wire.PingReply.Now(result))
+
+fn ignored(result: Result<Unit, String>) -> Unit
+    Unit
