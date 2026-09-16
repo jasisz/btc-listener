@@ -1,10 +1,10 @@
 {
   "date": "2026-09-16",
   "platform": "macOS arm64",
-  "averCommit": "2f1eb8066b7ffb63aaa4d232ce287a019baa74eb",
+  "averCommit": "f6e8197d6f2c64cbdfc4b61f97e957fc649ea284",
   "consumerRemoteCi": "not run; workflow steps exercised locally",
-  "nativeProfile": "iteration, replay enabled",
-  "binary_sha256": "34444d358ed9c047c7d290888b73015471f9c92d9352f765697c5703781565fd",
+  "nativeProfile": "iteration, replay disabled",
+  "binary_sha256": "8fc0d1eab4b174f110fa7326b1e1eb3bda07c12bee812ca6d6148d5779ad895f",
   "core_version": "Bitcoin Core daemon version v31.1.0 bitcoind",
   "nativeRegtest": [
     {
@@ -26,7 +26,7 @@
     {
       "case": "fragmented-dashboard",
       "status": "passed",
-      "bytes": 1601
+      "bytes": 1600
     },
     {
       "case": "compact-block-and-mempool-confirmation",
@@ -125,7 +125,7 @@
   },
   "vmVerify": {
     "main": {
-      "passed": 9866,
+      "passed": 10058,
       "failed": 0,
       "skippedWhen": 464
     },
@@ -170,5 +170,15 @@
     "cancellationTransactions": 20000,
     "cancellationMilliseconds": 100.82,
     "deferredAnnouncementRetained": true
+  },
+  "historicalProbeScope": "idleDeadline, corpusGraph, workingProbeGraph, providers, nativeNetwork, nativeWork and wasm Work stress probes were run before the two-job pipeline and owned-transfer optimization; nativeRegtest is the final binary. The wasm CLI checksum and real Core follow were rerun with the two-job pipeline.",
+  "pipelineTrace": {
+    "status": "passed",
+    "decodeJobs": 3,
+    "connectJobs": 3,
+    "peakOutstandingJobs": 2,
+    "remainingJobs": 0,
+    "databaseFreeReplay": "passed",
+    "binary_sha256": "aefe9d03acc3023ce17c08ef3e7e9ce4f62ecd7aa8bcf69acf16a1f8b71d5827"
   }
 }

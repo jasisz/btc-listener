@@ -66,4 +66,4 @@ capability = "Infra.BlockJobs"
 work = "Domain.BlockWorkJob.run"
 
 [work]
-max-jobs = 1
+max-jobs = 2

@@ -1,7 +1,8 @@
 # Work/Wait migration acceptance
 
-This branch moves block decoding and pure UTXO connection onto one typed Work
-job at a time. The CLI owner resolves database inputs, serves peers while the
+This branch moves block decoding and pure UTXO connection onto bounded typed Work
+jobs. A single lookahead decodes Block N+1 while the owner resolves inputs
+and a second job connects Block N. The CLI owner resolves database inputs, serves peers while the
 job runs, and alone applies and persists its result. The exact existing
 `Domain.Block.transactionsOf` and `Domain.Connect.connected` algorithms run
 behind capability-owned Task/Reply adapters. A worker owns no database or socket.
@@ -17,7 +18,9 @@ gossip is folded into the Book, and the remaining deferred messages now pass
 through the ordinary dispatcher, oldest first, rather than being discarded.
 The existing queue still has its 64-message overflow policy.
 
-No block context can be replaced while this owner is awaiting its one job.
+No block context can be replaced while this owner is awaiting these jobs. Both jobs settle before the owner
+commits Block N; every error or stop cancels the retained lookahead. The next
+height is never read past the requested target.
 Cancellation discards the answer and returns through the normal path that
 flushes earlier completed work. Generated Rust detaches a cancelled computation;
 its thread is not preempted and retains its job slot until it finishes. This
@@ -25,12 +28,15 @@ branch does not claim that cancellation terminates native computation.
 
 ## Compiler requirement and build
 
-The `.aver-version` pin is `2f1eb8066b7ffb63aaa4d232ce287a019baa74eb`,
+The `.aver-version` pin is `f6e8197d6f2c64cbdfc4b61f97e957fc649ea284`,
 containing merged Aver PRs [#1382](https://github.com/jasisz/aver/pull/1382)
 and [#1383](https://github.com/jasisz/aver/pull/1383). The first fixes nested
 capability wrapper identifiers, composed-program binding checks and native
 replay of records containing Bytes-keyed maps. The second lets the Work host
-preserve an explicitly supplied JSPI `wait_poll` import.
+preserve an explicitly supplied JSPI `wait_poll` import. The pin also includes
+[Aver PR #1384](https://github.com/jasisz/aver/pull/1384), pending merge, which
+avoids unused replay snapshots and a redundant native Work task copy.
+See the [throughput comparison](work-wait-throughput.md) for the remaining cost.
 
 The upstream provider Cargo manifests already contain the author's absolute
 local aver-rt path. For a local build, set both `providers/primitives/Cargo.toml`
@@ -44,7 +50,7 @@ aver compile main.av --target rust --with-replay -o /tmp/btc-work-rust
 cargo build --manifest-path /tmp/btc-work-rust/Cargo.toml --profile iteration
 ```
 
-The compiler picks up `[work] max-jobs = 1` and the `Infra.BlockJobs` binding
+The compiler picks up `[work] max-jobs = 2` and the `Infra.BlockJobs` binding
 from aver.toml. The normal CLI and data format are unchanged.
 
 ## Production owner responsiveness probe
@@ -210,7 +216,7 @@ A compact response first checks the requested Id and body, then sends its
 carried Header through the ordinary proof-of-work/parent/target/timestamp
 pipeline and requires a placement before writing the body.
 
-Full VM verification now passes for the main program: 9,866 examples passed,
+Full VM verification now passes for the main program: 10,058 examples passed,
 zero failed, 464 skipped by their `when` guards. The Core-corpus graph also
 passes: 12,621 examples, zero failed, 464 guarded skips. These totals overlap
 because both graphs include shared modules; they must not be added together.

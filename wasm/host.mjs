@@ -1077,7 +1077,7 @@ async function main() {
     const wasm = readFileSync(process.argv[2]);
     const imports = { aver: standardImports(), ...providerImports() };
     const module = await WebAssembly.compile(wasm);
-    workHost = await createWorkHost(module, { maxJobs: 1, imports, pollSockets });
+    workHost = await createWorkHost(module, { maxJobs: 2, imports, pollSockets });
     guest = workHost.instance.exports;
     const run = WebAssembly.promising(guest.main);
     let timeout = null;

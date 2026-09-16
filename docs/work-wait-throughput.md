@@ -1,0 +1,73 @@
+# Work/Wait throughput comparison
+
+The migration serves peer traffic while block calculations run. It does not
+make block commits independent: every connection still consumes the Set left
+by its predecessor. One lookahead decode now overlaps resolution and connection
+of the current block; both results settle before the owner commits in order.
+Two job slots bound the lookahead. Existing independent products for UTXO reads
+and script audits remain separate from that limit.
+
+The original migration serialized those stages and lost the upstream overlap.
+The local comparison below records that regression as well as the fixes.
+
+## Reproduce
+
+For an application comparison, build upstream and this branch with the same
+compiler, runtime and Cargo profile. To measure the Aver runtime optimization,
+compare the explicitly identified before/after runtime versions in the JSON. Keep copies of the binaries before rebuilding the shared target.
+
+```sh
+python3 tools/regtest/throughput.py \
+  --core-bin /path/to/bitcoin/bin --output /tmp/btc-throughput \
+  --binary upstream=/path/to/upstream --binary migrated=/path/to/migrated
+python3 tools/regtest/throughput-peer.py \
+  --fixture /tmp/btc-throughput --binary /path/to/migrated --label migrated
+python3 tools/regtest/throughput-peer.py \
+  --fixture /tmp/btc-throughput --binary /path/to/migrated --label cancelled --cancel
+# The trace test additionally needs a binary compiled with --with-replay:
+python3 tools/regtest/pipeline-trace.py \
+  --seed /tmp/btc-throughput/seed --binary /path/to/replay-enabled-migrated
+```
+
+The fixture uses an isolated Bitcoin Core 31.1 regtest node. It mines 150
+maturity blocks followed by eight pairs of blocks: a mature coinbase fans out
+to 4,000 P2WPKH outputs, then a consolidation spends those outputs. Core's
+`generateblock` bypasses mempool policy but validates consensus. There are
+166 blocks, 32,008 spent outputs, and 16,000,000 satoshis of fees.
+
+Download headers and bodies once. Each timed Set run starts from a copy of that
+closed database, with no UTXO state. One warmup per binary precedes three timed
+runs in alternating order. Every run must report exactly the same height,
+created/spent output counts and fees. CPU time and peak RSS belong to the child
+process; database copying is outside the timed interval. The peer measurement
+is separate: a loopback peer sends pings during real catch-up over the same seed.
+
+## Scope
+
+The checked-in JSON report contains binary hashes and all individual results.
+These are macOS arm64 runs in the native `iteration` profile (opt-level 1,
+no LTO), with warm filesystem caches. They are not release-build or mainnet
+measurements. The Set phase does not run scripts; the existing acceptance suite
+separately audits script behavior. Short timings are sensitive to scheduling.
+
+Replay-enabled builds and ordinary builds are reported separately. Aver
+[PR #1384](https://github.com/jasisz/aver/pull/1384) removes snapshots made while
+recording is disabled and avoids a second copy of an owned native Work task.
+Both changes are general compiler/runtime optimizations, with their own tests.
+
+## Local measurements
+
+Median of three timed runs after warmup. Replay support is compiled in but recording is off.
+
+| Variant | Wall time | CPU time | Peak RSS |
+|---|---:|---:|---:|
+| upstream-plain | 1.173 s | 1.316 s | 39.0 MiB |
+| pipeline-plain | 1.333 s | 1.569 s | 61.0 MiB |
+| owned-plain | 1.317 s | 1.533 s | 53.6 MiB |
+| upstream-replay | 1.277 s | 1.439 s | 116.0 MiB |
+| serial-replay | 1.762 s | 1.814 s | 187.4 MiB |
+| pipeline-replay | 1.519 s | 1.825 s | 186.5 MiB |
+| lazy-replay | 1.409 s | 1.657 s | 61.1 MiB |
+| owned-replay | 1.388 s | 1.617 s | 53.3 MiB |
+
+`pipeline` restores the lookahead, `lazy` additionally removes idle replay snapshots, and `owned` additionally transfers native Work arguments without the extra copy. `plain` omits replay support. These changes reduce overhead; the final plain build still takes about 12% longer than upstream in this fixture. It should not be presented as a throughput improvement over upstream.

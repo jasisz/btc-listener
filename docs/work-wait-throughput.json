@@ -1,0 +1,303 @@
+{
+  "fixture": {
+    "height": 166,
+    "tip": "1651a6def629841684615038a37b33b2b14a6bf3bc9a4c658e836981323cab83",
+    "pairs": 8,
+    "fanout": 4000,
+    "large_block_bytes": [
+      124443,
+      592264,
+      124443,
+      592256,
+      124443,
+      592267,
+      124443,
+      592268,
+      124443,
+      592267,
+      124443,
+      592273,
+      124443,
+      592265,
+      124443,
+      592275
+    ]
+  },
+  "runs": [
+    {
+      "variant": "upstream-replay",
+      "trial": 0,
+      "wall_seconds": 1.268693249905482,
+      "user_seconds": 1.366215,
+      "system_seconds": 0.05912,
+      "max_rss_bytes": 124108800,
+      "binary_sha256": "c8ed7bcbcda3e239a63d3c9c7ce92e7afda63d2b04eb6a5537eb038a66578967",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "serial-replay",
+      "trial": 0,
+      "wall_seconds": 1.7576804999262094,
+      "user_seconds": 1.736615,
+      "system_seconds": 0.075629,
+      "max_rss_bytes": 196493312,
+      "binary_sha256": "c2b67c5837f50fe4f3db9a29f98b2259ca9f4444ca79277c37a6f05e0bdb68db",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "pipeline-replay",
+      "trial": 0,
+      "wall_seconds": 1.5193174581509084,
+      "user_seconds": 1.749018,
+      "system_seconds": 0.07565999999999999,
+      "max_rss_bytes": 195526656,
+      "binary_sha256": "1f612aa7fc0e74f6edfe64fb2a2dec90ad4f8454b2fcd3147b78a9d0402fc68b",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "pipeline-replay",
+      "trial": 1,
+      "wall_seconds": 1.526147625176236,
+      "user_seconds": 1.752273,
+      "system_seconds": 0.078206,
+      "max_rss_bytes": 196460544,
+      "binary_sha256": "1f612aa7fc0e74f6edfe64fb2a2dec90ad4f8454b2fcd3147b78a9d0402fc68b",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "serial-replay",
+      "trial": 1,
+      "wall_seconds": 1.7667853340972215,
+      "user_seconds": 1.740513,
+      "system_seconds": 0.079315,
+      "max_rss_bytes": 194494464,
+      "binary_sha256": "c2b67c5837f50fe4f3db9a29f98b2259ca9f4444ca79277c37a6f05e0bdb68db",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "upstream-replay",
+      "trial": 1,
+      "wall_seconds": 1.2851202918682247,
+      "user_seconds": 1.384345,
+      "system_seconds": 0.062192,
+      "max_rss_bytes": 121667584,
+      "binary_sha256": "c8ed7bcbcda3e239a63d3c9c7ce92e7afda63d2b04eb6a5537eb038a66578967",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "upstream-replay",
+      "trial": 2,
+      "wall_seconds": 1.2770664170384407,
+      "user_seconds": 1.380389,
+      "system_seconds": 0.05887,
+      "max_rss_bytes": 121454592,
+      "binary_sha256": "c8ed7bcbcda3e239a63d3c9c7ce92e7afda63d2b04eb6a5537eb038a66578967",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "serial-replay",
+      "trial": 2,
+      "wall_seconds": 1.762313958024606,
+      "user_seconds": 1.736663,
+      "system_seconds": 0.077028,
+      "max_rss_bytes": 196755456,
+      "binary_sha256": "c2b67c5837f50fe4f3db9a29f98b2259ca9f4444ca79277c37a6f05e0bdb68db",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "pipeline-replay",
+      "trial": 2,
+      "wall_seconds": 1.5063102501444519,
+      "user_seconds": 1.736118,
+      "system_seconds": 0.07341199999999999,
+      "max_rss_bytes": 193462272,
+      "binary_sha256": "1f612aa7fc0e74f6edfe64fb2a2dec90ad4f8454b2fcd3147b78a9d0402fc68b",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "upstream-plain",
+      "trial": 0,
+      "wall_seconds": 1.1731815000530332,
+      "user_seconds": 1.262048,
+      "system_seconds": 0.053655999999999995,
+      "max_rss_bytes": 40861696,
+      "binary_sha256": "e3513a0e0375ac80688f958a4c3eb53520fa1d8aa367f5b7c0aaf6867e74d0cd",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "pipeline-plain",
+      "trial": 0,
+      "wall_seconds": 1.3330534168053418,
+      "user_seconds": 1.507897,
+      "system_seconds": 0.060613999999999994,
+      "max_rss_bytes": 63913984,
+      "binary_sha256": "a1e71a6bde0b2b063c1e4e05de1612e8b978439a88cc1062626cd981d73a9c8d",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "owned-plain",
+      "trial": 0,
+      "wall_seconds": 1.3192112089600414,
+      "user_seconds": 1.476813,
+      "system_seconds": 0.05801,
+      "max_rss_bytes": 56197120,
+      "binary_sha256": "8fc0d1eab4b174f110fa7326b1e1eb3bda07c12bee812ca6d6148d5779ad895f",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "owned-plain",
+      "trial": 1,
+      "wall_seconds": 1.3053222908638418,
+      "user_seconds": 1.463031,
+      "system_seconds": 0.057867999999999996,
+      "max_rss_bytes": 58179584,
+      "binary_sha256": "8fc0d1eab4b174f110fa7326b1e1eb3bda07c12bee812ca6d6148d5779ad895f",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "pipeline-plain",
+      "trial": 1,
+      "wall_seconds": 1.3186950830277056,
+      "user_seconds": 1.489255,
+      "system_seconds": 0.060489999999999995,
+      "max_rss_bytes": 64569344,
+      "binary_sha256": "a1e71a6bde0b2b063c1e4e05de1612e8b978439a88cc1062626cd981d73a9c8d",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "upstream-plain",
+      "trial": 1,
+      "wall_seconds": 1.1679310828913003,
+      "user_seconds": 1.258202,
+      "system_seconds": 0.053866,
+      "max_rss_bytes": 40386560,
+      "binary_sha256": "e3513a0e0375ac80688f958a4c3eb53520fa1d8aa367f5b7c0aaf6867e74d0cd",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "upstream-plain",
+      "trial": 2,
+      "wall_seconds": 1.179432458942756,
+      "user_seconds": 1.265713,
+      "system_seconds": 0.051932,
+      "max_rss_bytes": 41140224,
+      "binary_sha256": "e3513a0e0375ac80688f958a4c3eb53520fa1d8aa367f5b7c0aaf6867e74d0cd",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "pipeline-plain",
+      "trial": 2,
+      "wall_seconds": 1.3429056250024587,
+      "user_seconds": 1.505989,
+      "system_seconds": 0.06744399999999999,
+      "max_rss_bytes": 63668224,
+      "binary_sha256": "a1e71a6bde0b2b063c1e4e05de1612e8b978439a88cc1062626cd981d73a9c8d",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "owned-plain",
+      "trial": 2,
+      "wall_seconds": 1.3172232089564204,
+      "user_seconds": 1.472351,
+      "system_seconds": 0.060257,
+      "max_rss_bytes": 55984128,
+      "binary_sha256": "8fc0d1eab4b174f110fa7326b1e1eb3bda07c12bee812ca6d6148d5779ad895f",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "lazy-replay",
+      "trial": 0,
+      "wall_seconds": 1.4092734169680625,
+      "user_seconds": 1.596887,
+      "system_seconds": 0.059650999999999996,
+      "max_rss_bytes": 64061440,
+      "binary_sha256": "402d4d9f9a323fd188b581107ed23c512a68dc7bbe957f9280c451311e91d750",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "owned-replay",
+      "trial": 0,
+      "wall_seconds": 1.3881890000775456,
+      "user_seconds": 1.558338,
+      "system_seconds": 0.057069999999999996,
+      "max_rss_bytes": 55689216,
+      "binary_sha256": "aefe9d03acc3023ce17c08ef3e7e9ce4f62ecd7aa8bcf69acf16a1f8b71d5827",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "owned-replay",
+      "trial": 1,
+      "wall_seconds": 1.3863563751801848,
+      "user_seconds": 1.559578,
+      "system_seconds": 0.057623999999999995,
+      "max_rss_bytes": 55918592,
+      "binary_sha256": "aefe9d03acc3023ce17c08ef3e7e9ce4f62ecd7aa8bcf69acf16a1f8b71d5827",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "lazy-replay",
+      "trial": 1,
+      "wall_seconds": 1.4098036249633878,
+      "user_seconds": 1.597923,
+      "system_seconds": 0.060204,
+      "max_rss_bytes": 66945024,
+      "binary_sha256": "402d4d9f9a323fd188b581107ed23c512a68dc7bbe957f9280c451311e91d750",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "lazy-replay",
+      "trial": 2,
+      "wall_seconds": 1.4058571248315275,
+      "user_seconds": 1.59475,
+      "system_seconds": 0.057969,
+      "max_rss_bytes": 63406080,
+      "binary_sha256": "402d4d9f9a323fd188b581107ed23c512a68dc7bbe957f9280c451311e91d750",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    },
+    {
+      "variant": "owned-replay",
+      "trial": 2,
+      "wall_seconds": 1.400364459026605,
+      "user_seconds": 1.576158,
+      "system_seconds": 0.059319,
+      "max_rss_bytes": 58425344,
+      "binary_sha256": "aefe9d03acc3023ce17c08ef3e7e9ce4f62ecd7aa8bcf69acf16a1f8b71d5827",
+      "output": "utxo    connecting 1..166 of 166\nno Assume-valid Height is set, so audit takes nothing on trust; the Set phase runs no Scripts at any Height either way (ADR 0007)\n166 Blocks connected to Height 166; Set +32182 -32008 Outputs, 16000000 satoshis in fees\n"
+    }
+  ],
+  "method": {
+    "profile": "iteration: opt-level=1, lto=false, codegen-units=256",
+    "machine": "macOS arm64",
+    "warmup_runs_per_binary": 1,
+    "trials_per_binary": 3,
+    "order": "alternating forward/reverse",
+    "scope": "local warm filesystem-cache Set phase; no script execution, no mainnet or release-performance claim",
+    "fixture_origin": "Bitcoin Core 31.1 isolated regtest generateblock; 8 fanout/consolidation pairs, 4000 outputs per fanout",
+    "upstream_commit": "c5dc05c",
+    "migration_base_commit": "91826c8",
+    "runtime": "Non-owned variants use aver-rt at 2f1eb8066b7ffb63aaa4d232ce287a019baa74eb; owned variants use f6e8197d6f2c64cbdfc4b61f97e957fc649ea284",
+    "lazy_codegen_commit": "e446d68d9de142edce8cc4da438bcad1483e7902",
+    "owned_dispatch": "f6e8197d6f2c64cbdfc4b61f97e957fc649ea284"
+  },
+  "peerProbes": [
+    {
+      "variant": "owned-final",
+      "cancel": false,
+      "pongs": 46,
+      "ping_median_ms": 0.3279164666309953,
+      "ping_max_ms": 62.26754211820662,
+      "set_elapsed_seconds": 1.3353661249857396,
+      "tip_reached": true
+    },
+    {
+      "variant": "owned-cancel",
+      "cancel": true,
+      "pongs": 1,
+      "ping_median_ms": 0.26312493719160557,
+      "ping_max_ms": 0.26312493719160557,
+      "set_elapsed_seconds": 0.034113500034436584,
+      "tip_reached": false,
+      "stop_ms": 3.855249844491482
+    }
+  ]
+}

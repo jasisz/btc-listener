@@ -1,7 +1,7 @@
 module Working
-    intent = "One owned block calculation at a time. Wait on the same socket/job set, serve network turns, and cancel on every failed or stopped exit. Only the caller applies a result to chain state."
+    intent = "Await one owned calculation while other bounded jobs may run. Wait on the same socket/job set, serve network turns, and cancel on every failed or stopped exit. Only the caller applies a result to chain state."
     depends [Work, Wait, Tcp, Infra.BlockJobs, Domain.BlockWorkJob, Infra.Board, Infra.Screen, Infra.Tending, Infra.Peers, Infra.Readiness]
-    exposes [Completed, run]
+    exposes [Completed, run, join]
     effects [
         Console.error, Console.print,
         Disk.appendText,
@@ -35,9 +35,9 @@ fn run(eye: Infra.Screen.Eye, task: Infra.BlockJobs.Task) -> Result<Completed, S
     ]
     match Bool.or(eye.stopped, Process.stopRequested())
         true -> Result.Ok(Completed(eye = eye, answer = Option.None))
-        false -> owned(eye, Infra.BlockJobs.begin(task)?)
+        false -> join(eye, Infra.BlockJobs.begin(task)?)
 
-fn owned(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
+fn join(eye: Infra.Screen.Eye, job: Work.Job) -> Result<Completed, String>
     ? "An error in serving or polling must also release the pending job."
     ! [
         Console.error, Console.print,

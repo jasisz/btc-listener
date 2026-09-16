@@ -1,4 +1,5 @@
 """Isolated process ownership and RPC helpers for suite.py."""
+import hashlib
 import json
 from pathlib import Path
 import signal
@@ -24,8 +25,9 @@ def wait_until(predicate, timeout, description):
 
 
 class Core:
-    def __init__(self, binaries, data, reuse=False):
+    def __init__(self, binaries, data, reuse=False, stop_timeout=30):
         self.binaries, self.data, self.reuse = binaries, data, reuse
+        self.stop_timeout = stop_timeout
         self.port, self.rpc_port = free_port(), free_port()
         self.peer = "127.0.0.1:" + str(self.port)
 
@@ -88,7 +90,7 @@ class Core:
     def __exit__(self, *_):
         if self.process.poll() is None:
             self.rpc("stop")
-            self.process.wait(timeout=30)
+            self.process.wait(timeout=self.stop_timeout)
         self.log.close()
 
 
