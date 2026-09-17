@@ -117,6 +117,9 @@ fn askingSeeds(seeds: List<String>, network: Network, tried: List<String>) -> Re
 fn askedSeed(seed: String, rest: List<String>, network: Network, tried: List<String>) -> Result<List<PeerAddress>, String>
     ? "One seed asked. A lookup that fails outright is the same as one that"
       "answers nothing: try the next."
+      "The stop is looked at before each seed as well as inside the"
+      "exchange, so working down a list of seeds cannot hold a stop for"
+      "one deadline per seed."
     ! [
         Process.stopRequested,
         Random.int,
@@ -253,7 +256,13 @@ verify octetsAt
     octetsAt([], 0, [9]) => [9]
 
 fn lookup(name: String) -> Result<List<List<Int>>, String>
-    ? "A stop-aware DNS exchange with one absolute deadline, including dial and partial writes. Used during discovery when no peer is available."
+    ? "Put the question to the resolver and read the addresses back."
+      "Behind a deadline, as Infra.Peer reads are: a resolver that never"
+      "answers would otherwise hold the whole discovery for ever, and DNS"
+      "answers in milliseconds or not at all. The deadline now covers the"
+      "dial and the question going out as well as the answer coming back,"
+      "because none of the three blocks any more and each of them can"
+      "therefore go round for ever on its own."
     ! [
         Process.stopRequested,
         Random.int,
@@ -264,7 +273,14 @@ fn lookup(name: String) -> Result<List<List<Int>>, String>
     lookupAt(name, resolverHost(), resolverPort())
 
 fn lookupAt(name: String, host: String, port: Int) -> Result<List<List<Int>>, String>
-    ? "Resolve through an explicitly named TCP resolver, using the same bounded exchange as seed discovery."
+    ? "The same exchange against a resolver the caller names, which is how"
+      "tools/dns_probe.av puts a fake resolver in front of it and watches"
+      "what this does with a fragmented or truncated answer."
+      "One deadline is taken here and carried through the dial, the"
+      "question and the answer, so the three share fifteen seconds rather"
+      "than having fifteen each. The dial is released as soon as it has"
+      "become a Connection or failed, because whoever opened it closes it;"
+      "the Connection is closeAfter's to give back."
     ! [
         Process.stopRequested,
         Random.int,
@@ -281,7 +297,8 @@ fn lookupAt(name: String, host: String, port: Int) -> Result<List<List<Int>>, St
         Result.Ok(one) -> closeAfter(one, exchange(one, name, deadlineMs))
 
 fn connected(dial: Tcp.Dial, deadlineMs: Int) -> Result<Tcp.Connection, String>
-    ? "Retry only after a bounded wait and a stop/deadline check."
+    ? "The dial asked what it has become, until it is a Connection or the"
+      "deadline says to stop asking."
     ! [Process.stopRequested, Tcp.dialled, Time.unixMs, Wait.poll]
     _active = active(deadlineMs)?
     match Tcp.dialled(dial)
@@ -291,11 +308,20 @@ fn connected(dial: Tcp.Dial, deadlineMs: Int) -> Result<Tcp.Connection, String>
             Option.None -> connectLater(dial, deadlineMs)
 
 fn connectLater(dial: Tcp.Dial, deadlineMs: Int) -> Result<Tcp.Connection, String>
+    ? "Not yet: wait on the dial itself for at most a tenth of a second"
+      "and ask again. Bounded rather than open-ended, so the stop and the"
+      "deadline are looked at between tries."
     ! [Process.stopRequested, Tcp.dialled, Time.unixMs, Wait.poll]
     _ready = Wait.poll({0 => Wait.Item.Socket(Tcp.Socket.Dialing(dial))}, 100)?
     connected(dial, deadlineMs)
 
 fn active(deadlineMs: Int) -> Result<Unit, String>
+    ? "Whether there is any point carrying on: a stop asked for, or the"
+      "deadline gone past."
+      "Looked at before every step of the exchange rather than only around"
+      "the reading. Nothing here blocks now, so counting is the only thing"
+      "that ends a resolver which trickles its answer a byte at a time or"
+      "never finishes it."
     ! [Process.stopRequested, Time.unixMs]
     match Process.stopRequested()
         true -> Result.Err("DNS discovery stopped")
@@ -310,7 +336,11 @@ fn closeAfter(connection: Tcp.Connection, answer: Result<List<List<Int>>, String
     answer
 
 fn exchange(connection: Tcp.Connection, name: String, deadlineMs: Int) -> Result<List<List<Int>>, String>
-    ? "Retain the exact write offset and fragmented length-prefixed answer across bounded waits."
+    ? "Send the question, then read the length-prefixed answer."
+      "Both halves keep their place between waits. A write that took only"
+      "part of the question carries its offset into the next turn, and an"
+      "answer arriving in pieces is kept until the two bytes in front of"
+      "it say it is whole."
     ! [
         Process.stopRequested,
         Random.int,
@@ -324,6 +354,10 @@ fn exchange(connection: Tcp.Connection, name: String, deadlineMs: Int) -> Result
     answerBytes(connection, Bytes.empty(), deadlineMs)
 
 fn writing(connection: Tcp.Connection, bytes: Bytes, offset: Int, deadlineMs: Int) -> Result<Unit, String>
+    ? "The question onto the socket, from wherever the last write stopped."
+      "Tcp.writeNow takes what the socket will accept and says how much,"
+      "so a question the socket will not swallow whole is several turns"
+      "rather than one blocking call."
     ! [
         Process.stopRequested,
         Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
@@ -336,6 +370,9 @@ fn writing(connection: Tcp.Connection, bytes: Bytes, offset: Int, deadlineMs: In
         false -> writtenSome(connection, bytes, offset, deadlineMs, Tcp.writeNow(connection, Bytes.drop(bytes, offset))?)
 
 fn writtenSome(connection: Tcp.Connection, bytes: Bytes, offset: Int, deadlineMs: Int, count: Int) -> Result<Unit, String>
+    ? "Wait for the socket to take more, then carry on from the offset the"
+      "last write reached. A count of zero is a full socket buffer rather"
+      "than a fault, and goes round again behind the same deadline."
     ! [
         Process.stopRequested,
         Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
@@ -346,6 +383,8 @@ fn writtenSome(connection: Tcp.Connection, bytes: Bytes, offset: Int, deadlineMs
     writing(connection, bytes, offset + count, deadlineMs)
 
 fn answerBytes(connection: Tcp.Connection, bytes: Bytes, deadlineMs: Int) -> Result<List<List<Int>>, String>
+    ? "The addresses, once the whole answer has arrived; another read while"
+      "it has not."
     ! [
         Process.stopRequested,
         Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
@@ -358,7 +397,11 @@ fn answerBytes(connection: Tcp.Connection, bytes: Bytes, deadlineMs: Int) -> Res
         Option.None -> readingAnswer(connection, bytes, deadlineMs)
 
 fn completeAnswer(bytes: Bytes) -> Option<Bytes>
-    ? "A partial prefix or body is not a response; the two-byte prefix bounds retained memory to 65537 bytes."
+    ? "Whether what has arrived is a whole answer yet: two bytes saying how"
+      "long it is, then that many more."
+      "The prefix is also the bound on what is kept. Two bytes name at"
+      "most 65535, so the most this can ever be holding is 65537, and a"
+      "resolver cannot talk this node out of its memory."
     match Bytes.len(bytes) >= 2
         false -> Option.None
         true -> completeBody(bytes, sizeOf(Bytes.octets(Bytes.take(bytes, 2))))
@@ -369,6 +412,8 @@ verify completeAnswer
     completeAnswer(Bytes.fromList([0, 2, 7, 8])) => Option.Some(Bytes.fromList([7, 8]))
 
 fn completeBody(bytes: Bytes, size: Int) -> Option<Bytes>
+    ? "The body on its own, once as many bytes as the prefix announced have"
+      "arrived behind it."
     match Bytes.len(bytes) >= size + 2
         true -> Option.Some(Bytes.take(Bytes.drop(bytes, 2), size))
         false -> Option.None
@@ -378,6 +423,12 @@ verify completeBody
     completeBody(Bytes.fromList([0, 2, 7, 8, 9]), 2) => Option.Some(Bytes.fromList([7, 8]))
 
 fn readingAnswer(connection: Tcp.Connection, bytes: Bytes, deadlineMs: Int) -> Result<List<List<Int>>, String>
+    ? "Wait a tenth of a second for the resolver to say more, then take"
+      "whatever is there."
+      "Nothing to read is an ordinary turn and goes round again. A read"
+      "that succeeds with no bytes in it is the resolver having closed,"
+      "and that is a failure here rather than an ending: the prefix said"
+      "how long the answer would be, and this is not that long."
     ! [
         Process.stopRequested,
         Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,

@@ -494,11 +494,22 @@ fn saidBook(before: Int, after: Int) -> Unit
         true -> Console.print("the Address Book holds {after} Candidate(s), up {after - before}")
 
 fn drainSpare(state: Following) -> Following
-    ? "Apply deferred addresses to the Book; keep every other Message for ordinary dispatch, including block announcements received during Work."
+    ? "Messages that arrived while something else was being waited for."
+      "A getaddr is answered while the Header phase is waiting for headers --"
+      "the two questions are asked seconds apart, and the answers do not"
+      "arrive in the order they were asked. The pool keeps what it was not"
+      "asked for; this is where it is looked at."
+      "It used to be emptied here as well. That was fair while the spare"
+      "held only what a catch-up had walked past, but a Block announced"
+      "while a Work job was running now lands in the same list, and"
+      "throwing it away is this node not hearing about a Block. So only"
+      "the addr Messages are taken, and everything else stays in the order"
+      "it arrived for the loop to dispatch a Message at a time."
     Following(pool = dispatchPool(state.pool), store = state.store, blocks = state.blocks, book = bookAfter(state.book, Infra.Peers.spareOf(state.pool)), nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate)
 
 fn dispatchPool(pool: Pool) -> Pool
-    ? "Only addresses leave the deferred queue here; ordinary dispatch consumes the rest."
+    ? "The pool, with the addr Messages taken out of its spare and the rest"
+      "left where they were."
     Pool.update(pool, spare = dispatchable(Infra.Peers.spareOf(pool), []))
 
 verify dispatchPool
@@ -506,7 +517,11 @@ verify dispatchPool
     Infra.Peers.spareOf(dispatchPool(Infra.Peers.spared(Infra.Peers.spared(Infra.Peers.opened(Network.Regtest), 1, Frame(command = "inv", body = [1])), 2, Frame(command = "addr", body = [])))) => [Spare(key = 1, frame = Frame(command = "inv", body = [1]))]
 
 fn dispatchable(spare: List<Spare>, acc: List<Spare>) -> List<Spare>
-    ? "Address gossip has been consumed; other deferred Messages retain their order and original peer."
+    ? "What is left after the addresses have been taken, in the order it"
+      "arrived and still carrying the key each Message came from."
+      "The key matters as much as the order: an inv kept from Peer three"
+      "is answered by asking Peer three for the Block, and a spare list"
+      "that had lost track of who said what would ask the wrong one."
     match spare
         [] -> List.reverse(acc)
         [one, ..rest] -> match one.frame.command
@@ -530,7 +545,12 @@ verify bookAfter
     Domain.AddressBook.sizeOf(bookAfter(Domain.AddressBook.noBook(), [sampleAddrSpare(), sampleAddrSpare()])) => 1
 
 fn spareInto(book: Map<String, Candidate>, one: Spare) -> Map<String, Candidate>
-    ? "Apply address gossip here; other Messages are retained for ordinary dispatch."
+    ? "The only kept Message this stage acts on is an addr."
+      "Everything else a Peer said while we were waiting is left alone"
+      "here. It used to be let go at this point, as a Transaction with no"
+      "Mempool to hold it or an inv for a Block we would hear about again;"
+      "since a Work job can be what we were waiting for, the loop"
+      "dispatches those instead and this only takes the addresses."
     match one.frame.command
         "addr" -> Domain.AddressBook.heardAll(book, renderedAll(Domain.Addr.addressesOf(one.frame.body), []), one.key)
         _ -> book
@@ -756,9 +776,11 @@ fn session(state: Following, screened: Bool) -> Result<Unit, String>
       "mined, and would then connect it onto a Set that was hours or years"
       "behind -- which is to say it would refuse it, correctly, and stop."
       "It is timed (#328). This is the Catch-up that runs for an hour after"
-      "a reindex; deferred Announcements are preserved, and if it ran long"
-      "the gate also holds one more ask of the"
-      "Peer it ran against, and the first turn of the loop acts on it."
+      "a reindex, and a Block announced into it used to be thrown away with"
+      "the rest of the spare; it is kept now and dispatched on a later turn"
+      "like any other. The gate is still the backstop: if the catch-up ran"
+      "long it holds one more ask of the Peer it ran against, and the first"
+      "turn of the loop acts on it."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
@@ -2189,7 +2211,15 @@ fn ticking(state: Following) -> Result<Unit, String>
     onTicked(tickState, ticked.arrived)
 
 fn nextMessage(pool: Pool, waitMs: Int) -> Result<Tick, String>
-    ? "A deferred Message is ordinary input to the next turn, not something to discard at catch-up completion."
+    ? "The next Message to act on: one that was kept while something else"
+      "was being waited for, or a tick of the loop."
+      "The kept ones come first, one a turn, so a Message that arrived"
+      "during a walk goes through exactly the dispatch a Message that"
+      "arrives now does. They used to be dropped when whatever had been"
+      "waiting finished, which was fair while they were only what a"
+      "catch-up had walked past; an inv announcing a Block lands there too"
+      "while a Work job is running, and this loop is the only thing that"
+      "will ever act on it."
     ! [
         Console.error, Console.print,
         Process.stopRequested,
@@ -3674,10 +3704,15 @@ fn completed(state: Following, key: Int, compact: Compact, built: Result<Bytes, 
 fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplied: Int) -> Result<Unit, String>
     ? "Put the rebuilt Block where a fetched one would have gone -- once it"
       "is proved to be a Block this node is waiting for (#283). It has to"
-      "be the one being rebuilt, its carried Header must pass the ordinary"
-      "Header pipeline, and its body has to pass Domain.Body"
-      "like any fetched one. Anything else falls back to the ordinary fetch,"
-      "which asks for Headers first and checks them."
+      "be the one being rebuilt, its Header has to pass the same pipeline"
+      "a Header out of getheaders passes, and its body has to pass"
+      "Domain.Body like any fetched one. Anything else falls back to the"
+      "ordinary fetch, which asks for Headers first and checks them."
+      "The Header used to be required to be in the tree already, which was"
+      "the same check by another route while a compact Block could only"
+      "follow a getheaders. A compact response carries its own Header, so"
+      "it is absorbed here and then looked for: absorbing is what checks"
+      "it, and a Header the tree did not keep is a Header it refused."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
@@ -3696,7 +3731,13 @@ fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplie
         Result.Ok(store) -> putAway(Following.update(state, store = store), key, compact, payload, supplied, blockId)
 
 fn compactStore(network: Network, store: Store, rebuilding: Option<Rebuilding>, header: List<Int>, payload: Bytes, blockId: String, nowSecs: Int) -> Result<Store, String>
-    ? "A compact response carries its Header. Validate it through the same Header pipeline as getheaders, after checking the requested Id and body, then require an actual placement before keeping bytes."
+    ? "The three questions a rebuilt Block has to answer, in the order that"
+      "costs least to a Peer sending nonsense."
+      "First whether this is the Block that was asked for, so an"
+      "unexpected one is refused before any part of it is looked at."
+      "Then whether the bytes hash to the Id they claim, so a Peer cannot"
+      "get a Header into the tree by attaching it to a body that is not"
+      "that Header's. Only then is the Header absorbed."
     ! [Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll]
     _expected = expectedCompact(rebuilding, blockId)?
     match Domain.Body.fault(payload, blockId)
@@ -3704,7 +3745,11 @@ fn compactStore(network: Network, store: Store, rebuilding: Option<Rebuilding>, 
         Option.None -> placedCompact(network, store, header, blockId, nowSecs)
 
 fn expectedCompact(rebuilding: Option<Rebuilding>, blockId: String) -> Result<Unit, String>
-    ? "An unrequested or mismatched compact response cannot change the Header tree."
+    ? "Whether this is the compact Block that was asked for."
+      "A compact Block arrives because this node asked for one. One naming"
+      "something else, or arriving while nothing is being rebuilt, is a"
+      "Peer offering the tree a Header unasked, and the tree does not take"
+      "Headers from whoever offers."
     match rebuilding
         Option.None -> Result.Err("a compact Block {blockId} was rebuilt with nothing being rebuilt")
         Option.Some(pending) -> match pending.blockId == blockId
@@ -3717,7 +3762,12 @@ verify expectedCompact
     expectedCompact(Option.Some(sampleRebuilding("aa")), "aa") => Result.Ok(Unit)
 
 fn placedCompact(network: Network, store: Store, header: List<Int>, blockId: String, nowSecs: Int) -> Result<Store, String>
-    ? "Apply ordinary proof-of-work, parent, target and timestamp checks; an orphan remains unstoreable."
+    ? "The carried Header through Infra.Headers, then looked for in the"
+      "tree."
+      "Absorbing is what checks proof of work, the parent, the target and"
+      "the timestamp, so none of those rules is written a second time"
+      "here. A Header that is not in the tree afterwards is an orphan or a"
+      "refusal, and either way there is nowhere to file the Block."
     ! [Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll]
     decoded = Domain.Block.decodeHeader(header)?
     settled = Infra.Headers.absorbed(network, store, [decoded], nowSecs)?
@@ -3976,7 +4026,13 @@ fn headerHeld(store: Store, height: Int, left: Int, acc: List<String>, blockId: 
         Option.Some(stored) -> headersFrom(store, height + 1, left - 1, List.prepend(Domain.TreeStore.decodeHeld(blockId, stored)?.headerHex, acc))
 
 fn boardTick(board: Option<Board>) -> Int
-    ? "An unfinished HTTP response gets a short next turn, without shortening every idle peer wait."
+    ? "How long the next tick may be, given what the Board is holding."
+      "A Reader with a request still arriving or an answer still going out"
+      "is work this node owes and nothing will wake it for, the same case"
+      "Infra.Peers.pollBudget covers for a half-written frame. A tenth of"
+      "a second while any Reader is held, and the ordinary tick otherwise,"
+      "so a browser does not wait a second between operations and a node"
+      "nobody is looking at still sleeps."
     match board
         Option.None -> tickMs()
         Option.Some(one) -> match List.len(one.readers) > 0

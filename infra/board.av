@@ -1,5 +1,26 @@
 module Board
-    intent = "A bounded HTTP dashboard owner. Each reader retains its request or response cursor between turns; no client operation waits."
+    intent =
+        "The status Board: one port on which anyone with a browser can"
+        "read what the Screen shows (#261)."
+        "A server run in tmux is read by attaching to it, and a phone"
+        "cannot. So follow can bind a second port beside the one it serves"
+        "Peers on, and answer GET / with the five Panels as a page. The"
+        "page is Domain.Page's and the lines are Domain.Screen's; this is"
+        "the socket work, and the rule it keeps is the loop's rule: nothing"
+        "here waits on anyone."
+        "What the Wait.poll migration changed is where the waiting used to"
+        "be. A Reader was accepted and then given a tenth of a second"
+        "inside that same turn to have said what it wants, which was the"
+        "owner loop standing still for one Reader. A Reader is now kept"
+        "between turns, holding whatever of its request has arrived or"
+        "whatever of its answer has not gone out, is given one read or one"
+        "write a turn, and puts its socket into the loop's own wait set."
+        "Four are accepted a turn and sixteen are held at most, so a caller"
+        "that connects and says nothing costs a place in that list until"
+        "its five seconds are up and costs nothing else."
+        "Nothing a Reader does reaches the ? -- an accept, a read or a"
+        "write that fails costs that Reader, never the node, the same rule"
+        "Infra.Peers keeps for a Peer (#227)."
     depends [Bytes, Domain.Message, Domain.Page, Domain.Screen, Domain.Snapshot]
     exposes [watchSockets, Board, opened, served, closed, readersATurn, patienceMs, requestBytes]
     effects [Tcp.accept, Tcp.close, Tcp.closeListener, Tcp.listen, Tcp.readNow, Tcp.writeNow]
@@ -17,53 +38,83 @@ record Board
     readers: List<Reader>
 
 fn opened(port: Int) -> Result<Board, String>
-    ? "Bind the board; pending clients are bounded independently of the listener backlog."
+    ? "Bind the port. A backlog of sixteen, as the Peer listener has:"
+      "a page is read by one person at a time."
+      "Nobody is held yet. The backlog bounds what the runtime queues on"
+      "our behalf and the Readers list bounds what this module has taken"
+      "on, and the two are counted apart."
     ! [Tcp.listen]
     Result.Ok(Board(listener = Tcp.listen(port, 16)?, port = port, readers = []))
 
 fn closed(board: Board) -> Unit
-    ? "Release both the listener and every unfinished response."
+    ? "The port given back, and every Reader still part-way through an"
+      "answer given back with it. The results are ignored on purpose: this"
+      "runs on the way out and a close that fails has nowhere to complain"
+      "to."
     ! [Tcp.close, Tcp.closeListener]
     closeReaders(board.readers)
     _closed = Tcp.closeListener(board.listener)
     Unit
 
 fn closeReaders(readers: List<Reader>) -> Unit
+    ? "Every Reader the Board was holding, one after another."
     ! [Tcp.close]
     match readers
         [] -> Unit
         [head, ..rest] -> closeNext(head, rest)
 
 fn closeNext(reader: Reader, rest: List<Reader>) -> Unit
+    ? "One connection given back, then the rest: a close that fails does"
+      "not strand the Readers behind it."
     ! [Tcp.close]
     _closed = Tcp.close(reader.connection)
     closeReaders(rest)
 
 fn readersATurn() -> Int
+    ? "How many Readers one turn will take on. Four: a household, not a"
+      "crowd, and a crowd is what the bound is for."
     4
 
 verify readersATurn
     readersATurn() => 4
 
 fn patienceMs() -> Int
+    ? "How long a Reader has between being accepted and being finished"
+      "with: five seconds, fixed when it arrives and never renewed."
+      "It used to be a tenth of a second and it covered the request line"
+      "alone, because the request was read inside the turn that accepted"
+      "the Reader and that turn stood still for it. A Reader that is kept"
+      "between turns costs nothing to be patient with, so the deadline can"
+      "be the one a person would pick and can cover the answer going out"
+      "as well as the request coming in."
     5000
 
 verify patienceMs
     patienceMs() => 5000
 
 fn requestBytes() -> Int
+    ? "How much of a request is read: enough for the line and the headers"
+      "a browser sends; more than this is not a request for a page."
     4096
 
 verify requestBytes
     requestBytes() => 4096
 
 fn served(board: Board, snapshot: Snapshot, nowMs: Int) -> Board
-    ? "One nonblocking operation per retained reader, followed by at most four accepts; keep at most sixteen clients."
+    ? "Everyone the Board holds moved on by one operation, then whoever is"
+      "queued on the listener taken on, and never waited for. Asked once a"
+      "turn by the follow loop."
+      "The held Readers go first so that a Reader which finishes this turn"
+      "gives up its place before the accepts behind it count how many are"
+      "held."
     ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow]
     retained = stepped(board.readers, snapshot, nowMs, [])
     accepting(Board.update(board, readers = retained), nowMs, readersATurn())
 
 fn accepting(board: Board, nowMs: Int, left: Int) -> Board
+    ? "Readers off the listener one at a time until it is empty, the"
+      "turn's four are spent, or sixteen are already held. A failed accept"
+      "ends the turn's accepting and costs the node nothing else."
     ! [Tcp.accept]
     match Bool.or(left <= 0, List.len(board.readers) >= 16)
         true -> board
@@ -74,6 +125,8 @@ fn accepting(board: Board, nowMs: Int, left: Int) -> Board
                 Option.Some(connection) -> accepting(Board.update(board, readers = List.concat(board.readers, [Reader(connection = connection, request = Bytes.empty(), response = Option.None, offset = 0, deadlineMs = nowMs + patienceMs())])), nowMs, left - 1)
 
 fn stepped(readers: List<Reader>, snapshot: Snapshot, nowMs: Int, acc: List<Reader>) -> List<Reader>
+    ? "One operation each, in the order the Readers were accepted; the"
+      "ones that finished or were let go do not come back."
     ! [Tcp.close, Tcp.readNow, Tcp.writeNow]
     match readers
         [] -> List.reverse(acc)
@@ -82,12 +135,21 @@ fn stepped(readers: List<Reader>, snapshot: Snapshot, nowMs: Int, acc: List<Read
             Option.Some(next) -> stepped(rest, snapshot, nowMs, List.prepend(next, acc))
 
 fn dropped(reader: Reader) -> Option<Reader>
+    ? "Close this Reader and give up its place."
+      "Every ending goes through here: answered, timed out, hung up, read"
+      "or write failed. One line closes a Reader, so there is no way to"
+      "stop holding one without giving its half of the socket back."
     ! [Tcp.close]
     _closed = Tcp.close(reader.connection)
     Option.None
 
 fn step(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
-    ? "One absolute deadline bounds request trickles and clients that never read a response."
+    ? "One Reader's turn: more of the answer written if it has one to"
+      "write, otherwise more of its request read."
+      "The deadline is absolute and is looked at first, so a request that"
+      "arrives a byte at a time cannot buy itself another five seconds"
+      "with each byte, and a caller that asks for a page and then never"
+      "reads it is let go on the same clock."
     ! [Tcp.close, Tcp.readNow, Tcp.writeNow]
     match nowMs >= reader.deadlineMs
         true -> dropped(reader)
@@ -96,6 +158,10 @@ fn step(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
             Option.None -> receiving(reader, snapshot, nowMs)
 
 fn sending(reader: Reader, bytes: Bytes) -> Option<Reader>
+    ? "Up to sixty-four kilobytes of the answer, from where the last turn"
+      "stopped. A socket that took only part of it keeps its place, and"
+      "the byte that finishes the answer closes the Reader, which is the"
+      "Connection: close the response itself announced."
     ! [Tcp.close, Tcp.writeNow]
     match Tcp.writeNow(reader.connection, Bytes.take(Bytes.drop(bytes, reader.offset), 65536))
         Result.Err(why) -> dropped(reader)
@@ -104,6 +170,10 @@ fn sending(reader: Reader, bytes: Bytes) -> Option<Reader>
             false -> Option.Some(Reader.update(reader, offset = reader.offset + count))
 
 fn receiving(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
+    ? "More of the request, up to what is left of the four kilobytes."
+      "Nothing there is a Reader that has not spoken yet and comes back"
+      "next turn. A read that succeeds with no bytes in it is the far side"
+      "having hung up, which is not a fault and not worth a line."
     ! [Tcp.close, Tcp.readNow]
     match Tcp.readNow(reader.connection, requestBytes() - Bytes.len(reader.request))
         Result.Err(why) -> dropped(reader)
@@ -114,6 +184,10 @@ fn receiving(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
                 false -> received(Reader.update(reader, request = Bytes.concat(reader.request, bytes)), snapshot, nowMs)
 
 fn received(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
+    ? "A request is whole when its headers are, which is the blank line a"
+      "browser sends after the last of them. Until that arrives the bytes"
+      "are kept and the Reader comes back; a caller that fills four"
+      "kilobytes without ending its headers is not asking for a page."
     ! [Tcp.close]
     text = Domain.Message.asciiText(Bytes.octets(reader.request))
     match String.contains(text, "\r\n\r\n")
@@ -123,16 +197,32 @@ fn received(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
             false -> Option.Some(reader)
 
 fn prepared(reader: Reader, response: String) -> Option<Reader>
+    ? "What the Reader asked for, answered by Domain.Page and held whole so"
+      "the writing can pick up where it stopped. The answer is ASCII and"
+      "HTML, so it is kept as the code points it is made of. The request"
+      "bytes go at the same moment: a Reader is answered once."
     ! [Tcp.close]
     match Bytes.fromList(Domain.Message.asciiBytes(response))
         Result.Err(why) -> dropped(reader)
         Result.Ok(bytes) -> Option.Some(Reader.update(reader, response = Option.Some(bytes), request = Bytes.empty()))
 
 fn watchSockets(board: Board) -> Map<Int, Tcp.Socket>
-    ? "Only retained readers enter the shared wait; acceptance runs every bounded owner turn, so a full board cannot spin on its backlog."
+    ? "The connections worth waking the loop for: a Reader with an answer"
+      "still going out, and a Reader whose request has not finished"
+      "arriving."
+      "The listener is left out, for the reason pollable gives in"
+      "Infra.Peers. A Board already holding its sixteen Readers accepts"
+      "nobody, so a caller queued behind them would make every wait return"
+      "at once and the loop would spin instead of sleeping. Accepting runs"
+      "on this loop's own turn whatever the wait said, so leaving the"
+      "listener out costs a new Reader one turn and nothing more."
     watchReaders(board.readers, 1, {})
 
 fn watchReaders(readers: List<Reader>, key: Int, sockets: Map<Int, Tcp.Socket>) -> Map<Int, Tcp.Socket>
+    ? "One key per held Reader, counted from one: Sending while an answer"
+      "is outstanding, Connected while a request is still arriving. The"
+      "keys are this module's own, and the caller moves them clear of its"
+      "Peer keys before the two sets share a wait."
     match readers
         [] -> sockets
         [head, ..rest] -> match head.response

@@ -1,7 +1,21 @@
 module BlockJobs
     kind = capability
     semantics = effectful
-    intent = "Pure block decoding and UTXO calculation, off the serving turn. The contract owns its data layouts; adapters preserve the existing domain types. No socket, Store, or commit crosses this boundary."
+    intent =
+        "The arithmetic of a Block, done somewhere the loop is not."
+        "Decoding a Block and working out what it spends is the one thing"
+        "this node does that takes long enough for a Peer to notice, and it"
+        "needs nothing but the bytes. So it is a capability: begin hands"
+        "over a Task, take collects the answer, and in between the loop"
+        "goes on reading its Peers and answering their pings."
+        "The types here are the contract's own. An operation may only name"
+        "types the capability declares, so a Task cannot carry a"
+        "Domain.Transaction and a Reply cannot carry a"
+        "Domain.Connect.Change; Domain.BlockWorkJob is the translation and"
+        "says what that costs."
+        "Nothing but data crosses this. No socket, no Store, no write: the"
+        "answer goes back to the owner and the owner applies it, which is"
+        "the single writer ADR 0008 asks for."
     depends [Bytes, Work]
     exposes [Task, Reply, Chain, Input, Output, Transaction, Coin, Fee, Change, begin, take]
 

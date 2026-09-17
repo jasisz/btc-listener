@@ -20,7 +20,7 @@ module ChainState
         "A Block that will not connect stops the walk with the reason. That is"
         "a consensus failure, not a fault to be counted and walked past: the"
         "chain the Index is following is not one this program can follow."
-        "Each step decodes and connects a Block in Work jobs while serving Peers, and"
+        "Each step reads the next Block beside resolving this one (#233) and"
         "holds what recent Blocks made and spent in a window that is written"
         "through in batches (#247); the shape of both is in overlapped."
     exposes [Built, build, buildFrom]
@@ -187,7 +187,8 @@ fn walk(network: Network, state: Walk, height: Int, to: Int, created: Map<Bytes,
       "the Set phase takes. The operator was left with kill -9, which is the"
       "ending that tears a Segment and the one a cooperative stop exists to"
       "avoid."
-      "Decode one Block ahead while resolving and connecting this Block."
+      "The first Block is fetched on its own; from then on each step has the"
+      "next Block being decoded while this one connects (#233)."
       "The window's parts ride as parameters (#247): a Map set on a field"
       "of a record the caller still holds is copied whole, and a window of"
       "a hundred thousand Outputs copied every Block made the walk twenty"
@@ -263,9 +264,19 @@ fn unlessStopped(network: Network, state: Walk, to: Int, this: Ahead, created: M
         false -> overlapped(network, state, to, this, created, spent, undos, held, standing)
 
 fn overlapped(network: Network, state: Walk, to: Int, this: Ahead, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "Decode the next Block while resolving and connecting this Block; serve sockets while jobs run."
-      "Only immutable resolved inputs cross the worker boundary. The owner"
-      "alone absorbs the returned change or flushes its earlier window on stop."
+    ? "The next Block read and decoded while this one is resolved and"
+      "worked out; then this one goes into the window (#233, #247)."
+      "What overlaps is two jobs rather than an independent product. The"
+      "next Block's decode is begun before this Block's inputs are looked"
+      "up, and the connecting of this Block is a job of its own, so the"
+      "loop is serving its Peers through both of them."
+      "The reading stays here: readNext reads the h: and b: keys and a"
+      "Segment, preparing reads u: and the window, and every write stays"
+      "on this one thread, at a flush. A job could not touch either even"
+      "if it wanted to, because Infra.BlockJobs is a capability and what"
+      "crosses that boundary is data."
+      "A stop asked for while a job is running is seen before the next"
+      "Block, so the Set is always left at a whole one."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -334,8 +345,8 @@ fn withStore(state: Walk, store: Store) -> Walk
     Walk(blocks = state.blocks, counted = counting(state.counted, store), pace = state.pace, eye = state.eye, target = state.target)
 
 fn fetched(store: Store, blocks: BlockStore, height: Int) -> Result<Option<Reading>, String>
-    ? "The Block at a Height, read and decoded, if the Index names one and"
-      "its body is held."
+    ? "The Block at a Height, read off the disk and handed to a decode job,"
+      "if the Index names one and its body is held."
     ! [Disk.readBytesAt, Infra.BlockJobs.begin, Infra.Kv.get]
 
     fetchedNamed(store, blocks, height, Domain.Index.blockIdIn(Infra.Store.get(store, Domain.IndexKeys.heightKey(height)?)?))
@@ -379,7 +390,7 @@ fn fetchedLocated(blocks: BlockStore, height: Int, blockId: String, state: BodyS
         BodyState.Stored(location) -> fetchedAt(blocks, height, blockId, location)
 
 fn fetchedAt(blocks: BlockStore, height: Int, blockId: String, location: Location) -> Result<Option<Reading>, String>
-    ? "Read the Block and decode its Transactions."
+    ? "Read the Block and put the decoding of its Transactions on a job."
       "The bytes are hashed against the Block Id the Index filed them under"
       "(#283, #280 item 8): a Segment's tail can be torn by a crash after the"
       "Location that names it was synced, and the next download writes at"
@@ -542,7 +553,10 @@ fn broken(height: Int, why: String) -> Unit
     Console.print("ASSUME-VALID BROKEN at Height {height}: {why}. The skipped Blocks are not the Blocks there now; re-run audit over that range or clear the claim")
 
 fn fetching(network: Network, state: Walk, height: Int, to: Int, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "Decode while serving, and thread the resulting peer ownership into the next step."
+    ? "The first Block of the walk: begun, waited for while the Peers are"
+      "served, and handed on with whatever the waiting left on the Eye."
+      "Only the first. Every Height after it is fetched by prepared, one"
+      "Block ahead of where the walk has got to."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -560,7 +574,12 @@ fn fetching(network: Network, state: Walk, height: Int, to: Int, created: Map<By
     stepping(network, Walk.update(state, eye = got.eye), to, got.ahead, created, spent, undos, held, standing)
 
 fn prepared(network: Network, state: Walk, to: Int, this: Ahead, split: Infra.Utxo.Split) -> Result<Prepared, String>
-    ? "Read and start exactly one lookahead decode, then resolve and connect the current Block. No job survives this step."
+    ? "One Block ahead begun, this Block resolved and connected, and"
+      "nothing left running on either way out."
+      "The lookahead is begun first so that it is decoding while this"
+      "Block's inputs are being read off the Store, which is the whole"
+      "point of #233. cancelReading runs on every path out, so a failure"
+      "part way through does not leave a job nobody will collect."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -579,14 +598,22 @@ fn prepared(network: Network, state: Walk, to: Int, this: Ahead, split: Infra.Ut
     result
 
 fn readNext(store: Store, blocks: BlockStore, height: Int, to: Int) -> Result<Option<Reading>, String>
-    ? "Never inspect a body beyond the requested target, even if the Index already holds it."
+    ? "The Block one Height further on, unless that is past what the caller"
+      "asked to reach."
+      "The Index may well name it and hold its body. Reading it would cost"
+      "a Segment read and a decode of a Block this walk is not going to"
+      "connect."
     ! [Disk.readBytesAt, Infra.BlockJobs.begin, Infra.Kv.get]
     match height > to
         true -> Result.Ok(Option.None)
         false -> fetched(store, blocks, height)
 
 fn preparing(network: Network, state: Walk, this: Ahead, split: Infra.Utxo.Split, reading: Option<Reading>) -> Result<Prepared, String>
-    ? "Lookahead decoding overlaps UTXO resolution and the connection job. A failing input read or begin is cleaned by prepared."
+    ? "This Block's inputs resolved against the Store and the window, then"
+      "its connecting handed to a job."
+      "The lookahead is decoding throughout, which is the overlap. Nothing"
+      "here cleans up after itself: everything returns through prepared,"
+      "which is the one place the lookahead is cancelled."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -606,7 +633,12 @@ fn preparing(network: Network, state: Walk, this: Ahead, split: Infra.Utxo.Split
         Option.Some(answer) -> preparedNext(done.eye, answer, reading)
 
 fn preparedNext(eye: Eye, answer: Infra.BlockJobs.Reply, reading: Option<Reading>) -> Result<Prepared, String>
-    ? "Both results settle before any ordered commit. A stop while awaiting lookahead discards the current answer too."
+    ? "Both jobs settled before anything is committed."
+      "The lookahead is collected here rather than at the top of the next"
+      "step, so the walk never carries a job across the call that writes."
+      "A stop noticed while collecting it throws this Block's answer away"
+      "too: the window is flushed as far as the last Block that finished,"
+      "and this Height is walked again on the next run."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -625,7 +657,10 @@ fn preparedNext(eye: Eye, answer: Infra.BlockJobs.Reply, reading: Option<Reading
         false -> Result.Ok(Prepared(eye = got.eye, next = got.ahead, answer = Option.Some(answer)))
 
 fn collected(eye: Eye, reading: Option<Reading>) -> Result<Retrieved, String>
-    ? "A missing body ends the prefix; a retained job belongs only to its captured Height and Block Id."
+    ? "The lookahead's answer, if there was a lookahead to wait for."
+      "Nothing to wait for is a Height the Index does not name or a body"
+      "we do not hold, which is the end of the chain we have rather than a"
+      "fault; the walk stops there and says where it stopped."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -643,7 +678,11 @@ fn collected(eye: Eye, reading: Option<Reading>) -> Result<Retrieved, String>
         Option.Some(one) -> collectedOne(eye, one)
 
 fn collectedOne(eye: Eye, reading: Reading) -> Result<Retrieved, String>
-    ? "Join with the latest owner state; waiting continues to serve peers and never reapplies an old pool."
+    ? "Wait for the decode, with the Peers served while it runs."
+      "The Eye that comes back out of the waiting is the one that carries"
+      "on. Putting the older one back would put a Peer that went in the"
+      "meantime back among the pool, and the next poll would end the node"
+      "with no Peer at fault, which is exactly the fault #304 was."
     ! [
         Console.error, Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -660,14 +699,21 @@ fn collectedOne(eye: Eye, reading: Reading) -> Result<Retrieved, String>
     decodedResult(reading.height, reading.blockId, reading.location, done.eye, done.answer)
 
 fn cancelReading(reading: Option<Reading>) -> Unit
-    ? "Cancel a pending or failed lookahead; cancelling an already collected job is harmless."
+    ? "The lookahead let go, whichever way this step is leaving."
+      "Cancelling a job whose answer has already been taken does nothing,"
+      "so this can run on every path rather than only the failing ones."
     ! [Work.cancel]
     match reading
         Option.None -> Unit
         Option.Some(one) -> Work.cancel(one.job)
 
 fn decodedResult(height: Int, blockId: String, location: Location, eye: Eye, answer: Option<Infra.BlockJobs.Reply>) -> Result<Retrieved, String>
-    ? "Route the reply only to its requesting block; a stop has no result to commit."
+    ? "The decoded Transactions filed under the Height and Block Id that"
+      "asked for them."
+      "The Height and the Id are the ones kept when the job was begun and"
+      "are never read back out of the answer, so no reply can be credited"
+      "to a Block that did not ask for it. No answer at all is a stop, and"
+      "a stop has nothing to carry forward."
     match answer
         Option.None -> Result.Ok(Retrieved(eye = eye, ahead = Option.None))
         Option.Some(reply) -> Result.Ok(Retrieved(eye = eye, ahead = decodedAhead(height, blockId, location, decodedTransactions(reply))?))
@@ -677,7 +723,11 @@ verify decodedResult
     decodedResult(5, "aa", Location(segment = 0, offset = 0, length = 0), Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), Option.Some(Infra.BlockJobs.Reply.Decoded([])))?.ahead => Option.Some(Ahead(height = 5, blockId = "aa", location = Location(segment = 0, offset = 0, length = 0), transactions = []))
 
 fn decodedTransactions(reply: Infra.BlockJobs.Reply) -> Result<List<Domain.Transaction.Transaction>, String>
-    ? "Only a decoded transaction list can complete a decode request."
+    ? "The reply read back as Transactions, or the reason the job refused"
+      "the body it was given."
+      "A connection result arriving here would mean two jobs had been"
+      "mistaken for one another, so it is refused by name rather than"
+      "quietly read as a Block with nothing in it."
     match reply
         Infra.BlockJobs.Reply.Refused(why) -> Result.Err(why)
         Infra.BlockJobs.Reply.Decoded(txs) -> Result.Ok(Domain.BlockWorkJob.transactions(txs, []))

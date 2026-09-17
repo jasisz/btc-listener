@@ -634,6 +634,12 @@ verify swindowTx
     swindowTx("aa", 0).txid => "t1"
 
 fn resolvedFor(store: Store, split: Split) -> Result<Map<Bytes, Unspent>, String>
-    ? "Resolve immutable inputs before starting pure work; the Store and pending window remain on their owner."
+    ? "Every Output this Block spends, looked up before the connecting"
+      "starts."
+      "The job that connects the Block is handed these coins rather than"
+      "the Store they came out of. It has to be: Infra.BlockJobs is a"
+      "capability and a Store is not something that crosses one. The"
+      "window stays here too, because the coins a recent Block made are"
+      "the owner's to remember and not the job's."
     ! [Infra.Kv.getAll]
     resolved(store, List.reverse(split.misses), split.hits)
