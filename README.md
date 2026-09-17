@@ -73,11 +73,11 @@ because anything that opens the Index is several times faster that way. See
 
 ## Requirements
 
-- **Aver at the commit in [`.aver-version`](.aver-version)** (`f6e8197d`
-  at this update). It contains the merged compiler/provider fixes from
-  [#1382](https://github.com/jasisz/aver/pull/1382) and the JSPI Work host fix
-  from [#1383](https://github.com/jasisz/aver/pull/1383), plus the pending native
-  argument-copy optimization [#1384](https://github.com/jasisz/aver/pull/1384).
+- **Aver at the commit in [`.aver-version`](.aver-version)**. It includes the
+  Work/Wait compiler and host fixes, plus the pending native optimizations
+  [#1384](https://github.com/jasisz/aver/pull/1384) and
+  [#1388](https://github.com/jasisz/aver/pull/1388), and the Lean proof fix
+  [#1387](https://github.com/jasisz/aver/pull/1387).
   Follow the [migration build instructions](docs/work-wait-migration.md#compiler-requirement-and-build).
   See [Moving the Aver pin](#moving-the-aver-pin).
 - `clang` and `libclang-dev`, for the RocksDB bindings.

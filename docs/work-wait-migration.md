@@ -139,6 +139,8 @@ Synchronous owner-side database and filesystem operations remain. Startup DNS
 is sequential, native cancellation does not preempt a running computation, and
 the deferred-input queue retains its existing 64-message limit.
 
-The migration adds Work transfer overhead. Measured throughput, responsiveness
+The pinned compiler transfers native Work tasks and results without rebuilding
+provider value trees during ordinary execution. Recording and explicit host
+providers retain the public value format. Measured throughput, responsiveness
 and the current CI status are recorded in
 [PR #361](https://github.com/n1bor/btc-listener/pull/361).
