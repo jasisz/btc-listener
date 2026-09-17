@@ -1970,6 +1970,168 @@ capability retired; the ordering above is what this repository still owns
 naming it rather than a silence — because whether an fsync reached the platter
 is not a claim Aver can evaluate.
 
+### A Block announced into a busy node
+
+n1bor/btc-listener#328. A Message that arrives during a Catch-up is kept as
+spare and acted on only if it is an `addr`; a Block announced while the node
+is walking is thrown away, and Peers announce a Block once. After a long
+walk the node therefore sat a Block behind until the *next* one was mined.
+Two things now close that window, both routed through the #300 gate as a
+Peer's word: a Peer seated advertising a Height above the tree's is a claim
+the chain moved, and a Catch-up that ran longer than sixty seconds asks the
+Peer it ran against once more when it ends, for whatever was announced
+meanwhile.
+
+Reproducing it needs a walk longer than a minute, so a long chain: the
+Core here holds 17,850 Blocks (mined in a few minutes with
+`generatetoaddress`, with a handful of spends in the first 160). Start
+`follow` with `log`, wait for the Set walk to begin, mine one Block into it,
+and watch what happens after the walk ends with no second Block mined:
+
+```bash
+timeout -s INT 900 $BIN regtest follow 127.0.0.1:18444 $D log > follow.out 2>&1 &
+until grep -q "set connecting" $D/debug.log; do sleep 0.5; done; sleep 5
+$C generatetoaddress 1 "$($C getnewaddress)" > /dev/null          # into the walk
+until grep -q "following at Height" follow.out; do sleep 1; done
+sleep 60; grep -oE "following at Height [0-9]+" follow.out | tail -1; $C getblockcount
+grep "held claim" $D/debug.log
+```
+
+Before the fix the node ends its walk at 17850 and stays there — two minutes
+later `following at Height 17850` against Core's 17851, and nothing in the
+log, because the `inv` was discarded before anything could see it. With the
+fix the walk ends the same way and the node then asks:
+
+```
+following at Height 17852: 1 connected, 0 disconnected, set +1 -0
+acting on a held claim: the last Catch-up ran 63 s and kept no Announcement made meanwhile; asking peer 0 what it holds (#328)
+```
+
+five seconds after the walk, and `show $D 17852 summary` names Core's
+`getblockhash 17852`. The claim is held rather than acted on at once because
+it is gated like every other (#300); a Catch-up shorter than a minute does
+not ask, and a Peer that seats later advertising a higher Height is the
+other route to the same Catch-up.
+### Three small things from the security review
+
+n1bor/btc-listener#280, items 15, 18 and 20, in one run because each is a
+line or two.
+
+**A directory that holds no chain** (item 20). `prune /typo 100` used to
+create an empty database in the typo and say nothing. Every command that
+reads a chain rather than makes one — `prune`, `reindex`, `txindex`,
+`outputs`, `utxo`, `assumevalid`, `audit`, `show`, `tx`, `spend` — now opens
+with `Infra.Store.openExisting` and refuses:
+
+```bash
+$BIN regtest prune /tmp/no-such-chain 100
+$BIN regtest reindex /tmp/no-such-chain
+```
+
+```
+error: /tmp/no-such-chain holds no chain: there is no database in it; headers or follow makes one
+```
+
+`headers` and `follow` still create, which is their job.
+
+**The word UNSETTLED** (item 18). The audit headline said `CLEAN` over a run
+with unresolved spends or undecided Scripts, which is the one collapse this
+program is built not to make. It now says `CLEAN` only when every spend
+resolved and every Script was decided, `UNSETTLED` when nothing was found
+wrong but something could not be told, and `FAILED` as before. The same
+chain, before and after its Transaction index exists:
+
+```bash
+$BIN regtest audit $D 1 160 | tail -1
+$BIN regtest txindex $D 1 160 | tail -1; $BIN regtest outputs $D 1 160 | tail -1
+$BIN regtest audit $D 1 160 | tail -1
+```
+
+```
+blocks 160  transactions 180  spends resolved 0  coinbase 160  unresolved 20  scripts 0 passed / 0 failed / 0 undecided  UNSETTLED (faults 0, script failures 0)
+blocks 160  transactions 180  spends resolved 20  coinbase 160  unresolved 0  scripts 20 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+```
+
+**A Locator over Core's cap** (item 15). Every Id in a `getheaders` Locator
+is a Store read on the served path, and the Message admits some 125,000 of
+them; Core reads at most `MAX_LOCATOR_SZ = 101` and drops the Peer. So does
+this node now. `caller.py locator` makes a proper Handshake and then sends a
+Locator of 102 Ids; run it beside a polite caller against the served port:
+
+```bash
+timeout -s INT 40 $BIN regtest follow 127.0.0.1:18444 $D serve:18457 > follow.out 2>&1 &
+sleep 6
+python3 tools/regtest/caller.py 18457 polite 127.0.0.2 2> polite.log &
+python3 tools/regtest/caller.py 18457 locator 127.0.0.3 2> locator.log &
+wait; cat polite.log locator.log; grep "dropping peer" follow.out
+```
+
+```
+caller: still connected after 34.1 s      <- polite, until the node was stopped
+caller: dropped after 0.0 s               <- locator
+dropping peer 1: a getheaders Locator of 102 Ids, more than the 101 Core allows
+```
+### A Segment that grows under a running node
+
+n1bor/btc-listener#327. `Domain.Segment.place` derives every Location from
+the count the process carries, and `Disk.appendBytes` lands wherever the file
+ends; on mainnet the two drifted by 35,202,610 bytes and every Location in the
+Segment after that was wrong by exactly that, silently, until a body failed to
+hash two days later. Now the count is read against `Disk.size` twice per
+batch — before the batch's first append and again before its Locations are
+written — and a difference is a refusal on this node's own side, with no
+Location written and no Peer charged.
+
+Forcing it needs the file to change *under* a running node, because a node
+that reopens the directory counts from the disk and is self-correcting. Sync
+honestly, leave `follow` running at the tip, append bytes the count does not
+know about, then give it something to write:
+
+```bash
+timeout -s INT 90 $BIN regtest follow 127.0.0.1:18444 $D          # honest, to the tip
+$BIN regtest txindex $D 1 166 | tail -1; $BIN regtest outputs $D 1 166 | tail -1
+$BIN regtest audit $D 1 166 | tail -1                              # spends resolved 20, CLEAN
+timeout -s INT 120 $BIN regtest follow 127.0.0.1:18444 $D > follow-2.out 2>&1 &
+until grep -q "following at Height 166" follow-2.out; do sleep 0.2; done
+head -c 200 /dev/urandom >> $D/blocks/blk000000.dat               # a second writer, or a hand
+$C generatetoaddress 3 "$($C getnewaddress)" > /dev/null
+wait; echo "follow exit $?"; grep "count says" follow-2.out
+```
+
+The first append of the next batch reads the file, and the run ends where it
+stands:
+
+```
+follow exit 1
+the chain cannot be followed past here: Segment 0 is 46820 bytes on the disk where the count says 46620; a Location placed from the count would be 200 bytes off, so none was written, and the next open counts from the disk again
+```
+
+`show $D 169 summary` still names Core's Block at 169 — the Header was
+placed — but no body was located: `reindex` reports `166 Blocks located
+across 1 Segments`, the three new ones never reached the file. Then the
+recovery the message names:
+
+```bash
+$BIN regtest reindex $D | tail -1
+timeout -s INT 60 $BIN regtest follow 127.0.0.1:18444 $D | grep "following at"
+$BIN regtest show $D 169 summary | grep -oE "block  [0-9a-f]{64}"; $C getblockhash 169
+$BIN regtest txindex $D 1 169 | tail -1; $BIN regtest outputs $D 1 169 | tail -1
+$BIN regtest audit $D 1 169 | tail -1
+```
+
+```
+166 Blocks located across 1 Segments
+following at Height 169: 3 connected, 0 disconnected, set +3 -0
+block  346534530872c2177e38568902e3b1da66cb63db72e0935e579016478fc3ddd8
+346534530872c2177e38568902e3b1da66cb63db72e0935e579016478fc3ddd8
+blocks 169  transactions 189  spends resolved 20  coinbase 169  unresolved 0  scripts 20 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+```
+
+The reopened node counted from the disk (junk included, which the next record
+simply follows), fetched the three bodies, and agrees with Core hash for
+hash. Before the fix the same run writes three Locations 200 bytes short of
+their bodies and reports nothing until the Set walk tries to read one.
+
 ## A Peer that lies
 
 Bitcoin Core is cooperative by construction: you cannot ask it for a bad
@@ -2047,6 +2209,71 @@ the same text is what the Screen would print:
 ```
 
 `curl | od -c` is the stronger check: no `033` anywhere in the page.
+
+### A body Core would not deserialise: a SegWit flag byte that is not 1, or witnesses that are all empty
+
+n1bor/btc-listener#347. The Transaction decoder used to step over the SegWit
+flag byte without reading it, and to accept a witness-serialised Transaction
+whose every Witness stack was empty. Core refuses both at deserialisation
+(`Unknown transaction optional data`, `Superfluous witness record`). Neither
+re-serialisation changes a Transaction Id, so the Merkle Root still matches
+the Header and `Domain.Body.fault` had nothing to refuse: the body was kept
+under its honest Block Id and served on, and a Core Peer handed those bytes
+disconnects from the node that served them. `liar.py` has one mode for each:
+`witnessflag` serves the honest Block with its coinbase's flag byte set to
+`0x02`; `emptywitness` serves it with the coinbase's Witness stack emptied (a
+regtest coinbase is SegWit-serialised, its Witness the 32-byte reserved
+value). Both answer `getheaders` honestly, so the Header is placed and the
+body is the only lie.
+
+Honest baseline first, on a chain from section 1 (the liar needs
+`bitcoin-cli` to fetch the real Block, so pass the whole command):
+
+```bash
+C="bitcoin-27.0/bin/bitcoin-cli -datadir=$RT -rpcuser=av -rpcpassword=av -regtest"
+timeout -s INT 60 $BIN regtest follow 127.0.0.1:18444 $D
+$BIN regtest audit $D 1 160 | tail -1      # spends resolved 20 ... 20 passed, CLEAN
+```
+
+Then each liar in turn, the liar first on the command line so the node asks
+it for the bodies, and three new Blocks mined after the liar is up:
+
+```bash
+for mode in witnessflag emptywitness; do
+  python3 tools/regtest/liar.py 18455 $mode "$C" 2> liar-$mode.log &
+  sleep 1; before=$($C getblockcount)
+  $C generatetoaddress 3 "$($C getnewaddress)" > /dev/null; after=$($C getblockcount)
+  timeout -s INT 60 $BIN regtest follow 127.0.0.1:18455,127.0.0.1:18444 $D > follow-$mode.out 2>&1
+  wait; grep "liar: sent" liar-$mode.log; grep "dropping peer" follow-$mode.out
+  $BIN regtest show $D $after summary | grep -oE "block  [0-9a-f]{64}"; $C getblockhash $after
+  $BIN regtest audit $D $((before + 1)) $after | tail -1
+done
+```
+
+Both runs end the same way: the liar's first body is refused by name and the
+liar is dropped, the honest Peer supplies the three Blocks, and the tip is
+Core's:
+
+```
+liar: sent 56dd40b6…f60e with flag byte 0x02
+dropping peer 0: Block 56dd40b6…f60e would not decode: Transaction carries unknown optional data
+block  56dd40b63622ce4a2cb74e4e212dd45d2d8bc3919c016ed9cae4c94d0797f60e
+56dd40b63622ce4a2cb74e4e212dd45d2d8bc3919c016ed9cae4c94d0797f60e
+blocks 3  transactions 3  spends resolved 0  coinbase 3  unresolved 0  scripts 0 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+
+liar: sent 38f1d26e…d90f with an empty Witness on each of 1 Input(s)
+dropping peer 0: Block 38f1d26e…d90f would not decode: Transaction carries a superfluous witness record
+block  38f1d26eeb221538920a07e28e39b9b16c69592ee3956df875d77d58a320d90f
+38f1d26eeb221538920a07e28e39b9b16c69592ee3956df875d77d58a320d90f
+blocks 3  transactions 3  spends resolved 0  coinbase 3  unresolved 0  scripts 0 passed / 0 failed / 0 undecided  CLEAN (faults 0, script failures 0)
+```
+
+The audit over the three new Blocks reads `spends resolved 0` because they
+are coinbase-only; the twenty spends from the baseline are the Script
+evidence in this section, and the three Blocks are the body evidence. Before
+the fix the same run shows no `dropping` line, the lying bodies are what
+`show` prints, and the audit is still CLEAN — which is the point: nothing
+downstream can tell, only a Core Peer asking for the Block can.
 
 ### An Address Book that will not fill, and a host that gets one slot
 
@@ -2477,8 +2704,8 @@ in single figures however long the flood runs.
 `debug.log` says why each claim went nowhere:
 
 ```
-1788158079031 fault ignoring 0 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
-1788158080533 fault ignoring 1 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
+2026-08-31T06:34:39.031Z 1788158079031 fault ignoring 0 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
+2026-08-31T06:34:40.533Z 1788158080533 fault ignoring 1 unasked-for Header(s) from peer 0: the tree has placed every one (#300)
 ```
 
 Fewer of those than the liar sent is expected and not a failure: a Message

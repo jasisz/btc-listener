@@ -5,7 +5,7 @@ module Version
         "Building it is pure — the caller supplies the clock reading and the nonce"
         "rather than this module reaching for them — so the exact bytes are"
         "checkable against a known-good vector instead of against a live Peer."
-    exposes [payload, payloadOffering, nodeNetwork, nodeWitness, nodeNetworkLimited, protocolVersion, userAgent, peerVersionOf, peerUserAgentOf, addrRecvOffset, addrRecvOf]
+    exposes [payload, payloadOffering, nodeNetwork, nodeWitness, nodeNetworkLimited, protocolVersion, userAgent, peerVersionOf, peerUserAgentOf, peerStartHeightOf, addrRecvOffset, addrRecvOf]
     depends [Bytes, Domain.Message, Domain.Address, Domain.CompactSize, Domain.ScriptState]
     effects []
 
@@ -213,6 +213,28 @@ fn peerUserAgentOf(body: List<Int>) -> String
 verify peerUserAgentOf
     peerUserAgentOf(List.concat(Domain.ScriptState.zeros(userAgentOffset()), [16, 47, 83, 97, 116, 111, 115, 104, 105, 58, 50, 55, 46, 48, 46, 48, 47])) => "/Satoshi:27.0.0/"
     peerUserAgentOf(List.concat(Domain.ScriptState.zeros(userAgentOffset()), [4, 27, 91, 50, 74])) => "?[2J"
+
+fn peerStartHeightOf(body: List<Int>) -> Int
+    ? "The Height a Peer said it held, read from its own version payload"
+      "(#328)."
+      "start_height sits after the user agent, whose length is a"
+      "CompactSize, so it cannot be read at a fixed offset the way the"
+      "protocol version can. A payload that ends before it reads as zero,"
+      "which is what a Peer with no chain says anyway."
+      "It is the Peer's word about itself and nothing more. What it is worth"
+      "is decided by whoever holds the tree -- a Height above the tree's"
+      "best is a claim that the chain moved, and a claim is weighed rather"
+      "than believed (Domain.Catchup)."
+    count = Domain.CompactSize.read(List.drop(body, userAgentOffset()))
+    Domain.Message.readLittleEndian(List.take(List.drop(count.rest, count.value), 4))
+
+verify peerStartHeightOf
+    peerStartHeightOf(Bytes.octets(payloadOffering(Domain.Address.fromString("10.0.0.1")?, 0, 0, 1, 179)?)) => 179
+    peerStartHeightOf(Bytes.octets(payloadOffering(Domain.Address.fromString("10.0.0.1")?, 0, 0, 0, 0)?)) => 0
+    peerStartHeightOf(Bytes.octets(payloadOffering(Domain.Address.fromString("10.0.0.1")?, 0, 0, 1, 965226)?)) => 965226
+    peerStartHeightOf(List.concat(Domain.ScriptState.zeros(userAgentOffset()), [16, 47, 83, 97, 116, 111, 115, 104, 105, 58, 50, 55, 46, 48, 46, 48, 47, 5, 0, 0, 0, 1])) => 5
+    peerStartHeightOf(List.concat(Domain.ScriptState.zeros(userAgentOffset()), [4, 27, 91, 50, 74])) => 0
+    peerStartHeightOf([]) => 0
 
 fn readVarString(rest: List<Int>) -> List<Int>
     ? "Read a length-prefixed string's bytes, tolerating a payload that ends"

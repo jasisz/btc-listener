@@ -65,10 +65,10 @@ def honest_headers(cli, getheaders_payload):
     height = json.loads(rpc(cli, 'getblockheader', first, 'true'))['height']
     tip = int(rpc(cli, 'getblockcount'))
     return headers_payload([bytes.fromhex(rpc(cli, 'getblockheader', rpc(cli, 'getblockhash', str(h)), 'false')) for h in range(height + 1, min(tip, height + 2000) + 1)])
-def wrong_bodies(conn, cli):
-    # Answer every getdata for a Block with its real Header and a body that
-    # is one coinbase -- mainnet's genesis coinbase -- which hashes to the
-    # Block Id asked for and to nothing the Header commits to.
+def serve_bodies(conn, cli, body_of):
+    # Honest about Headers -- every getheaders is answered with Core's own --
+    # and each getdata for a Block is answered with whatever body_of makes
+    # of that Block Id, which is where the lie goes.
     conn.settimeout(120)
     try:
         for frame in frames(conn):
@@ -82,11 +82,74 @@ def wrong_bodies(conn, cli):
                 for _ in range(count):
                     kind = struct.unpack('<I', payload[at:at+4])[0]; h = payload[at+4:at+36]; at += 36
                     if kind & 2:
-                        block_hash = h[::-1].hex()
-                        conn.sendall(msg('block', header_of(cli, block_hash) + b'\x01' + GENESIS_COINBASE))
-                        print('liar: sent a wrong body for', block_hash, file=sys.stderr, flush=True)
+                        conn.sendall(msg('block', body_of(cli, h[::-1].hex())))
     except (socket.timeout, OSError):
         return                                        # dropped, as it should be
+def wrong_body(cli, block_hash):
+    # The Block's real Header and a body that is one coinbase -- mainnet's
+    # genesis coinbase -- which hashes to the Block Id asked for and to
+    # nothing the Header commits to (#283).
+    print('liar: sent a wrong body for', block_hash, file=sys.stderr, flush=True)
+    return header_of(cli, block_hash) + b'\x01' + GENESIS_COINBASE
+def compact(b, at):
+    # A CompactSize at `at`: its value and where the next byte is.
+    first = b[at]
+    if first < 0xfd: return first, at + 1
+    width = {0xfd: 2, 0xfe: 4, 0xff: 8}[first]
+    return int.from_bytes(b[at+1:at+1+width], 'little'), at + 1 + width
+def tx_extent(b, at):
+    # The Transaction at `at`: where it ends, whether it carries the SegWit
+    # marker, its Input count, where its Inputs begin and where its lock
+    # time begins -- enough to re-serialise it either way.
+    at += 4
+    marker = b[at] == 0
+    if marker: at += 2
+    vin_at = at
+    n_in, at = compact(b, at)
+    for _ in range(n_in):
+        at += 36; length, at = compact(b, at); at += length + 4
+    n_out, at = compact(b, at)
+    for _ in range(n_out):
+        at += 8; length, at = compact(b, at); at += length
+    wit_at = at
+    if marker:
+        for _ in range(n_in):
+            items, at = compact(b, at)
+            for _ in range(items):
+                length, at = compact(b, at); at += length
+    return at + 4, marker, n_in, vin_at, wit_at, at
+def lying_body(cli, block_hash, mode):
+    # The honest Block with one Transaction re-serialised so that Core will
+    # not deserialise it and this node's Merkle Root check cannot tell
+    # (#347): the Transaction Id is over the stripped form either way.
+    #   witnessflag   the first SegWit Transaction (the coinbase) with its
+    #                 flag byte 0x02 -- "Unknown transaction optional data"
+    #   emptywitness  the first legacy Transaction wrapped as version, 00 01,
+    #                 Inputs, Outputs, one empty Witness per Input, lock
+    #                 time -- "Superfluous witness record"
+    # A Block with nothing to re-serialise is served honestly, and said so.
+    block = bytes.fromhex(rpc(cli, 'getblock', block_hash, '0'))
+    count, at = compact(block, 80); out = block[:at]; lied = None
+    for _ in range(count):
+        end, marker, n_in, vin_at, wit_at, lock_at = tx_extent(block, at)
+        tx = block[at:end]
+        if lied is None and mode == 'witnessflag' and marker:
+            tx = tx[:5] + b'\x02' + tx[6:]; lied = 'flag byte 0x02'
+        elif lied is None and mode == 'emptywitness' and marker:
+            # A SegWit-serialised Transaction (a regtest coinbase is one: its
+            # Witness is the 32-byte reserved value) with every stack emptied.
+            tx = block[at:wit_at] + b'\x00' * n_in + block[lock_at:end]
+            lied = 'an empty Witness on each of %d Input(s)' % n_in
+        elif lied is None and mode == 'emptywitness':
+            tx = tx[:4] + b'\x00\x01' + block[vin_at:lock_at] + b'\x00' * n_in + block[lock_at:end]
+            lied = 'the SegWit marker and an empty Witness on each of %d Input(s)' % n_in
+        out += tx; at = end
+    print('liar: sent', block_hash, 'with', lied or 'nothing to re-serialise, honestly', file=sys.stderr, flush=True)
+    return out
+def flag_body(cli, block_hash):
+    return lying_body(cli, block_hash, 'witnessflag')
+def empty_witness_body(cli, block_hash):
+    return lying_body(cli, block_hash, 'emptywitness')
 REGTEST_GENESIS_HEADER = bytes.fromhex(
     '0100000000000000000000000000000000000000000000000000000000000000000000003b'
     'a3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff'
@@ -167,7 +230,13 @@ def serve(port, mode):
         answer_getheaders(conn, headers_payload([]), then=flood, on='getaddr')
         return
     elif mode == 'wrongbody':
-        wrong_bodies(conn, sys.argv[3])
+        serve_bodies(conn, sys.argv[3], wrong_body)
+        return
+    elif mode == 'witnessflag':
+        serve_bodies(conn, sys.argv[3], flag_body)
+        return
+    elif mode == 'emptywitness':
+        serve_bodies(conn, sys.argv[3], empty_witness_body)
         return
     elif mode == 'lowbits':
         answer_getheaders(conn, headers_payload([low_bits_header()]))

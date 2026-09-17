@@ -20,13 +20,24 @@ module Catchup
         "sit a Block behind until the next one was mined. A held claim is"
         "acted on the moment the cooldown passes, so the rate is capped"
         "without the tip being lost."
-    exposes [Gate, Due, noGate, cooldownMs, allowed, held, dueNow, taken, wasted, moved, forgotten, waiting, quieted, charging]
+        "Two more claims go through the same gate since #328, both made by"
+        "this node about itself rather than arriving in a Message. A Peer's"
+        "Handshake names the Height it holds, and one above the tree's best"
+        "is evidence the chain moved -- weighed once per Handshake, so a Peer"
+        "cannot be obeyed twice for saying it once. And a Catch-up that ran"
+        "long is followed by one more ask of the Peer it ran against, because"
+        "an Announcement made while the node was walking was thrown away with"
+        "the rest of the spare, and Peers announce a Block once. Without"
+        "either, a node that had just spent an hour rebuilding sat a Block"
+        "behind until the next one was mined."
+    exposes [Gate, Due, noGate, cooldownMs, allowed, held, dueNow, taken, wasted, moved, forgotten, waiting, quieted, charging, ahead, weighingAll, longRunMs, ranLong, recovering, whoToAsk, remembered]
     depends []
     effects []
 
 record Gate
     quietUntil: Map<Int, Int>
     deferred: Map<Int, String>
+    weighed: Map<Int, Int>
 
 record Due
     key: Int
@@ -34,11 +45,12 @@ record Due
 
 fn noGate() -> Gate
     ? "Nobody quieted and nothing held back: the gate a loop starts with."
-    Gate(quietUntil = Map.fromList([]), deferred = Map.fromList([]))
+    Gate(quietUntil = Map.fromList([]), deferred = Map.fromList([]), weighed = Map.fromList([]))
 
 verify noGate
     quieted(noGate()) => 0
     waiting(noGate()) => 0
+    remembered(noGate()) => 0
     allowed(noGate(), 1, 0) => true
 
 fn cooldownMs() -> Int
@@ -76,7 +88,7 @@ verify allowed
 fn wasted(gate: Gate, key: Int, nowMs: Int) -> Gate
     ? "A Catch-up this Peer asked for moved nothing: quiet it for the"
       "cooldown."
-    Gate(quietUntil = Map.set(gate.quietUntil, key, nowMs + cooldownMs()), deferred = gate.deferred)
+    Gate(quietUntil = Map.set(gate.quietUntil, key, nowMs + cooldownMs()), deferred = gate.deferred, weighed = gate.weighed)
 
 verify wasted
     quieted(wasted(noGate(), 7, 1000)) => 1
@@ -87,7 +99,7 @@ verify wasted
 fn moved(gate: Gate, key: Int) -> Gate
     ? "A Catch-up this Peer asked for moved the chain: nothing is held"
       "against it, and nothing of its is still waiting."
-    Gate(quietUntil = Map.remove(gate.quietUntil, key), deferred = Map.remove(gate.deferred, key))
+    Gate(quietUntil = Map.remove(gate.quietUntil, key), deferred = Map.remove(gate.deferred, key), weighed = gate.weighed)
 
 verify moved
     quieted(moved(wasted(noGate(), 7, 1000), 7)) => 0
@@ -96,12 +108,13 @@ verify moved
     quieted(moved(wasted(noGate(), 7, 1000), 8)) => 1
 
 fn held(gate: Gate, key: Int, why: String) -> Gate
-    ? "A claim that arrived inside the cooldown, kept for when it passes."
+    ? "A claim kept for the loop's next turn: one that arrived inside the"
+      "cooldown, or one this node made about itself (#328)."
       "One per Peer, newest wins: a Peer that says the chain moved four"
       "times while quieted is caught up once, which is the whole point, and"
       "the Catch-up it eventually gets goes to the tip rather than to"
       "whichever claim happened to arrive first."
-    Gate(quietUntil = gate.quietUntil, deferred = Map.set(gate.deferred, key, why))
+    Gate(quietUntil = gate.quietUntil, deferred = Map.set(gate.deferred, key, why), weighed = gate.weighed)
 
 verify held
     waiting(held(noGate(), 7, "why")) => 1
@@ -111,7 +124,7 @@ verify held
 fn taken(gate: Gate, key: Int) -> Gate
     ? "The claim being held for this Peer is about to be acted on, so it is"
       "no longer waiting."
-    Gate(quietUntil = gate.quietUntil, deferred = Map.remove(gate.deferred, key))
+    Gate(quietUntil = gate.quietUntil, deferred = Map.remove(gate.deferred, key), weighed = gate.weighed)
 
 verify taken
     waiting(taken(held(noGate(), 7, "why"), 7)) => 0
@@ -187,16 +200,17 @@ verify quieted
     quieted(wasted(noGate(), 7, 1000)) => 1
 
 fn forgotten(gate: Gate, key: Int) -> Gate
-    ? "The Peer is gone, so neither its cooldown nor its held claim means"
-      "anything. Keys are reused as Peers come and go, and a new Peer"
-      "inheriting the last one's cooldown would be quieted for something it"
-      "did not do."
-    Gate(quietUntil = Map.remove(gate.quietUntil, key), deferred = Map.remove(gate.deferred, key))
+    ? "The Peer is gone, so neither its cooldown nor its held claim nor the"
+      "Handshake Height weighed for it means anything. Keys are reused as"
+      "Peers come and go, and a new Peer inheriting the last one's cooldown"
+      "would be quieted for something it did not do."
+    Gate(quietUntil = Map.remove(gate.quietUntil, key), deferred = Map.remove(gate.deferred, key), weighed = Map.remove(gate.weighed, key))
 
 verify forgotten
     quieted(forgotten(wasted(noGate(), 7, 1000), 7)) => 0
     waiting(forgotten(held(noGate(), 7, "why"), 7)) => 0
     quieted(forgotten(wasted(noGate(), 7, 1000), 8)) => 1
+    remembered(forgotten(weighingAll(noGate(), [(7, 10)], 5), 7)) => 0
 
 fn charging(gate: Gate, key: Int, stillSeated: Bool, stoodStill: Bool, nowMs: Int) -> Gate
     ? "The gate after a Catch-up this Peer asked for."
@@ -227,3 +241,192 @@ verify chargedFor
     quieted(chargedFor(wasted(noGate(), 7, 1000), 7, false, 2000)) => 0
     waiting(chargedFor(held(noGate(), 7, "why"), 7, false, 2000)) => 0
     waiting(chargedFor(held(noGate(), 7, "why"), 7, true, 2000)) => 1
+
+fn ahead(claimed: Int, tipHeight: Int) -> Bool
+    ? "Whether a Height a Peer says it holds is above the tree's best."
+      "Strictly above: a Peer level with the tree has nothing it could give"
+      "us, and one below it is behind us rather than the other way round."
+      "No upper bound. A Peer claiming a million Blocks more than exist is"
+      "lying, and the lie costs it exactly one Catch-up that moves nothing,"
+      "after which it is quieted and never weighed again for that number;"
+      "guessing where honesty ends would only ever refuse a real Height on a"
+      "day the chain grew."
+    claimed > tipHeight
+
+verify ahead
+    ahead(965226, 965225) => true
+    ahead(965225, 965225) => false
+    ahead(965224, 965225) => false
+    ahead(0, 0) => false
+    ahead(1, 0) => true
+
+fn remembered(gate: Gate) -> Int
+    ? "How many Peers have a Handshake Height on record as already weighed."
+    Map.len(gate.weighed)
+
+verify remembered
+    remembered(noGate()) => 0
+    remembered(weighingAll(noGate(), [(7, 10)], 5)) => 1
+
+fn weighingAll(gate: Gate, claims: List<Tuple<Int, Int>>, tipHeight: Int) -> Gate
+    ? "Every Peer's Handshake Height weighed against the tree's best, once"
+      "per Handshake (#328)."
+      "A Peer claiming more than the tree holds has told us the chain moved,"
+      "and its claim is held for the loop's next turn exactly as a held"
+      "Announcement is: acted on if the Peer may be obeyed, waited out if it"
+      "is quieted. It is weighed once. The Height is remembered against the"
+      "Peer, and the same Peer saying the same number is not asked about it"
+      "again -- a Peer that lied about its Height would otherwise cost a"
+      "Catch-up every cooldown for as long as it stayed seated."
+      "The record is rebuilt from the Peers present, so a Peer that left by"
+      "a path the loop never saw takes its entry with it, and a Peer the"
+      "tree has since caught up with drops out because its claim is no"
+      "longer ahead."
+    weighingFrom(gate.weighed, Gate(quietUntil = gate.quietUntil, deferred = gate.deferred, weighed = Map.fromList([])), claims, tipHeight)
+
+verify weighingAll
+    waiting(weighingAll(noGate(), [], 5)) => 0
+    waiting(weighingAll(noGate(), [(7, 5)], 5)) => 0
+    waiting(weighingAll(noGate(), [(7, 6)], 5)) => 1
+    dueNow(weighingAll(noGate(), [(7, 6)], 5), 0) => Option.Some(Due(key = 7, why = "peer 7 advertised Height 6 at its Handshake, above the tree's 5 (#328)"))
+    waiting(weighingAll(weighingAll(noGate(), [(7, 6)], 5), [(7, 6)], 5)) => 1
+    waiting(weighingAll(taken(weighingAll(noGate(), [(7, 6)], 5), 7), [(7, 6)], 5)) => 0
+    waiting(weighingAll(taken(weighingAll(noGate(), [(7, 6)], 5), 7), [(7, 7)], 5)) => 1
+    waiting(weighingAll(taken(weighingAll(noGate(), [(7, 6)], 5), 7), [(7, 6)], 6)) => 0
+    remembered(weighingAll(taken(weighingAll(noGate(), [(7, 6)], 5), 7), [(7, 6)], 6)) => 0
+    remembered(weighingAll(weighingAll(noGate(), [(7, 6)], 5), [], 5)) => 0
+    waiting(weighingAll(noGate(), [(7, 6), (8, 9), (9, 2)], 5)) => 2
+    dueNow(weighingAll(wasted(noGate(), 7, 1000), [(7, 6)], 5), 1000) => Option.None
+    dueNow(weighingAll(wasted(noGate(), 7, 1000), [(7, 6)], 5), 1000 + cooldownMs()) => Option.Some(Due(key = 7, why = "peer 7 advertised Height 6 at its Handshake, above the tree's 5 (#328)"))
+
+fn weighingFrom(before: Map<Int, Int>, gate: Gate, claims: List<Tuple<Int, Int>>, tipHeight: Int) -> Gate
+    ? "Each claim in turn, against what was weighed before this sweep."
+    match claims
+        [] -> gate
+        [head, ..tail] -> weighingFrom(before, weighedOne(before, gate, head, tipHeight), tail, tipHeight)
+
+verify weighingFrom
+    waiting(weighingFrom(Map.fromList([]), noGate(), [], 5)) => 0
+    waiting(weighingFrom(Map.fromList([]), noGate(), [(7, 6)], 5)) => 1
+    waiting(weighingFrom(Map.fromList([(7, 6)]), noGate(), [(7, 6)], 5)) => 0
+
+fn weighedOne(before: Map<Int, Int>, gate: Gate, claim: Tuple<Int, Int>, tipHeight: Int) -> Gate
+    ? "One Peer's key and Height taken apart."
+    match claim
+        (key, claimed) -> advertised(before, gate, key, claimed, tipHeight)
+
+verify weighedOne
+    waiting(weighedOne(Map.fromList([]), noGate(), (7, 6), 5)) => 1
+    waiting(weighedOne(Map.fromList([]), noGate(), (7, 5), 5)) => 0
+
+fn advertised(before: Map<Int, Int>, gate: Gate, key: Int, claimed: Int, tipHeight: Int) -> Gate
+    ? "One Peer's Handshake Height: a claim if it is ahead of the tree,"
+      "nothing at all if it is not."
+    match ahead(claimed, tipHeight)
+        false -> gate
+        true -> claimedOnce(before, gate, key, claimed, tipHeight)
+
+verify advertised
+    waiting(advertised(Map.fromList([]), noGate(), 7, 6, 5)) => 1
+    remembered(advertised(Map.fromList([]), noGate(), 7, 6, 5)) => 1
+    waiting(advertised(Map.fromList([]), noGate(), 7, 5, 5)) => 0
+    remembered(advertised(Map.fromList([]), noGate(), 7, 5, 5)) => 0
+
+fn claimedOnce(before: Map<Int, Int>, gate: Gate, key: Int, claimed: Int, tipHeight: Int) -> Gate
+    ? "Remembered either way; held only if this Peer has not already been"
+      "weighed at this Height."
+    kept = Gate(quietUntil = gate.quietUntil, deferred = gate.deferred, weighed = Map.set(gate.weighed, key, claimed))
+    match Map.get(before, key) == Option.Some(claimed)
+        true -> kept
+        false -> held(kept, key, "peer {key} advertised Height {claimed} at its Handshake, above the tree's {tipHeight} (#328)")
+
+verify claimedOnce
+    waiting(claimedOnce(Map.fromList([]), noGate(), 7, 6, 5)) => 1
+    waiting(claimedOnce(Map.fromList([(7, 6)]), noGate(), 7, 6, 5)) => 0
+    waiting(claimedOnce(Map.fromList([(7, 4)]), noGate(), 7, 6, 5)) => 1
+    remembered(claimedOnce(Map.fromList([(7, 6)]), noGate(), 7, 6, 5)) => 1
+
+fn longRunMs() -> Int
+    ? "How long a Catch-up has to run before the Peer it ran against is"
+      "asked once more when it ends: sixty seconds."
+      "A Message that arrives during a Catch-up is kept as spare and acted"
+      "on only if it is an addr; a Block announced into a busy node is"
+      "thrown away, and Peers announce a Block once. The window is the"
+      "length of the Catch-up, so the cost of asking again -- one Header"
+      "round trip, which a Catch-up already is -- is only worth paying when"
+      "the window was wide. A node following the tip has Catch-ups of"
+      "seconds and pays nothing; a node that has just spent an hour"
+      "rebuilding pays one getheaders for the hour of Announcements it"
+      "discarded. Sixty seconds is a tenth of a mainnet Block interval:"
+      "below it the next Block will usually announce itself first."
+    60000
+
+verify longRunMs
+    longRunMs() => 60000
+
+fn ranLong(startedMs: Int, endedMs: Int) -> Bool
+    ? "Whether a Catch-up ran long enough that what was announced meanwhile"
+      "is worth asking about."
+    endedMs - startedMs >= longRunMs()
+
+verify ranLong
+    ranLong(0, longRunMs()) => true
+    ranLong(0, longRunMs() - 1) => false
+    ranLong(1000, 1000) => false
+    ranLong(1000, 1000 + 3600000) => true
+
+fn recovering(gate: Gate, who: Option<Int>, startedMs: Int, endedMs: Int) -> Gate
+    ? "The gate after a Catch-up, given how long it ran and who is left to"
+      "ask (#328)."
+      "A Catch-up that ran long holds a claim on that Peer, and the loop's"
+      "next turn acts on it through the same gate as every other claim:"
+      "obeyed at once if the Peer may be obeyed, waited out if it is"
+      "quieted, dropped with the Peer if the Peer goes. A short Catch-up"
+      "holds nothing, and so does a long one that ends with nobody seated."
+    match ranLong(startedMs, endedMs)
+        false -> gate
+        true -> askingAfter(gate, who, endedMs - startedMs)
+
+verify recovering
+    waiting(recovering(noGate(), Option.Some(7), 0, 1000)) => 0
+    waiting(recovering(noGate(), Option.Some(7), 0, longRunMs())) => 1
+    waiting(recovering(noGate(), Option.None, 0, longRunMs())) => 0
+    dueNow(recovering(noGate(), Option.Some(7), 0, 3600000), 3600000) => Option.Some(Due(key = 7, why = "the last Catch-up ran 3600 s and kept no Announcement made meanwhile; asking peer 7 what it holds (#328)"))
+    dueNow(recovering(wasted(noGate(), 7, 3600000), Option.Some(7), 0, 3600000), 3600000) => Option.None
+    dueNow(recovering(wasted(noGate(), 7, 3600000), Option.Some(7), 0, 3600000), 3600000 + cooldownMs()) => Option.Some(Due(key = 7, why = "the last Catch-up ran 3600 s and kept no Announcement made meanwhile; asking peer 7 what it holds (#328)"))
+
+fn askingAfter(gate: Gate, who: Option<Int>, tookMs: Int) -> Gate
+    ? "The claim itself, on whoever there is to ask."
+    match who
+        Option.None -> gate
+        Option.Some(key) -> held(gate, key, "the last Catch-up ran {Int.div(tookMs, 1000)} s and kept no Announcement made meanwhile; asking peer {key} what it holds (#328)")
+
+verify askingAfter
+    waiting(askingAfter(noGate(), Option.None, 90000)) => 0
+    waiting(askingAfter(noGate(), Option.Some(7), 90000)) => 1
+    dueNow(askingAfter(noGate(), Option.Some(7), 90500), 0) => Option.Some(Due(key = 7, why = "the last Catch-up ran 90 s and kept no Announcement made meanwhile; asking peer 7 what it holds (#328)"))
+
+fn whoToAsk(key: Int, seated: List<Int>) -> Option<Int>
+    ? "The Peer a Catch-up ran against if it is still seated, otherwise the"
+      "first Peer that is, otherwise nobody."
+      "The Peer asked is the one most likely to have announced into the"
+      "walk, but any Peer holds the tip, and a Catch-up that dropped the"
+      "Peer it started on has already moved to another."
+    match List.contains(seated, key)
+        true -> Option.Some(key)
+        false -> anyOf(seated)
+
+verify whoToAsk
+    whoToAsk(3, [1, 3, 5]) => Option.Some(3)
+    whoToAsk(4, [1, 3, 5]) => Option.Some(1)
+    whoToAsk(4, []) => Option.None
+
+fn anyOf(seated: List<Int>) -> Option<Int>
+    ? "The first Peer seated, if there is one."
+    match seated
+        [] -> Option.None
+        [head, ..tail] -> Option.Some(head)
+
+verify anyOf
+    anyOf([]) => Option.None
+    anyOf([2, 9]) => Option.Some(2)

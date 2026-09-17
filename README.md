@@ -644,14 +644,19 @@ each Input's Script pair as far as it runs.
 ```bash
 ./target/release/main audit ~/chain 1 20000
   ... height 18001: CLEAN (faults 0, script failures 0), 18000 blocks, 18129 transactions, 129 spends, 1008 undecided scripts
-blocks 20000  transactions 20136  spends resolved 136  coinbase 20000  unresolved 0  scripts 0 passed / 0 failed / 1157 undecided  CLEAN (faults 0, script failures 0)
+blocks 20000  transactions 20136  spends resolved 136  coinbase 20000  unresolved 0  scripts 0 passed / 0 failed / 1157 undecided  UNSETTLED (faults 0, script failures 0)
 ```
 
-**CLEAN** is the word to read first, and it is `FAILED` if *either* a fault or
-a failed Script was found. It used to be `FAULTS 0`, which was last on the line
-and the only capitals and answered a narrower question than it looked like: a
-failed Script is not a fault, so a run could report a hundred of them and still
-end `FAULTS 0`. It did, once, and was read as good news (#76).
+The capitalised word is the one to read first. It is `FAILED` if *either* a
+fault or a failed Script was found; `UNSETTLED` if nothing was found wrong but
+a spend went unresolved or a Script undecided, as the 1,157 here did; and
+`CLEAN` only when every spend resolved and every Script was decided. It used
+to be `FAULTS 0`, which was last on the line and the only capitals and
+answered a narrower question than it looked like: a failed Script is not a
+fault, so a run could report a hundred of them and still end `FAULTS 0`. It
+did, once, and was read as good news (#76). And it used to say `CLEAN` over
+a thousand undecided Scripts, which collapsed could-not-tell into
+nothing-wrong, the one thing this program is built not to do (#280).
 
 The two counts are over different things, which is why they differ so widely.
 **spends** counts Transactions — 136 of the 20,136 here are not coinbases.
@@ -1217,6 +1222,9 @@ turns on `<dir>/debug.log`, one line per *decision* — a phase started, a Peer
 seated or dropped and why, a fault and what it was charged to — so a run that
 ends under the Screen can be read afterwards rather than re-run in plain mode
 to see what stopped it ([#218](https://github.com/n1bor/btc-listener/issues/218)).
+Each line opens with the instant twice, `2026-09-14T23:06:16.648Z
+1789427176648`: the date for a person and the milliseconds for `awk`, from one
+read of the clock ([#360](https://github.com/n1bor/btc-listener/issues/360)).
 
 ## Reclaiming space
 

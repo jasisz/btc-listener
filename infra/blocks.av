@@ -23,6 +23,15 @@ module Blocks
         "which Segments it has appended to since anyone last asked, and synced"
         "makes exactly those durable. The caller writes no Location until it"
         "has returned."
+        "The count and the file are two answers to where a Block went, and"
+        "nothing compared them until #327: place derives every offset from the"
+        "used the process carries, and appendBytes lands wherever the file"
+        "ends, so once they differed every Location in the Segment was off by"
+        "the same number of bytes and only a full audit found it. Now the"
+        "size on the disk is read against the count twice per batch -- before"
+        "its first append and again in synced, before its Locations go down"
+        "-- and a difference is a named refusal. One stat per batch, not per"
+        "Block; Domain.Segment.agreesWithDisk is the rule."
     exposes [BlockStore, Appended, open, append, read, prune, synced, unsyncedIn, currentSegment, segmentPath, segmentNumberOf]
     depends [Bytes, Domain.Index, Domain.Segment]
     effects [
@@ -227,7 +236,13 @@ fn append(store: BlockStore, payload: Bytes) -> Result<Appended, String>
       "here fsyncs: an fsync a Block would be a fsync per Block, where the"
       "Locations are written in one batch per phase, so the sync belongs where"
       "the batch does and synced is what the caller calls."
-    ! [Disk.appendBytes]
+      "The first append of a batch reads the Segment's size first (#327):"
+      "the count was last known to agree with the disk when the previous"
+      "batch synced, and anything that has happened to the file since -- a"
+      "second writer, a hand -- would put this record and every one after it"
+      "somewhere the count does not say."
+    ! [Disk.appendBytes, Disk.size]
+    _counted = countedIfFirst(store)?
     blockBytes = List.len(Bytes.octets(payload))
     placement = Domain.Segment.place(store.state, blockBytes)
     path = segmentPath(store.dir, placement.location.segment)
@@ -235,6 +250,59 @@ fn append(store: BlockStore, payload: Bytes) -> Result<Appended, String>
     _header = Disk.appendBytes(path, header)?
     _payload = Disk.appendBytes(path, payload)?
     Result.Ok(Appended(store = BlockStore(dir = store.dir, state = placement.state, unsynced = alsoUnsynced(store.unsynced, placement.location.segment)), location = placement.location))
+
+verify append trace
+    given sz: Disk.size = [diskHolds104]
+    given put: Disk.appendBytes = [appendGoes]
+    first = append(BlockStore(dir = "d", state = SegmentState(segment = 0, used = 104), unsynced = []), Bytes.fromList([1, 2, 3]))
+    later = append(BlockStore(dir = "d", state = SegmentState(segment = 0, used = 104), unsynced = [0]), Bytes.fromList([1, 2, 3]))
+    first.result => Result.Ok(Appended(store = BlockStore(dir = "d", state = SegmentState(segment = 0, used = 111), unsynced = [0]), location = Location(segment = 0, offset = 108, length = 3)))
+    first.trace.contains(Disk.appendBytes) => true
+    later.result => Result.Ok(Appended(store = BlockStore(dir = "d", state = SegmentState(segment = 0, used = 111), unsynced = [0]), location = Location(segment = 0, offset = 108, length = 3)))
+
+verify append trace
+    given sz: Disk.size = [diskHolds308]
+    given put: Disk.appendBytes = [appendGoes]
+    drifted = append(BlockStore(dir = "d", state = SegmentState(segment = 0, used = 104), unsynced = []), Bytes.fromList([1, 2, 3]))
+    drifted.result => Result.Err("Segment 0 is 308 bytes on the disk where the count says 104; a Location placed from the count would be 204 bytes off, so none was written, and the next open counts from the disk again")
+    drifted.trace.contains(Disk.appendBytes) => false
+
+fn diskHolds104(path: BranchPath, k: Int, target: String) -> Result<Int, String>
+    ? "A Disk.size stub: whatever is asked about is 104 bytes long."
+    Result.Ok(104)
+
+fn diskHolds308(path: BranchPath, k: Int, target: String) -> Result<Int, String>
+    ? "A Disk.size stub: whatever is asked about is 308 bytes long -- one"
+      "200-byte record more than a count of 104 knows about (#327)."
+    Result.Ok(308)
+
+fn appendGoes(path: BranchPath, k: Int, target: String, bytes: Bytes) -> Result<Unit, String>
+    ? "A Disk.appendBytes stub that takes the bytes and says nothing."
+    Result.Ok(Unit)
+
+fn syncGoes(path: BranchPath, k: Int, target: String) -> Result<Unit, String>
+    ? "A Disk.sync stub that reports the bytes on the disk."
+    Result.Ok(Unit)
+
+fn countedIfFirst(store: BlockStore) -> Result<Unit, String>
+    ? "The count against the disk once per batch: a store with nothing"
+      "unsynced is at a batch boundary, and the append about to happen is"
+      "the batch's first."
+    ! [Disk.size]
+    match store.unsynced
+        [] -> counted(store)
+        [head, ..tail] -> Result.Ok(Unit)
+
+fn counted(store: BlockStore) -> Result<Unit, String>
+    ? "The current Segment's size on the disk against the count (#327)."
+      "A count of zero names a Segment that has not been created -- the"
+      "directory was empty when the store opened, or the last record rolled"
+      "past the cap and the next has not landed -- so there is nothing on"
+      "the disk to ask; every other count was set from a file that exists."
+    ! [Disk.size]
+    match store.state.used > 0
+        false -> Result.Ok(Unit)
+        true -> Domain.Segment.agreesWithDisk(store.state, Disk.size(segmentPath(store.dir, store.state.segment))?)
 
 fn alsoUnsynced(unsynced: List<Int>, segment: Int) -> List<Int>
     ? "This Segment among the ones still to be made durable, once."
@@ -273,10 +341,32 @@ fn synced(store: BlockStore) -> Result<BlockStore, String>
       "does not name it yet, which is the same lost Block by another route."
       "A store with nothing outstanding still syncs the directory, which is"
       "one call and cannot be wrong."
-    ! [Disk.sync]
+      "The count is read against the disk first (#327). The Locations this"
+      "sync precedes were placed from the count, so a Segment that is not"
+      "the size the count says would have every one of them naming the"
+      "wrong bytes; the refusal here is what keeps them out of the Index."
+    ! [Disk.size, Disk.sync]
+    _counted = counted(store)?
     _done = syncedAll(pathsOf(store.dir, store.unsynced, []))?
     _dir = Disk.sync(store.dir)?
     Result.Ok(BlockStore(dir = store.dir, state = store.state, unsynced = []))
+
+verify synced trace
+    given sz: Disk.size = [diskHolds104]
+    given sync: Disk.sync = [syncGoes]
+    agreed = synced(BlockStore(dir = "d", state = SegmentState(segment = 0, used = 104), unsynced = [0]))
+    fresh = synced(BlockStore(dir = "d", state = Domain.Segment.initial(), unsynced = []))
+    agreed.result => Result.Ok(BlockStore(dir = "d", state = SegmentState(segment = 0, used = 104), unsynced = []))
+    agreed.trace.contains(Disk.sync("d")) => true
+    fresh.result => Result.Ok(BlockStore(dir = "d", state = Domain.Segment.initial(), unsynced = []))
+    fresh.trace.contains(Disk.sync("d")) => true
+
+verify synced trace
+    given sz: Disk.size = [diskHolds308]
+    given sync: Disk.sync = [syncGoes]
+    drifted = synced(BlockStore(dir = "d", state = SegmentState(segment = 0, used = 104), unsynced = [0]))
+    drifted.result => Result.Err("Segment 0 is 308 bytes on the disk where the count says 104; a Location placed from the count would be 204 bytes off, so none was written, and the next open counts from the disk again")
+    drifted.trace.contains(Disk.sync) => false
 
 fn syncedAll(paths: List<String>) -> Result<Unit, String>
     ? "Each Segment named, one at a time, stopping at the first that will"

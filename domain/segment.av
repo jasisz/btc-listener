@@ -9,7 +9,13 @@ module Segment
         "oversized Block is given a Segment of its own rather than split."
         "Everything here is pure arithmetic, so a Segment's layout is settled"
         "without touching Disk."
-    exposes [Placement, SegmentState, capBytes, headerBytes, nameOf, initial, place, headerFor, lengthOf, payloadAt, nextHeader, complete]
+        "The arithmetic is only ever right about the file it was told about."
+        "place counts from a running total the process carries, and the write"
+        "lands wherever the file actually ends; the day those two differ, every"
+        "Location placed afterwards is off by the same number of bytes and"
+        "nothing at write time can tell (#327). agreesWithDisk is the one rule"
+        "that compares them, and Infra.Blocks asks it once per batch."
+    exposes [Placement, SegmentState, capBytes, headerBytes, nameOf, initial, place, agreesWithDisk, headerFor, lengthOf, payloadAt, nextHeader, complete]
     depends [Bytes, Domain.Index, Domain.Message, Domain.Text]
     effects []
 
@@ -59,6 +65,12 @@ verify nameOf
     nameOf(999999) => "blk999999.dat"
     nameOf(1000000) => "blk1000000.dat"
 
+verify nameOf law sortsWithSegment
+    given lower: Int = [0, 1, 42, 999998, 999999]
+    given higher: Int = [0, 1, 42, 999998, 999999]
+    when Bool.and(Bool.and(0 <= lower, lower < 1000000), Bool.and(0 <= higher, higher < 1000000))
+    nameOf(lower) < nameOf(higher) => lower < higher
+
 fn initial() -> SegmentState
     ? "Where a Store with no Segments starts."
     SegmentState(segment = 0, used = 0)
@@ -84,6 +96,31 @@ verify place
     place(initial(), 200000000) => Placement(location = Location(segment = 0, offset = 4, length = 200000000), state = SegmentState(segment = 0, used = 200000004))
     place(SegmentState(segment = 1, used = 14), 200000000) => Placement(location = Location(segment = 2, offset = 4, length = 200000000), state = SegmentState(segment = 2, used = 200000004))
     place(SegmentState(segment = 0, used = 134217624), 100) => Placement(location = Location(segment = 0, offset = 134217628, length = 100), state = SegmentState(segment = 0, used = 134217728))
+
+verify place law recordEndsAtUsed
+    given state: SegmentState = [initial(), SegmentState(segment = 0, used = 104), SegmentState(segment = 1, used = 14), SegmentState(segment = 3, used = 134217700)]
+    given blockBytes: Int = [0, 1, 100, 200000000]
+    when Bool.and(state.used >= 0, blockBytes >= 0)
+    endsAtUsed(place(state, blockBytes), blockBytes) => true
+
+verify place law consecutiveRecordsTile
+    given state: SegmentState = [initial(), SegmentState(segment = 0, used = 104), SegmentState(segment = 3, used = 134217600)]
+    given first: Int = [0, 1, 100, 200000000]
+    given second: Int = [0, 1, 100, 200000000]
+    when Bool.and(state.used >= 0, Bool.and(first >= 0, second >= 0))
+    tiles(place(state, first), place(place(state, first).state, second)) => true
+
+verify place law staysUnderCap
+    given state: SegmentState = [initial(), SegmentState(segment = 0, used = 104), SegmentState(segment = 0, used = 134217624), SegmentState(segment = 3, used = 134217728)]
+    given blockBytes: Int = [0, 1, 100, 134217724]
+    when Bool.and(headerBytes() + blockBytes <= capBytes(), state.used <= capBytes())
+    place(state, blockBytes).state.used <= capBytes() => true
+
+verify place law agreesWithTheReader
+    given state: SegmentState = [initial(), SegmentState(segment = 0, used = 104), SegmentState(segment = 3, used = 134217600)]
+    given blockBytes: Int = [0, 1, 100, 200000000]
+    when Bool.and(Bool.and(state.used >= 0, blockBytes >= 0), Bool.not(rolls(state, blockBytes)))
+    readerAgrees(state, blockBytes, place(state, blockBytes)) => true
 
 fn rolls(state: SegmentState, blockBytes: Int) -> Bool
     ? "A non-empty Segment rolls when the record would take it past the cap."
@@ -114,6 +151,93 @@ verify appended
     appended(initial(), 100) => Placement(location = Location(segment = 0, offset = 4, length = 100), state = SegmentState(segment = 0, used = 104))
     appended(SegmentState(segment = 2, used = 60), 40) => Placement(location = Location(segment = 2, offset = 64, length = 40), state = SegmentState(segment = 2, used = 104))
 
+fn endsAtUsed(placement: Placement, blockBytes: Int) -> Bool
+    ? "What a Placement says about itself: the record it names is the last"
+      "thing in the Segment its state describes, it is in that Segment, it is"
+      "as long as the Block, and it sits past a record header."
+    Bool.and(Bool.and(placement.location.offset + placement.location.length == placement.state.used, placement.location.segment == placement.state.segment), Bool.and(placement.location.length == blockBytes, placement.location.offset >= headerBytes()))
+
+verify endsAtUsed
+    endsAtUsed(place(initial(), 100), 100) => true
+    endsAtUsed(place(SegmentState(segment = 3, used = 134217700), 100), 100) => true
+    endsAtUsed(Placement(location = Location(segment = 0, offset = 4, length = 100), state = SegmentState(segment = 0, used = 105)), 100) => false
+    endsAtUsed(Placement(location = Location(segment = 0, offset = 4, length = 100), state = SegmentState(segment = 1, used = 104)), 100) => false
+    endsAtUsed(Placement(location = Location(segment = 0, offset = 4, length = 100), state = SegmentState(segment = 0, used = 104)), 99) => false
+    endsAtUsed(Placement(location = Location(segment = 0, offset = 0, length = 104), state = SegmentState(segment = 0, used = 104)), 104) => false
+
+fn tiles(first: Placement, second: Placement) -> Bool
+    ? "Two consecutive Placements leave no gap and no overlap: the second"
+      "either opens the next Segment at its first record, or starts one"
+      "header past where the first ends."
+    Bool.or(opensNext(first, second), followsOn(first, second))
+
+verify tiles
+    tiles(place(initial(), 100), place(SegmentState(segment = 0, used = 104), 200)) => true
+    tiles(place(SegmentState(segment = 3, used = 134217600), 100), place(SegmentState(segment = 3, used = 134217704), 100)) => true
+    tiles(place(initial(), 100), place(SegmentState(segment = 0, used = 105), 200)) => false
+    tiles(place(initial(), 100), place(SegmentState(segment = 0, used = 103), 200)) => false
+    tiles(place(initial(), 100), place(SegmentState(segment = 2, used = 0), 200)) => false
+
+fn opensNext(first: Placement, second: Placement) -> Bool
+    ? "The second record is the first in the Segment after the first record's."
+    Bool.and(second.location.segment == first.location.segment + 1, second.location.offset == headerBytes())
+
+verify opensNext
+    opensNext(place(initial(), 100), place(SegmentState(segment = 1, used = 0), 200)) => true
+    opensNext(place(initial(), 100), place(SegmentState(segment = 0, used = 104), 200)) => false
+
+fn followsOn(first: Placement, second: Placement) -> Bool
+    ? "The second record starts one header past the end of the first, in the same Segment."
+    Bool.and(second.location.segment == first.location.segment, second.location.offset == first.location.offset + first.location.length + headerBytes())
+
+verify followsOn
+    followsOn(place(initial(), 100), place(SegmentState(segment = 0, used = 104), 200)) => true
+    followsOn(place(initial(), 100), place(SegmentState(segment = 0, used = 108), 200)) => false
+    followsOn(place(initial(), 100), place(SegmentState(segment = 1, used = 0), 200)) => false
+
+fn readerAgrees(state: SegmentState, blockBytes: Int, placement: Placement) -> Bool
+    ? "The writer's arithmetic and the reader's are the same arithmetic: a"
+      "record placed at the Segment's end is where payloadAt says its payload"
+      "is, the state after it is where nextHeader says the next record goes,"
+      "and complete holds for it against the Segment that size."
+    Bool.and(Bool.and(placement.location.offset == payloadAt(state.used), placement.state.used == nextHeader(state.used, blockBytes)), complete(placement.state.used, state.used, blockBytes))
+
+verify readerAgrees
+    readerAgrees(initial(), 100, place(initial(), 100)) => true
+    readerAgrees(SegmentState(segment = 0, used = 104), 200, place(SegmentState(segment = 0, used = 104), 200)) => true
+    readerAgrees(SegmentState(segment = 3, used = 134217700), 100, place(SegmentState(segment = 3, used = 134217700), 100)) => false
+
+fn agreesWithDisk(state: SegmentState, size: Int) -> Result<Unit, String>
+    ? "Whether the Segment on the disk is as long as the count says (#327)."
+      "The count is what place derives every Location from; the size is where"
+      "the next append actually lands. When they differ by N bytes every"
+      "Location placed from the count is N bytes off, and nothing else at"
+      "write time can tell. So this is asked before a batch's first append"
+      "and again before its Locations are written, and a refusal here is a"
+      "fault on this node's own side, never a Peer's: the disk changed under"
+      "the count -- a second writer, a Segment appended to by hand -- and"
+      "no Location placed from the count has been believed. Reopening the"
+      "directory counts from the disk again."
+    match size == state.used
+        true -> Result.Ok(Unit)
+        false -> Result.Err("Segment {state.segment} is {size} bytes on the disk where the count says {state.used}; a Location placed from the count would be {Int.abs(size - state.used)} bytes off, so none was written, and the next open counts from the disk again")
+
+verify agreesWithDisk
+    agreesWithDisk(initial(), 0) => Result.Ok(Unit)
+    agreesWithDisk(SegmentState(segment = 0, used = 104), 104) => Result.Ok(Unit)
+    agreesWithDisk(SegmentState(segment = 5745, used = 100591405), 135794015) => Result.Err("Segment 5745 is 135794015 bytes on the disk where the count says 100591405; a Location placed from the count would be 35202610 bytes off, so none was written, and the next open counts from the disk again")
+    agreesWithDisk(SegmentState(segment = 0, used = 308), 104) => Result.Err("Segment 0 is 104 bytes on the disk where the count says 308; a Location placed from the count would be 204 bytes off, so none was written, and the next open counts from the disk again")
+
+verify agreesWithDisk law theDiskItCountedAgrees
+    given state: SegmentState = [initial(), SegmentState(segment = 0, used = 104), SegmentState(segment = 5745, used = 100591405)]
+    agreesWithDisk(state, state.used) => Result.Ok(Unit)
+
+verify agreesWithDisk law anyOtherSizeRefuses
+    given state: SegmentState = [initial(), SegmentState(segment = 0, used = 104), SegmentState(segment = 5745, used = 100591405)]
+    given delta: Int = [-104, -1, 1, 35202610]
+    when delta != 0
+    agreesWithDisk(state, state.used + delta) => Result.Err("Segment {state.segment} is {state.used + delta} bytes on the disk where the count says {state.used}; a Location placed from the count would be {Int.abs(delta)} bytes off, so none was written, and the next open counts from the disk again")
+
 fn headerFor(length: Int) -> Result<Bytes, String>
     ? "The four bytes that precede a record's payload: its length, little-endian."
     Bytes.fromList(Domain.Message.littleEndian(length, 4))
@@ -122,6 +246,12 @@ verify headerFor
     headerFor(285) => Result.Ok(Bytes.fromHex("1d010000")?)
     headerFor(0) => Result.Ok(Bytes.fromHex("00000000")?)
     headerFor(134217728) => Result.Ok(Bytes.fromHex("00000008")?)
+
+verify headerFor law readsBack
+    given length: Int = [0, 1, 285, 134217728, 4294967295]
+    when Bool.and(0 <= length, length < 4294967296)
+    using [Domain.Message.littleEndian.fourBytesReadBack]
+    lengthOf(headerFor(length)?) => Result.Ok(length)
 
 fn lengthOf(header: Bytes) -> Result<Int, String>
     ? "The payload length a record's header declares."

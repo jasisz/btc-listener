@@ -120,9 +120,8 @@ def restored_mempool(s, a, b):
     b.rpc("createwallet", "fork")
     b.mine(2)
     b.rpc("setnetworkactive", True)
-    # The winning fork already exists before this connection. Ask B directly:
-    # A has no new tip to announce, and initial catch-up asks only the first peer.
-    with s.follow(b.peer, label="restore-tx") as live:
+    # A is stale; B must trigger catch-up from the height retained at handshake.
+    with s.follow(a.peer + "," + b.peer, label="restore-tx") as live:
         live.tip(start + 2)
         live.wait("offered back from disconnected Block(s), 1 admitted", timeout=30)
     s.hashes(b, [start + 1, start + 2])

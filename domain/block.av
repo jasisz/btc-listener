@@ -6,7 +6,7 @@ module Block
         "only Result here guards that length and the octet range beneath it."
         "Every vector below was taken from mainnet or computed from the published"
         "genesis parameters, never written from memory."
-    exposes [BlockHeader, wireOrder, merkleRootOf, leavesFrom, pairsOf, targetOf, meetsTarget, headerLength, decodeHeader, headersOf, blockIdOf, idOfWholeBlock, transactionsOf, txidsOf, genesisBlockId, networkOf, locatorHeights, getHeadersPayload, Carried, carriedOf, locatorIn, headersPayload, headersCap]
+    exposes [BlockHeader, wireOrder, merkleRootOf, leavesFrom, pairsOf, targetOf, meetsTarget, headerLength, decodeHeader, headersOf, blockIdOf, idOfWholeBlock, transactionsOf, txidsOf, genesisBlockId, networkOf, locatorHeights, getHeadersPayload, Carried, carriedOf, locatorIn, locatorCap, locatorFault, headersPayload, headersCap]
     depends [Bytes, Crypto.Digest32, Domain.CompactSize, Domain.Hash, Domain.Message, Domain.Network, Domain.Transaction]
     effects []
 
@@ -613,6 +613,41 @@ fn headersCap() -> Int
 
 verify headersCap
     headersCap() => 2000
+
+fn locatorCap() -> Int
+    ? "The most Ids a getheaders Locator may carry: Core's MAX_LOCATOR_SZ."
+      "A Locator built by locatorHeights is twelve entries plus one per"
+      "doubling, so ours never nears it; a Peer's may, and every Id in one"
+      "costs a Store read in the served path (n1bor/btc-listener#280, item 15)."
+    101
+
+verify locatorCap
+    locatorCap() => 101
+    List.len(locatorHeights(1000000)) < locatorCap() => true
+
+fn locatorFault(locator: List<List<Int>>) -> Option<String>
+    ? "Why a Locator is refused, or None: more Ids than Core would read."
+      "Core drops the Peer outright (net_processing: 'getheaders locator size"
+      "N > MAX_LOCATOR_SZ'), which is the answer here too, because a Message"
+      "that overruns the protocol's own limit is not an honest one."
+    match List.len(locator) > locatorCap()
+        true -> Option.Some("a getheaders Locator of {List.len(locator)} Ids, more than the {locatorCap()} Core allows")
+        false -> Option.None
+
+verify locatorFault
+    locatorFault([]) => Option.None
+    locatorFault(repeatedIds(101, [])) => Option.None
+    locatorFault(repeatedIds(102, [])) => Option.Some("a getheaders Locator of 102 Ids, more than the 101 Core allows")
+
+fn repeatedIds(count: Int, acc: List<List<Int>>) -> List<List<Int>>
+    ? "A Locator of this many zero Ids, for the cases here."
+    match count <= 0
+        true -> acc
+        false -> repeatedIds(count - 1, List.prepend(zeros(32, []), acc))
+
+verify repeatedIds
+    List.len(repeatedIds(3, [])) => 3
+    repeatedIds(0, []) => []
 
 fn locatorIn(payload: List<Int>) -> List<List<Int>>
     ? "The Block Ids a getheaders offers as places we might both know."

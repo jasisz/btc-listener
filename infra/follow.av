@@ -26,7 +26,7 @@ module Follow
     depends [Bytes, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Block, Domain.Body, Domain.Catchup, Domain.CompactBlock, Domain.Hash, Domain.HeaderTree, Domain.Inbox, Domain.Index, Domain.IndexKeys, Domain.Inventory, Domain.Mempool, Domain.Network, Domain.Screen, Domain.Screenlines, Domain.Snapshot, Domain.Target, Domain.Transaction, Domain.TreeStore, Domain.UtxoStore, Domain.Version, Infra.Blocks, Infra.Board, Infra.Bodies, Infra.ChainState, Infra.Debug, Infra.Download, Infra.Headers, Infra.Mempool, Infra.Metrics, Infra.Peers, Infra.Resolver, Infra.Rewind, Infra.Screen, Infra.Store, Domain.Watchdog, Infra.Tending]
     effects [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -175,7 +175,7 @@ fn follow(network: Network, addresses: List<PeerAddress>, store: Store, blocks: 
       "catching up."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -753,9 +753,13 @@ fn session(state: Following, screened: Bool) -> Result<Unit, String>
       "waited would sit idle for as long as it took the next Block to be"
       "mined, and would then connect it onto a Set that was hours or years"
       "behind -- which is to say it would refuse it, correctly, and stop."
+      "It is timed (#328). This is the Catch-up that runs for an hour after"
+      "a reindex; deferred Announcements are preserved, and if it ran long"
+      "the gate also holds one more ask of the"
+      "Peer it ran against, and the first turn of the loop acts on it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -766,10 +770,13 @@ fn session(state: Following, screened: Bool) -> Result<Unit, String>
         Work.cancel,
     ]
     withScreen = screenedInto(state, screened)?
-    started = caughtUp(withScreen, firstKey(withScreen.pool))?
-    match started.watch.leaving
-        true -> stopping(started)
-        false -> listen(started)
+    startedMs = Time.unixMs()
+    first = firstKey(withScreen.pool)
+    started = caughtUp(withScreen, first)?
+    recovered = withGate(started, Domain.Catchup.recovering(started.gate, Domain.Catchup.whoToAsk(first, Infra.Peers.peerKeys(started.pool)), startedMs, Time.unixMs()))
+    match recovered.watch.leaving
+        true -> stopping(recovered)
+        false -> listen(recovered)
 
 fn screenedInto(state: Following, screened: Bool) -> Result<Following, String>
     ? "Take the terminal and open the Overview, when a Screen was asked for."
@@ -844,7 +851,7 @@ fn caughtUp(state: Following, key: Int) -> Result<Following, String>
       "consensus reason was reported as though a Peer had said it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -878,7 +885,7 @@ fn withoutPeer(state: Following, key: Int, why: String) -> Result<Following, Str
     ? "Drop the Peer that would not do it, then look for another."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -896,7 +903,7 @@ fn onwardWith(state: Following, why: String) -> Result<Following, String>
     ? "Another Peer to ask, or nobody left and the reason the last one gave."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1016,7 +1023,7 @@ fn catchingUp(state: Following, key: Int) -> Result<Caught, String>
       "this project has recorded."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1045,7 +1052,7 @@ fn realigning(state: Following, key: Int, aligned: Result<Realigned, String>) ->
       "with the reason and every Peer still connected."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1063,7 +1070,7 @@ fn fetching(state: Following, key: Int, aligned: Realigned) -> Result<Caught, St
     ? "The bodies above the fork from the Peer asked, then the Set forward over them."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1077,7 +1084,9 @@ fn fetching(state: Following, key: Int, aligned: Realigned) -> Result<Caught, St
     startLog = marking(state, state.pool, "bodies", aligned.from, tipHeight, true)?
     fetched = alternating(withLog(state, startLog), key, aligned, tipHeight)?
     bodiesLog = markingCounts(withLog(state, fetched.eye.log), fetched.pool, "bodies", fetched.reached, tipHeight, fetched.count, fetched.bytes, true)?
-    settling(connected(Following(pool = fetched.pool, store = fetched.store, blocks = fetched.blocks, book = fetched.book, nextKey = fetched.nextKey, watch = watchSeen(state.watch, fetched.eye), mempool = state.mempool, rebuilding = state.rebuilding, log = bodiesLog, board = fetched.eye.board, gate = state.gate), tipHeight, aligned.unconfirmed))
+    match Infra.Bodies.faultOf(fetched)
+        Option.Some(why) -> Result.Ok(Caught.ChainStopped(why))
+        Option.None -> settling(connected(Following(pool = fetched.pool, store = fetched.store, blocks = fetched.blocks, book = fetched.book, nextKey = fetched.nextKey, watch = watchSeen(state.watch, fetched.eye), mempool = state.mempool, rebuilding = state.rebuilding, log = bodiesLog, board = fetched.eye.board, gate = state.gate), tipHeight, aligned.unconfirmed))
 
 fn settling(onward: Result<Settled, String>) -> Result<Caught, String>
     ? "The Set forward, refused, or unable: the last two are the chain's (#290)."
@@ -1133,7 +1142,7 @@ fn alternating(state: Following, key: Int, aligned: Realigned, tipHeight: Int) -
       "hand-back needs no separate accounting of who has what."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1155,7 +1164,7 @@ fn flying(flight: Flight, tipHeight: Int, standing: Int, blocks: Int) -> Result<
       "got, then round again."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1184,7 +1193,7 @@ fn connecting(flown: Flight, tipHeight: Int, standing: Int, blocks: Int) -> Resu
       "because the Index genuinely did not name them."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1216,7 +1225,7 @@ fn connectedSome(flown: Flight, tipHeight: Int, standing: Int, blocks: Int) -> R
       "connected nothing, and the download carries on."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1239,7 +1248,7 @@ fn chunkLanded(flown: Flight, chunk: Result<Built, String>, tipHeight: Int, stan
       "collapses to almost nothing."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1346,7 +1355,7 @@ fn connected(state: Following, tipHeight: Int, unconfirmed: List<Carried>) -> Re
       "the walk's own minute lines instead."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1496,7 +1505,7 @@ fn buildingTo(state: Following, tipHeight: Int, standing: Int, sofar: Option<Bui
       "handed back as it stands rather than asked again."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1540,7 +1549,7 @@ fn chunkOn(state: Following, chunk: Result<Built, String>, tipHeight: Int, stand
       "none of those is a Peer's fault either."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -1573,7 +1582,7 @@ fn chunkedOn(state: Following, next: Built, tipHeight: Int, standing: Int, chunk
     ? "The chunk connected: the range is done, or there is another chunk."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2028,7 +2037,7 @@ fn listen(state: Following) -> Result<Unit, String>
       "recursion does not grow the stack however long it runs."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2099,9 +2108,14 @@ fn turning(state: Following) -> Result<Unit, String>
       "and a tick of silence hands the loop to its own clock -- the silence"
       "rule, the Snapshot, and whichever lines have come due. The deadline"
       "means what it meant; it is only noticed in one-second steps now."
+      "Before the tick, every Peer's Handshake Height is weighed against the"
+      "tree's best (#328) and one due claim, if the gate holds one, is acted"
+      "on instead of waiting. The tip is read from the Store rather than the"
+      "Snapshot because it is the tree's answer that a Peer's claim is"
+      "measured against, and one read a second costs nothing."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2114,7 +2128,54 @@ fn turning(state: Following) -> Result<Unit, String>
     told = firstAfterNone(dialsAsked(state)?, List.len(Infra.Peers.peerKeys(state.pool)))?
     knownAt = saidAdvertised(told, Infra.Peers.told(told.pool, Time.unixMs())?)
     drained = drainSpare(knownAt)
-    topped = boarded(toppedUp(drained)?, Time.unixMs())?
+    weighed = withGate(drained, Domain.Catchup.weighingAll(drained.gate, Infra.Peers.claimsOf(drained.pool), heightOf(Infra.Headers.tipOf(drained.store)?)))
+    match Domain.Catchup.dueNow(weighed.gate, Time.unixMs())
+        Option.Some(due) -> actingOn(weighed, due)
+        Option.None -> ticking(weighed)
+
+fn actingOn(state: Following, due: Due) -> Result<Unit, String>
+    ? "A claim the gate is holding whose Peer may be obeyed now: an"
+      "Announcement that arrived inside a cooldown (#300), a Handshake"
+      "Height above the tree's, or the ask that follows a long Catch-up"
+      "(#328). Noted, so a Catch-up nobody announced can be read back to"
+      "the claim that started it."
+      "Acted on at the top of a turn rather than only on a quiet one. A"
+      "turn is quiet when nothing arrived in its tick, and a node with"
+      "thirty Peers offering Transactions has no quiet turns, so a claim"
+      "acted on only then was a claim acted on never."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+
+    noted = Infra.Metrics.noting(state.log, "chain", "acting on a held claim: {due.why}")?
+    onMoved(withLog(state, noted), due.key, due.why)
+
+fn ticking(state: Following) -> Result<Unit, String>
+    ? "The rest of an ordinary turn: start a dial if the pool is short, then"
+      "wait a tick."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+
+    topped = boarded(toppedUp(state)?, Time.unixMs())?
     ticked = nextMessage(topped.pool, boardTick(topped.board))?
     tickState = firstAfterNone(Following.update(topped, pool = ticked.pool), List.len(Infra.Peers.peerKeys(topped.pool)))?
     onTicked(tickState, ticked.arrived)
@@ -2143,7 +2204,7 @@ fn firstAfterNone(state: Following, heldBefore: Int) -> Result<Following, String
       "end the run for the seconds between seating and its first Message."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2161,7 +2222,7 @@ fn onTicked(state: Following, arrived: Option<Spare>) -> Result<Unit, String>
     ? "A Message to handle, or a moment to look at the clock."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2188,7 +2249,7 @@ fn busyTurn(state: Following, spare: Spare, nowMs: Int) -> Result<Unit, String>
       "the dialling stopping."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2233,7 +2294,7 @@ fn quietTurn(state: Following, nowMs: Int) -> Result<Unit, String>
       "ever about nothing having arrived."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2252,9 +2313,12 @@ fn quietTurn(state: Following, nowMs: Int) -> Result<Unit, String>
 
 fn ontoRebuild(state: Following, nowMs: Int) -> Result<Unit, String>
     ? "A rebuild nobody has answered for too long, or another turn."
+      "A held claim used to be acted on here too, and only here -- on a"
+      "quiet turn, which a busy node never has. It is the top of every turn"
+      "now (actingOn, #328)."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2266,31 +2330,7 @@ fn ontoRebuild(state: Following, nowMs: Int) -> Result<Unit, String>
     ]
     match staleRebuild(state.rebuilding, nowMs)
         Option.Some(pending) -> fellBack(state, pending.key, "peer {pending.key} did not send the compact Block for {pending.blockId} within {Int.div(rebuildDeadlineMs(), 1000)} seconds")
-        Option.None -> ontoHeld(state, nowMs)
-
-fn ontoHeld(state: Following, nowMs: Int) -> Result<Unit, String>
-    ? "A claim held back while its Peer was quieted, now that the cooldown"
-      "has passed (#300)."
-      "One a turn, however many are due: acting on one runs a whole"
-      "Catch-up, and the next turn comes a second later. A Peer dropped in"
-      "the meantime took its claim with it -- Domain.Catchup.forgotten is"
-      "called wherever a Peer goes -- so nothing here asks a Peer that is"
-      "no longer in the pool."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Domain.Catchup.dueNow(state.gate, nowMs)
         Option.None -> listen(state)
-        Option.Some(due) -> onMoved(state, due.key, "{due.why}, held back while peer {due.key} was quieted")
 
 fn afterAccepting(state: Following, taken: Accepted) -> Following
     ? "A caller admitted takes the next key, so the one after it is free."
@@ -2522,7 +2562,7 @@ fn handle(state: Following, key: Int, command: String, body: List<Int>) -> Resul
       "whatever it said."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2553,7 +2593,7 @@ fn onAnnouncement(state: Following, key: Int, body: List<Int>) -> Result<Unit, S
       "Block, and the Transactions in it will be offered again by somebody."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2586,7 +2626,7 @@ fn onAskedAddresses(state: Following, key: Int) -> Result<Unit, String>
       "no reason to keep it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2644,7 +2684,7 @@ fn onAddresses(state: Following, key: Int, body: List<Int>) -> Result<Unit, Stri
       "one so that a Peer feeding us rubbish can be seen to have done it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2723,7 +2763,7 @@ fn onMoved(state: Following, key: Int, why: String) -> Result<Unit, String>
       "that can make the node do it for free can make it do it for ever."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2744,10 +2784,11 @@ fn holdingBack(state: Following, key: Int, why: String) -> Result<Unit, String>
       "Kept rather than dropped: a node following one Peer -- which is how"
       "this program is usually started, and how it is usually run -- would"
       "otherwise sit a Block behind until the next one was mined. The claim"
-      "is acted on the moment the cooldown passes, in ontoHeld."
+      "is acted on the moment the cooldown passes, at the top of the next"
+      "turn (actingOn)."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2765,9 +2806,14 @@ fn movingOn(state: Following, key: Int, why: String, nowMs: Int) -> Result<Unit,
       "Where the node stands is read either side of the run, so the gate is"
       "armed by waste and never by being asked. A Peer announcing real"
       "Blocks moves the chain every time and is never quieted."
+      "The run is timed as well (#328): one that ran long discarded every"
+      "Announcement made into it, so the gate holds one more ask of the"
+      "Peer -- after the charge, because a Catch-up that moved the chain"
+      "clears what the gate holds for that Peer, and the ask has to outlive"
+      "that."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2782,7 +2828,8 @@ fn movingOn(state: Following, key: Int, why: String, nowMs: Int) -> Result<Unit,
     moved = caughtUp(withGate(state, Domain.Catchup.taken(state.gate, key)), key)?
     stands = standingNow(moved.store)?
     seated = List.contains(Infra.Peers.peerKeys(moved.pool), key)
-    listen(withGate(moved, Domain.Catchup.charging(moved.gate, key, seated, stood == stands, nowMs)))
+    charged = Domain.Catchup.charging(moved.gate, key, seated, stood == stands, nowMs)
+    listen(withGate(moved, Domain.Catchup.recovering(charged, Domain.Catchup.whoToAsk(key, Infra.Peers.peerKeys(moved.pool)), nowMs, Time.unixMs())))
 
 fn standingNow(store: Store) -> Result<String, String>
     ? "Where the node stands, as one string: the tip of the branch with the"
@@ -2821,7 +2868,7 @@ fn onAnnouncedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Uni
       "worth doing."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2841,7 +2888,7 @@ fn weighingHeaders(state: Following, key: Int, headers: List<BlockHeader>) -> Re
       "case that started this."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2879,7 +2926,7 @@ fn provenEnough(state: Following, key: Int, header: BlockHeader) -> Result<Unit,
       "its place rather than merely being ignored."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2900,7 +2947,7 @@ fn ignoredAnnouncement(state: Following, key: Int, what: String) -> Result<Unit,
       "loop is worth being able to see afterwards."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2921,7 +2968,7 @@ fn losingPeer(state: Following, key: Int, why: String) -> Result<Unit, String>
       "here -- what the Peer said was worthless, not unfinished."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2939,7 +2986,7 @@ fn onPing(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
     ? "Reply with the same nonce, to the Peer that sent it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -2965,7 +3012,7 @@ fn onOffered(state: Following, key: Int, offered: List<List<Int>>) -> Result<Uni
       "orphan pool needs. Both are deferred by n1bor/btc-listener#28."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3006,7 +3053,7 @@ fn asking(state: Following, key: Int, hashes: List<List<Int>>) -> Result<Unit, S
       "Scripts need."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3027,7 +3074,7 @@ fn onTransaction(state: Following, key: Int, body: List<Int>) -> Result<Unit, St
       "want -- and admission is the thing that decides, not who sent it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3049,7 +3096,7 @@ fn landed(state: Following, key: Int, landing: Landing) -> Result<Unit, String>
       "answer its own Announcements."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3072,7 +3119,7 @@ fn notHeld(state: Following, why: String) -> Result<Unit, String>
       "counter on a Panel instead."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3092,7 +3139,7 @@ fn announcing(state: Following, key: Int, after: Mempool, held: Domain.Mempool.H
       "that wants it asks, and most will already have it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3149,7 +3196,7 @@ fn onAsked(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
       "Core does with a getdata for something it no longer holds."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3186,7 +3233,7 @@ fn servingBlocks(state: Following, key: Int, asked: List<List<Int>>) -> Result<F
       "something it has pruned or never had."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt,
+        Disk.appendBytes, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3204,7 +3251,7 @@ fn servingBlock(state: Following, key: Int, hash: List<Int>, rest: List<List<Int
     ? "One Block, by the Id the getdata named it with."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt,
+        Disk.appendBytes, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3221,7 +3268,7 @@ fn servingLocated(state: Following, key: Int, hash: List<Int>, rest: List<List<I
     ? "A Block we never fetched, or one whose bytes we can read back."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt,
+        Disk.appendBytes, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3239,7 +3286,7 @@ fn sendingBlock(state: Following, key: Int, rest: List<List<Int>>, location: Loc
     ? "The Block off the Segment and onto the wire, exactly as it was stored."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt,
+        Disk.appendBytes, Disk.readBytesAt, Disk.size,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3286,7 +3333,7 @@ fn onAnnouncedBlocks(state: Following, key: Int, announced: List<List<Int>>, fir
       "lets the fallback do the work."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3306,7 +3353,7 @@ fn onFreshBlocks(state: Following, key: Int, announced: List<List<Int>>, first: 
       "otherwise take the ordinary path."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3345,7 +3392,7 @@ fn askingCompact(state: Following, key: Int, announced: List<List<Int>>, first: 
       "hold, and whole copies of the ones it does not."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3396,7 +3443,7 @@ fn onCompact(state: Following, key: Int, body: List<Int>) -> Result<Unit, String
     ? "A compact Block arrived. Rebuild it from the Mempool if we can."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3414,7 +3461,7 @@ fn filling(state: Following, key: Int, compact: Compact) -> Result<Unit, String>
     ? "Rename the Mempool under this Block's key, and see what is missing."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3452,7 +3499,7 @@ fn askingFor(state: Following, key: Int, compact: Compact, indexes: List<Int>) -
     ? "getblocktxn for the positions the Mempool could not fill."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3501,7 +3548,7 @@ fn onBlockTxn(state: Following, key: Int, body: List<Int>) -> Result<Unit, Strin
     ? "The Transactions we asked for, to finish a rebuild."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3519,7 +3566,7 @@ fn withAnswer(state: Following, key: Int, answer: Tuple<List<Int>, List<Int>>) -
     ? "The Block it answers for, and the Transactions in it."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3536,7 +3583,7 @@ fn finishing(state: Following, key: Int, carried: Result<List<Carried>, String>)
     ? "Decode what arrived, keeping each Transaction's own bytes."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3563,7 +3610,7 @@ fn assembling(state: Following, key: Int, supplied: List<List<Int>>) -> Result<U
     ? "Fill the holes with what arrived and check the whole Block."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3581,7 +3628,7 @@ fn withPending(state: Following, key: Int, pending: Rebuilding, supplied: List<L
     ? "The compact Block we kept, now that its missing parts are here."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3602,7 +3649,7 @@ fn completed(state: Following, key: Int, compact: Compact, built: Result<Bytes, 
       "do and what the node would have done anyway."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3625,7 +3672,7 @@ fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplie
       "which asks for Headers first and checks them."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3721,7 +3768,7 @@ fn putAway(state: Following, key: Int, compact: Compact, payload: Bytes, supplie
       "mined rather than once per Block downloaded."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3750,7 +3797,7 @@ fn fellBack(state: Following, key: Int, why: String) -> Result<Unit, String>
       "where it would have been without compact Blocks at all."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -3772,6 +3819,25 @@ fn onAskedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Unit, S
       "missing."
     ! [
         Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    locator = Domain.Block.locatorIn(body)
+    match Domain.Block.locatorFault(locator)
+        Option.Some(why) -> listen(withoutPeer(state, key, why)?)
+        Option.None -> answeringHeaders(state, key, locator)
+
+fn answeringHeaders(state: Following, key: Int, locator: List<List<Int>>) -> Result<Unit, String>
+    ? "The Headers above the newest Id in a Locator we know, to the Peer that asked."
+    ! [
+        Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
@@ -3782,7 +3848,7 @@ fn onAskedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Unit, S
         Wait.poll,
         Work.cancel,
     ]
-    from = agreedHeight(state.store, Domain.Block.locatorIn(body))?
+    from = agreedHeight(state.store, locator)?
     headers = headersFrom(state.store, from + 1, Domain.Block.headersCap(), [])?
     headersOut = sendingHeaders(state, key, headers)?
     listen(headersOut)

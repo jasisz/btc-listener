@@ -41,7 +41,7 @@ fn txidRun(network: Network, dir: String, txid: String, spending: Bool) -> Resul
         Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     blocks = Infra.Blocks.open("{dir}/blocks")?
     sited = Infra.Store.get(store, Domain.IndexKeys.txKey(txid)?)?
     found = Infra.Chain.transactionAt(store, blocks, txid)?

@@ -15,7 +15,7 @@ module Download
     depends [Bytes, Domain.Address, Infra.Metrics, Domain.Block, Domain.HeaderTree, Domain.Index, Domain.IndexKeys, Domain.Network, Domain.Reorg, Domain.Screen, Domain.Snapshot, Infra.Headers, Infra.Pace, Infra.Peers, Infra.Screen, Infra.Store]
     effects [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -37,7 +37,7 @@ fn headers(network: Network, address: PeerAddress, store: Store) -> Result<Store
       "ideas of how a Message is read off a socket."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -68,7 +68,7 @@ fn headerSession(pool: Pool, store: Store) -> Result<Grown, String>
     ? "Ask for Headers from wherever the Index already reaches."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -91,7 +91,7 @@ fn headersOn(pool: Pool, key: Int, store: Store, have: Int, eye: Eye) -> Result<
       "minutes for the life of the process."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -155,7 +155,7 @@ fn headerBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: E
       "a batch stops moving the tip, and only then is the count a total."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -174,7 +174,7 @@ fn pacedBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, nowMs: 
     ? "The minute line when it is due, then the round itself."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -203,7 +203,7 @@ fn saidBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, nowMs: I
     ? "Say it, and measure the next line from now."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -239,7 +239,7 @@ fn nextBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: Eye
     ? "One round: ask, wait, absorb."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -259,7 +259,7 @@ fn absorb(pool: Pool, key: Int, store: Store, have: Int, decoded: List<BlockHead
     ? "An empty batch means the Peer has nothing after what we hold."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -284,7 +284,7 @@ fn stored(pool: Pool, key: Int, store: Store, have: Int, decoded: List<BlockHead
       "itself, so a batch of two thousand costs one copy instead of two thousand."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
@@ -340,7 +340,7 @@ fn continuing(pool: Pool, key: Int, outcome: Settled, pace: Pace, eye: Eye) -> R
       "change nothing about which chain we follow."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText,
+        Disk.appendBytes, Disk.appendText, Disk.size,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,

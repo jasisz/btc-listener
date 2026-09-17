@@ -44,7 +44,7 @@ fn run(network: Network, dir: String, from: Int, to: Int) -> Result<Counts, Stri
         Infra.Kv.get, Infra.Kv.open,
         Time.now, Time.unixMs,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     blocks = Infra.Blocks.open("{dir}/blocks")?
     walk(network, store, blocks, from, to, Counts(blocks = 0, transactions = 0, resolved = 0, coinbase = 0, unresolved = 0, faults = 0, scripts = Domain.SpendScript.noOutcomes()), Infra.Pace.pacedFrom(Time.unixMs()))
 
@@ -59,13 +59,31 @@ fn standing(counts: Counts) -> String
       "experiment that printed '105 failed ... FAULTS 0' and read as good news."
     match Bool.or(counts.faults > 0, counts.scripts.failed > 0)
         true -> "FAILED"
-        false -> "CLEAN"
+        false -> settledWord(counts)
 
 verify standing
     standing(zero()) => "CLEAN"
     standing(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 0, faults = 1, scripts = Domain.SpendScript.noOutcomes())) => "FAILED"
     standing(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 0, faults = 0, scripts = Outcomes(passed = 0, failed = 1, undecided = 0, note = Option.None))) => "FAILED"
-    standing(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 0, faults = 0, scripts = Outcomes(passed = 9, failed = 0, undecided = 3, note = Option.None))) => "CLEAN"
+    standing(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 0, faults = 0, scripts = Outcomes(passed = 9, failed = 0, undecided = 3, note = Option.None))) => "UNSETTLED"
+    standing(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 20, faults = 0, scripts = Domain.SpendScript.noOutcomes())) => "UNSETTLED"
+    standing(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 20, faults = 1, scripts = Domain.SpendScript.noOutcomes())) => "FAILED"
+
+fn settledWord(counts: Counts) -> String
+    ? "CLEAN only when every spend was resolved and every Script decided."
+      "The three-valued discipline reaches the headline: could-not-tell is"
+      "not nothing-wrong, and a run that could not resolve a spend or decide"
+      "a Script says UNSETTLED, with the counts beside it saying which"
+      "(n1bor/btc-listener#280, item 18). It is not a failure, because"
+      "nothing was found wrong; it is a run whose CLEAN nobody may claim."
+    match Bool.or(counts.unresolved > 0, counts.scripts.undecided > 0)
+        true -> "UNSETTLED"
+        false -> "CLEAN"
+
+verify settledWord
+    settledWord(zero()) => "CLEAN"
+    settledWord(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 1, faults = 0, scripts = Domain.SpendScript.noOutcomes())) => "UNSETTLED"
+    settledWord(Counts(blocks = 1, transactions = 0, resolved = 0, coinbase = 0, unresolved = 0, faults = 0, scripts = Outcomes(passed = 9, failed = 0, undecided = 3, note = Option.None))) => "UNSETTLED"
 
 fn breakdown(counts: Counts) -> String
     ? "What went wrong, for the reader who has read the standing. Both numbers"

@@ -273,6 +273,19 @@ needed no new compiler mechanism. The claims concern identical contributions;
 they do not establish header validity or the correctness of compact-target work
 arithmetic, and do not assert that two different tips can share a valid extension.
 
+Four more landed with n1bor/btc-listener#345, which found `usable` asking
+whether the *mantissa* was zero where Core's `GetBlockProof` asks whether the
+*target* is: bits `0x01000001` have a mantissa of one and a target of zero, and
+were credited with the whole space. `usable` now refuses on the target, after
+the cheap refusals (a negative field, a negative mantissa, an overflowing
+exponent), so every Int is answered without unpacking it:
+
+- `ofBits.zeroTargetProvesNothing`: `when zeroTarget(bits)`, the work is 0.
+- `ofBits.neverNegative`: the work is never below zero, on any Int, which is
+  what makes `added` and `over` monotone along a branch.
+- `negative.isTheMantissaTopBit` and `overflowing.isAnExponentAboveThirtyFour`:
+  the two refusals against the bit forms Core's `SetCompact` uses.
+
 Check this cone separately:
 
 ```sh
@@ -282,6 +295,39 @@ aver proof domain/chainwork.av --module-root . --check-json -o /tmp/chainwork-la
 It reports 46 universal laws (43 imported and these three), no bounded or open
 laws and zero build errors. Its 61 declined non-law claims remain explicit, so
 the unbudgeted strict command exits 1.
+
+## Segment placement: the writer's arithmetic is the reader's
+
+Six laws in `domain/segment.av` (n1bor/btc-listener#357), the pure half of
+#327. `place` derives a Location from the count the process carries, and
+`nextHeader` / `payloadAt` / `complete` are what `reindex` reads a Segment
+back with after a crash; nothing stated that the two agree until these.
+
+- `place.recordEndsAtUsed`: the record placed ends exactly at the new
+  `used`, in the Segment the state names, as long as the Block, past a header.
+- `place.consecutiveRecordsTile`: two consecutive placements either open the
+  next Segment at its first record or start one header past where the first
+  ended -- no gap, no overlap.
+- `place.staysUnderCap`: a record that fits under the cap never takes `used`
+  past it.
+- `place.agreesWithTheReader`: when the Segment does not roll, the offset is
+  `payloadAt(used)`, the state after is `nextHeader(used, n)`, and `complete`
+  holds for the record against a Segment that size.
+- `headerFor.readsBack`: `lengthOf(headerFor(n)) == Ok(n)` for every
+  `0 <= n < 2^32`, citing `Domain.Message.littleEndian.fourBytesReadBack`.
+- `nameOf.sortsWithSegment`: the file names sort as the Segment numbers do,
+  below a million.
+
+A seventh pair pins the effectful fix: `agreesWithDisk.theDiskItCountedAgrees`
+(the size the count says is accepted) and `agreesWithDisk.anyOtherSizeRefuses`
+(any other size is refused by name, with both numbers and the Segment).
+
+**Segment is outside the interpreter's proof cone**, so these are not in the
+CI proof job's count and have no Lean tier yet. They are checked by
+`aver verify domain/segment.av --module-root .` and by the same command with
+`--hostile`, which is where the `when` guards come from: a negative `used`
+or a negative Block length is not a world the writer is ever in, and a
+`rolls` case is exactly the one `agreesWithTheReader` is not about.
 
 ## Validation of the latest additions
 
@@ -346,13 +392,28 @@ as new. The implication law needed stating through `onOrStays` with
 `using [onOrStays.isImplication]`; written as a bare `Bool.or` over the two
 projections it opened at the implication and landed on `sorry`.
 
-Two proposals from #337 did not land and are recorded there: the truthiness
-roundtrip `isTruthy(fromNumber(n)) == (n != 0)` opens at the implication
-because it needs the digit lemmas the number laws are built from, and the
-`isTruthy(item ++ [128]) == anyNonZero(item)` induction hits a `simp`
-heartbeat timeout that the current pin reports as a hard build error rather
-than a caught `sorry` (`../test/ISSUE-law-timeout-is-a-hard-error.md`). A
-third, that `minimalPush` is `isMinimalPush`-minimal, is false as stated:
+## The two truthiness laws (n1bor/btc-listener#344)
+
+Both #337 proposals that did not land the first time now close universally,
+with core axioms only, measured locally at pin `b6a37c82` on top of the
+Rules laws: **117 universal, 3 bounded, 0 open, 130 declined** for the cone
+(113 before the Rules laws are counted; `--gate` reports six new laws and
+no regression).
+
+| law | pins | tier |
+|---|---|---|
+| `StackItem.isTruthy.zeroIsFalse` | `isTruthy(fromNumber(n)) == (n != 0)`; `because truthinessReason` names the most significant digit and follows it through sign placement, citing `mostSignificantDigitIsNotZero`, `outsideByteRangeIsNeverAdded`, `zeroDigitWindow` and `placed.positiveTopIsTruthy` | universal |
+| `StackItem.isTruthy.negativeZeroIsFalse` | `isTruthy(item ++ [128]) == anyNonZero(item)`: a sign byte on nothing is false (BIP62 rule 3); `because negativeZeroReason` reads the reversal, citing `anyNonZero.reversal` | universal |
+| `StackItem.placed.positiveTopIsTruthy` | a positive top digit survives placement as a set byte | universal |
+| `StackItem.anyNonZero.setHeadIsEnough` | a set head decides | universal |
+| `StackItem.anyNonZero.concatenation` | set-in-the-join is set-on-either-side, by induction on the left | universal |
+| `StackItem.anyNonZero.reversal` | reversal does not change whether anything is set | universal |
+
+The `simp` heartbeat timeout #344 recorded for the second law did not
+recur once the reversal was stated as its own law and cited with `using`
+rather than left to the structural induction.
+
+The remaining #337 proposal, that `minimalPush` is `isMinimalPush`-minimal, is false as stated:
 `CScript() << vch` writes `[1]` as a one-byte push, which MINIMALDATA refuses
 in favour of OP_1, and `isMinimalPush.directPushIsMinimalUnlessSmallNumber`
 already pins exactly that.

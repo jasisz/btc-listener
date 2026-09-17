@@ -426,6 +426,14 @@ verify placed law positiveTopMakesPlacementMinimal
     when top > 0
     isMinimalNumber(placed(top, rest, negative)) holds
 
+verify placed law positiveTopIsTruthy
+    given top: Int = [1, 127, 128, 255, 256, 32768, 2147483648]
+    given rest: List<Int> = [[], [0], [255], [-1, 300], [0, 0, 0]]
+    given negative: Bool = [false, true]
+    when top > 0
+    using [anyNonZero.setHeadIsEnough]
+    isTruthy(placed(top, rest, negative)) holds
+
 fn signByte(negative: Bool) -> Int
     ? "The extra byte that carries a sign and nothing else."
     match negative
@@ -467,6 +475,18 @@ verify isTruthy
     isTruthy([129]) => true
     isTruthy([0, 0, 1]) => true
 
+verify isTruthy law zeroIsFalse
+    given value: Int = [-2147483648, -256, -129, -128, -127, -1, 0, 1, 127, 128, 129, 255, 256, 2147483647]
+    because truthinessReason(value)
+    using [littleEndian.mostSignificantDigitIsNotZero, littleEndian.outsideByteRangeIsNeverAdded, littleEndian.zeroDigitWindow, placed.positiveTopIsTruthy]
+    isTruthy(fromNumber(value)) => value != 0
+
+verify isTruthy law negativeZeroIsFalse
+    given item: List<Int> = [[], [0], [1], [0, 0], [0, 1], [255], [128], [0, 128]]
+    because negativeZeroReason(item)
+    using [anyNonZero.reversal]
+    isTruthy(List.concat(item, [128])) => anyNonZero(item)
+
 fn anyNonZero(bytes: List<Int>) -> Bool
     ? "Whether anything below the top byte is set."
       "Accumulator form so the recursion stays in tail position; a stack item"
@@ -481,6 +501,25 @@ verify anyNonZero
     anyNonZero([0, 0]) => false
     anyNonZero([1]) => true
     anyNonZero([0, 1]) => true
+
+verify anyNonZero law setHeadIsEnough
+    given head: Int = [-1, 1, 128, 255, 256]
+    given tail: List<Int> = [[], [0], [0, 0], [1]]
+    when head != 0
+    anyNonZero(List.prepend(head, tail)) holds
+
+verify anyNonZero law concatenation
+    given left: List<Int> = [[], [0], [1], [0, 0], [0, 1]]
+    given right: List<Int> = [[], [0], [1], [0, 128]]
+    because concatenationReason(left, right)
+    using []
+    anyNonZero(List.concat(left, right)) => Bool.or(anyNonZero(left), anyNonZero(right))
+
+verify anyNonZero law reversal
+    given bytes: List<Int> = [[], [0], [1], [0, 0], [0, 1], [1, 0], [0, 0, 128]]
+    because reversalReason(bytes)
+    using [anyNonZero.concatenation]
+    anyNonZero(List.reverse(bytes)) => anyNonZero(bytes)
 
 fn nonZeroOrOn(head: Int, tail: List<Int>) -> Bool
     ? "Stop at the first byte that is set."
@@ -801,6 +840,71 @@ verify numberReadbackReason
     numberReadbackReason(0) => true
     numberReadbackReason(-128) => true
     numberReadbackReason(2147483648) => true
+
+fn truthinessReason(value: Int) -> Bool
+    ? "Zero is the empty string, which is false. Otherwise the leading digit"
+      "belongs to the digit list, is positive, and stays set through sign"
+      "placement. An empty digit list would require a non-positive magnitude."
+    m = magnitudeOf(value)
+    bytes = littleEndian(m, [])
+    match value == 0
+        true -> isTruthy(fromNumber(value)) == false
+        false -> match List.reverse(bytes)
+            [] -> m <= 0
+            [top, ..rest] -> Bool.and(
+                List.contains(bytes, top),
+                Bool.and(top > 0, isTruthy(placed(top, rest, value < 0)))
+            )
+
+verify truthinessReason
+    truthinessReason(0) => true
+    truthinessReason(1) => true
+    truthinessReason(-1) => true
+    truthinessReason(128) => true
+    truthinessReason(-128) => true
+    truthinessReason(2147483648) => true
+
+fn negativeZeroReason(item: List<Int>) -> Bool
+    ? "A sign byte appended to an item leads its reversal, and looking for a"
+      "set byte below it does not care which way round the rest is read."
+    Bool.and(
+        List.reverse(List.concat(item, [128])) == List.prepend(128, List.reverse(item)),
+        anyNonZero(List.reverse(item)) == anyNonZero(item)
+    )
+
+verify negativeZeroReason
+    negativeZeroReason([]) => true
+    negativeZeroReason([0, 1]) => true
+    negativeZeroReason([1, 0, 128]) => true
+
+fn concatenationReason(left: List<Int>, right: List<Int>) -> Bool
+    ? "A set byte in the joined list is on one side or the other, one byte of"
+      "the left side at a time."
+    match left
+        [] -> anyNonZero(List.concat(left, right)) == anyNonZero(right)
+        [head, ..tail] -> Bool.and(
+            concatenationReason(tail, right),
+            anyNonZero(List.concat(left, right)) == Bool.or(anyNonZero(left), anyNonZero(right))
+        )
+
+verify concatenationReason
+    concatenationReason([], [0, 1]) => true
+    concatenationReason([0, 1], []) => true
+    concatenationReason([0, 0], [0, 128]) => true
+
+fn reversalReason(bytes: List<Int>) -> Bool
+    ? "Reversal moves the head to the end, where the concatenation law finds it."
+    match bytes
+        [] -> anyNonZero(List.reverse(bytes)) == anyNonZero(bytes)
+        [head, ..tail] -> Bool.and(
+            reversalReason(tail),
+            anyNonZero(List.reverse(bytes)) == anyNonZero(bytes)
+        )
+
+verify reversalReason
+    reversalReason([]) => true
+    reversalReason([0, 1]) => true
+    reversalReason([1, 0, 0]) => true
 
 fn largerPrefixReason(bytes: List<Int>, lower: Int, upper: Int) -> Bool
     ? "A larger prefix stays larger after each byte, with both prefixes advancing together."

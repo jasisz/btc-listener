@@ -73,7 +73,7 @@ fn pruneDone(dir: String, below: Int) -> Result<String, String>
         Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     blocks = Infra.Blocks.open("{dir}/blocks")?
     pruned = Infra.Prune.run(store, blocks, below)?
     Result.Ok("{pruned.segments} Segments deleted, {pruned.locations} Locations dropped, Prune Watermark now {pruned.watermark}")
@@ -104,7 +104,7 @@ fn reindexDone(dir: String) -> Result<String, String>
         Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.open, Infra.Kv.putAll,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     _blocks = Infra.Blocks.open("{dir}/blocks")?
     rebuilt = Infra.Reindex.run(store, "{dir}/blocks")?
     Result.Ok("{rebuilt.blocks} Blocks located across {rebuilt.segments} Segments")
@@ -146,7 +146,7 @@ fn txIndexDone(dir: String, span: Span) -> Result<String, String>
         Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     blocks = Infra.Blocks.open("{dir}/blocks")?
     built = Infra.TxIndex.build(store, blocks, span.from, span.to)?
     Result.Ok("{built.transactions} Transactions recorded from {built.blocks} Blocks")
@@ -194,7 +194,7 @@ fn outputsDone(dir: String, span: Span) -> Result<String, String>
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Time.now, Time.unixMs,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     blocks = Infra.Blocks.open("{dir}/blocks")?
     built = Infra.Outputs.build(store, blocks, span.from, span.to)?
     Result.Ok("{built.outputs} Outputs recorded from {built.blocks} Blocks")
@@ -387,7 +387,7 @@ fn utxoDone(network: Network, dir: String, to: Int) -> Result<String, String>
         Wait.poll,
         Work.cancel,
     ]
-    store = Infra.Store.open(dir)?
+    store = Infra.Store.openExisting(dir)?
     blocks = Infra.Blocks.open("{dir}/blocks")?
     built = Infra.ChainState.build(network, store, blocks, to, to, Infra.Screen.unwatched(Domain.Snapshot.started(Time.unixMs()), Infra.Metrics.none()))?
     Result.Ok("{built.blocks} Blocks connected to Height {built.reached}; Set +{built.added} -{built.removed} Outputs, {built.fees} satoshis in fees")
@@ -439,8 +439,8 @@ fn assumeValidDone(dir: String, height: Int) -> Result<String, String>
       "Against the Block rather than the Height alone, so a reorganisation"
       "under the claim is detected rather than trusted -- which is the whole"
       "of ADR 0007's 'a pinned Block Id, not a bare Height'."
-    ! [Disk.exists, Disk.makeDir, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll]
-    store = Infra.Store.open(dir)?
+    ! [Disk.exists, Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll]
+    store = Infra.Store.openExisting(dir)?
     named = Domain.Index.blockIdIn(Infra.Store.get(store, Domain.IndexKeys.heightKey(height)?)?)
     pinned(store, height, named)
 

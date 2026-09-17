@@ -86,7 +86,12 @@ corpus is the only bridge to it.
 - **`proof/interp.declined`** — the declined budget, a number. It only goes
   down. A PR that lifts a decline (a recursion given a measure, a cone that no
   longer reaches a provider) lowers it in the same PR. A PR that raises it has
-  to say why in its own diff; CI will not raise it for you.
+  to say why in its own diff; CI will not raise it for you. Raised once so far,
+  130 → 134 with n1bor/btc-listener#347: two laws over `Domain.Transaction.decode`
+  and two fixture helpers whose cases call it. Every claim on `decode` is
+  declined by construction (the three mutual-recursion groups, #349), and a
+  refusal law about the decoder cannot live anywhere else; they run under
+  `aver verify` and `--hostile` and are the test the fix is measured by.
 - **`proof/interp.manifest.json`** — the per-law baseline: for every law, its
   tier, its theorem and its axiom set. CI runs `--gate` against it and fails on
   any law removed, demoted (universal > bounded > sampled > failed), whose
@@ -112,6 +117,16 @@ split the law into helper laws (`because` explanations and `using`
 citations, see `docs/script-laws.md`), each of which is also a millisecond
 test under `aver verify`. A proven helper law is a rewrite rule for every law
 below it.
+
+## The pinned proof-composition fix
+
+Aver’s certificate-wall change (#1368) exposed default-heartbeat timeouts in
+this project’s heavy `because` laws, tracked in
+[jasisz/aver#1386](https://github.com/jasisz/aver/issues/1386).
+The pin includes [jasisz/aver#1387](https://github.com/jasisz/aver/pull/1387),
+which composes checked equations and citations before expanding helpers.
+The existing gate passes with **117 universal, 3 bounded, 0 open and 134 declined**,
+without increasing the heartbeat or admission budgets.
 
 ## The elan default, a closed chapter
 
