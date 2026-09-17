@@ -2185,12 +2185,15 @@ fn actingOn(state: Following, due: Due) -> Result<Unit, String>
 
 fn ticking(state: Following) -> Result<Unit, String>
     ? "The rest of an ordinary turn: start a dial if the pool is short, read"
-      "whatever Blocks the Peers that asked have room for, then wait a tick."
+      "the turn's share of the Blocks the Peers that asked have room for,"
+      "then wait a tick."
       "The Blocks are read here rather than where the getdata was answered"
       "because here is where this loop knows how much is still waiting on"
-      "each wire. The wait itself is shortened to a tenth of a second while"
-      "anything is queued (Infra.Peers.pollBudget), so a Peer being served"
-      "does not wait out a second of silence between Blocks."
+      "each wire. How many of them a turn takes is servedPerTurn's to say,"
+      "so a turn stays short whatever arrived while the loop was elsewhere."
+      "The wait itself is shortened to a tenth of a second while anything is"
+      "queued (Infra.Peers.pollBudget), so a Peer being served does not wait"
+      "out a second of silence between Blocks."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
@@ -3300,44 +3303,89 @@ fn servingBlocks(state: Following) -> Result<Following, String>
       "what the chain is, Blocks are the chain. A Block we do not hold is"
       "passed over in silence, which is what Core does with a getdata for"
       "something it has pruned or never had."
-      "One turn of the loop reads Blocks until every Peer that asked has its"
-      "watermark's worth waiting, and stops there rather than at the end of"
-      "what was asked for. Which Peer and which Block is"
-      "Infra.Peers.nextBlockWanted's to say, and nothing here reads a socket:"
-      "the disk is touched only on this loop's own turn."
+      "One turn of the loop reads at most servedPerTurn() Blocks, and fewer"
+      "than that if every Peer that asked already has its watermark's worth"
+      "waiting. Which Peer and which Block is Infra.Peers.nextBlockWanted's"
+      "to say, and nothing here reads a socket: the disk is touched only on"
+      "this loop's own turn."
       "Infra.Working deliberately holds no Infra.Kv or Disk.readBytesAt, so"
       "the serving turns that run while a Block is being decoded answer pings"
       "and drain wires but read no Blocks. A Peer that asks during one waits"
       "until the loop has its turn back, which is bounded by the walk rather"
       "than by the Peer."
     ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
+    servingWithin(state, servedPerTurn())
+
+fn servedPerTurn() -> Int
+    ? "How many Blocks one turn of the loop reads off the disk, over all the"
+      "Peers that asked together."
+      "Without it a turn stops only when every Peer is at its watermark or"
+      "has nothing left to ask for, and that is not a bound this node sets."
+      "Every seated Peer may have servedBlockCap() identifiers waiting, and"
+      "identifiers naming Blocks we do not hold cost an Infra.Store.get each"
+      "and add nothing to any wire, so none of them brings the turn any"
+      "closer to a watermark: with the default inbound cap that is 125,000"
+      "lookups in a turn nothing can interrupt. The held ones are worse per"
+      "Block, at a Segment read and up to four mebibytes a Peer."
+      "Sixteen because that is what Core asks one Peer for at a time in"
+      "initial block download, so a turn serves about what one getdata is"
+      "worth and the Peers behind it get their turn. The rest of the queue"
+      "waits for the next turn, which the shortened poll brings round in a"
+      "tenth of a second (Infra.Peers.pollBudget)."
+    16
+
+verify servedPerTurn
+    servedPerTurn() => 16
+
+fn servingWithin(state: Following, left: Int) -> Result<Following, String>
+    ? "Another Block if this turn has one left in it."
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
+    match servingMore(left)
+        true -> servingNext(state, left)
+        false -> Result.Ok(state)
+
+fn servingMore(left: Int) -> Bool
+    ? "Whether this turn may still read a Block."
+      "Nothing else counts the turn, so this is where a budget that never"
+      "reached zero would show up."
+    left > 0
+
+verify servingMore
+    servingMore(servedPerTurn()) => true
+    servingMore(1) => true
+    servingMore(0) => false
+
+fn servingNext(state: Following, left: Int) -> Result<Following, String>
+    ? "The Peer whose turn it is, if any Peer is owed a Block and has room."
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     match Infra.Peers.nextBlockWanted(state.pool)
         Option.None -> Result.Ok(state)
-        Option.Some(wanted) -> servingBlock(state, wanted)
+        Option.Some(wanted) -> servingBlock(state, wanted, left)
 
-fn servingBlock(state: Following, wanted: Infra.Peers.Wanted) -> Result<Following, String>
+fn servingBlock(state: Following, wanted: Infra.Peers.Wanted, left: Int) -> Result<Following, String>
     ? "One Block, by the Id the getdata named it with."
       "The identifier leaves the queue before the bytes are looked for, so"
       "neither a Block we do not hold nor a Peer that goes mid-write can put"
-      "this turn back where it started."
+      "this turn back where it started. It counts against the turn either"
+      "way, because looking is what costs the lookup."
     ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     located = Infra.Store.get(state.store, Domain.IndexKeys.blockKey(Domain.Hash.reversedHex(wanted.hash))?)?
-    servingLocated(withPool(state, Infra.Peers.blockServed(state.pool, wanted.key)), wanted.key, located)
+    servingLocated(withPool(state, Infra.Peers.blockServed(state.pool, wanted.key)), wanted.key, located, left - 1)
 
-fn servingLocated(state: Following, key: Int, located: Option<Bytes>) -> Result<Following, String>
+fn servingLocated(state: Following, key: Int, located: Option<Bytes>, left: Int) -> Result<Following, String>
     ? "A Block we never fetched, or one whose bytes we can read back."
     ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     match located
-        Option.None -> servingBlocks(state)
-        Option.Some(stored) -> sendingBlock(state, key, Domain.Index.decodeLocation(stored)?)
+        Option.None -> servingWithin(state, left)
+        Option.Some(stored) -> sendingBlock(state, key, Domain.Index.decodeLocation(stored)?, left)
 
-fn sendingBlock(state: Following, key: Int, location: Location) -> Result<Following, String>
+fn sendingBlock(state: Following, key: Int, location: Location, left: Int) -> Result<Following, String>
     ? "The Block off the Segment and onto the wire, exactly as it was stored."
     ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     payload = Infra.Blocks.read(state.blocks, location)?
     sent = Infra.Peers.tell(state.pool, key, "block", payload)?
     _said = saidLineIfPlain(state.watch, "served a Block of {List.len(Bytes.octets(payload))} bytes to peer {key}")
-    servingBlocks(withPool(state, sent))
+    servingWithin(withPool(state, sent), left)
 
 fn serving(pool: Pool, mempool: Mempool, key: Int, asked: List<List<Int>>) -> Result<Pool, String>
     ? "Each identifier asked for, answered from what we hold."

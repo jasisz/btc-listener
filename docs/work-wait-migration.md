@@ -171,7 +171,12 @@ calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
   holds one 2,000-header reply and not two.
   Blocks leave in the order they were asked for, and blocks this node does not
   hold are still passed over in silence. `servedBlockCap` now caps the queue
-  rather than one message, so a second getdata cannot lift it. A peer with
+  rather than one message, so a second getdata cannot lift it. One turn reads
+  `servedPerTurn` = 16 blocks over all the peers together and leaves the rest
+  for the next turn: a turn that stopped only at every peer's watermark would
+  be up to 125 × `servedBlockCap` store lookups for hashes this node does not
+  hold, none of which move a watermark, and the serving chain has no
+  `Process.stopRequested` to notice a stop partway. A peer with
   anything queued shortens the poll to 100 ms. Transaction serving is
   unchanged: the mempool already holds those bytes.
   `Infra.Working` has no `Infra.Kv` or `Disk.readBytesAt` effects and
