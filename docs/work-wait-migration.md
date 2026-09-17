@@ -44,8 +44,15 @@ aver compile main.av --target rust --with-replay -o /tmp/btc-work-rust
 cargo build --manifest-path /tmp/btc-work-rust/Cargo.toml --profile iteration
 ```
 
-The compiler picks up `[work] max-jobs = 2` and the `Infra.BlockJobs` binding
-from aver.toml. The normal CLI and data format are unchanged.
+The compiler picks up `[work] max-jobs = 4` and the `Infra.BlockJobs` binding
+from aver.toml. The limit is not what bounds the overlap: the walk asks for a
+lookahead decode and a connect, and settles both before every commit, so two
+jobs are in flight however high the limit goes. The limit is four rather than
+two because `begin` refuses at the limit and a cancelled native job keeps its
+slot until its body finishes. At exactly two, a retry that follows an
+owner-side error could be refused with `work: job limit 2 reached`, and that
+refusal is charged to whichever peer was answering at the time. The normal CLI
+and data format are unchanged.
 
 ## Production owner responsiveness probe
 
