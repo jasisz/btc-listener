@@ -10,6 +10,7 @@ import socket, struct, hashlib, time, sys
 #     python3 tools/regtest/caller.py 18456 polite    # a proper Handshake, then stay connected
 #     python3 tools/regtest/caller.py 18456 lurker    # a proper Handshake, then silence past the sweep (#330)
 #     python3 tools/regtest/caller.py 18456 locator   # a proper Handshake, then a getheaders of 102 Ids (#280)
+#     python3 tools/regtest/caller.py 18456 deaf 127.0.0.3 "$C"   # twenty getdata for a thousand Blocks, reads nothing for 45 s (#359)
 #
 # A third argument binds the source address, which is how one machine seats
 # more than one inbound Peer (#333): hostLimit is one slot per host, and every
@@ -67,6 +68,27 @@ def dial(port, mode, source=None):
             locator = struct.pack('<I', 70016) + bytes([102]) + b'\x00' * (32 * 102) + b'\x00' * 32
             s.sendall(msg('getheaders', locator))
             return held(s, started, 60)
+        elif mode == 'deaf':
+            # A proper Handshake, then twenty getdata for the same thousand
+            # Blocks and not one byte read back, for 45 s, then hang up. The
+            # node serves each getdata with a blocking write; once the
+            # socket buffers fill, the write holds the whole loop until the
+            # far end reads or goes away (#359). The Ids come from Core, so
+            # pass bitcoin-cli as the fourth argument, as liar.py takes it.
+            s.sendall(msg('version', version_payload()))
+            s.settimeout(10); s.recv(65536)               # their version
+            s.sendall(msg('verack', b''))
+            import subprocess
+            cli = sys.argv[4].split()
+            tip = int(subprocess.check_output(cli + ['getblockcount']).decode().strip())
+            ids = [bytes.fromhex(subprocess.check_output(cli + ['getblockhash', str(h)]).decode().strip())[::-1] for h in range(max(1, tip - 999), tip + 1)]
+            getdata = (bytes([len(ids)]) if len(ids) < 0xfd else b'\xfd' + struct.pack('<H', len(ids)))
+            for h in ids: getdata += struct.pack('<I', 2) + h
+            print('caller: asking for %d Block(s), twenty times, and reading nothing' % len(ids), file=sys.stderr, flush=True)
+            for _ in range(20): s.sendall(msg('getdata', getdata))
+            time.sleep(45)
+            print('caller: hanging up after 45 s deaf', file=sys.stderr, flush=True)
+            return
         elif mode == 'pinger':
             s.sendall(msg('version', version_payload()))
             for i in range(100):
