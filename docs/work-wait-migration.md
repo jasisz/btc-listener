@@ -166,18 +166,18 @@ calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
   is depends on block size: 4 MiB over 256 messages puts the crossover at
   16 KiB a block, and a peer asking for early mainnet blocks of a couple of
   hundred bytes each would reach the message limit thousands of blocks before
-  the byte one. With both, serving is never itself the enqueue that fails. It
-  does leave the rest of the queue 194,281 bytes and 128 message slots, which
-  holds one 2,000-header reply and not two.
+  the byte one. With both, serving is never itself the enqueue that fails. What
+  it leaves the rest of the queue is 194,281 bytes and 128 message slots, and
+  that byte reserve holds one 2,000-header reply and not two.
   Blocks leave in the order they were asked for, and blocks this node does not
   hold are still passed over in silence. `servedBlockCap` now caps the queue
   rather than one message, so a second getdata cannot lift it. One turn reads
   `servedPerTurn` = 16 blocks over all the peers together and leaves the rest
   for the next turn: a turn that stopped only at every peer's watermark would
   be up to 125 × `servedBlockCap` store lookups for hashes this node does not
-  hold, none of which move a watermark, and the serving chain has no
-  `Process.stopRequested` to notice a stop partway. A peer with
-  anything queued shortens the poll to 100 ms. Transaction serving is
+  hold, none of which move a watermark, and the serving chain carries no
+  `Process.stopRequested` and cannot notice a stop partway through. A peer
+  with anything queued shortens the poll to 100 ms. Transaction serving is
   unchanged: the mempool already holds those bytes.
   `Infra.Working` has no `Infra.Kv` or `Disk.readBytesAt` effects and
   does not get them, so the serving turns that run while a Work job is pending
