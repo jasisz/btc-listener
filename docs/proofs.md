@@ -118,6 +118,17 @@ citations, see `docs/script-laws.md`), each of which is also a millisecond
 test under `aver verify`. A proven helper law is a rewrite rule for every law
 below it.
 
+## The pin sits below jasisz/aver#1368 for now
+
+Moving the pin past `600b3551` turns every heavy `because` law red with
+`(deterministic) timeout at whnf, maximum number of heartbeats (200000)` — the
+CompactSize round trip, the ScriptParse byte-preservation family, one StackItem
+sign law — on Lean 4.33.1 and 4.34.0 alike. Bisected on 17 September 2026 to
+`6edc28b3` (#1368, the certificate-wall change) and filed as jasisz/aver#1386.
+`600b3551` is the newest upstream commit whose export is green (117 universal,
+3 bounded, 0 open, 134 declined), so that is the pin until #1386 closes; the
+canary will say when the tip is green again.
+
 ## The elan default, a closed chapter
 
 Before jasisz/aver#1336, `aver proof` probed `lake --version` in the working
