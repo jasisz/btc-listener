@@ -2132,6 +2132,51 @@ simply follows), fetched the three bodies, and agrees with Core hash for
 hash. Before the fix the same run writes three Locations 200 bytes short of
 their bodies and reports nothing until the Set walk tries to read one.
 
+### A caller that stops reading, and a turn that says what held it
+
+n1bor/btc-listener#359. The mainnet node worked 22 minutes in one turn of the
+listen loop and 15 in the next, with nothing in the log, and when it came back
+every Peer had given up on it; then, with the pool empty and 4,096 Candidates
+still to dial, it ended itself on the 150-second silence rule. Two changes:
+a turn that works longer than thirty seconds between two polls is said, with
+what it was handling (`Domain.Watchdog.slowTurn`), and an empty pool that is
+still dialling is exempt from the silence rule (`Domain.Watchdog.unheard`,
+with a law that pins it: `unheard(silentMs, 0, true, deadline)` is `None` for
+every `silentMs`).
+
+The first is what names the cause. `caller.py deaf` makes a proper Handshake,
+sends twenty `getdata` for the last thousand Blocks, and reads nothing for 45
+seconds; every write the node makes is `Tcp.writeBytes`, which blocks once the
+socket buffers fill. Beside a polite caller, against the served port, on a
+chain of 1,200 Blocks:
+
+```bash
+timeout -s INT 120 $BIN regtest follow 127.0.0.1:18444 $D serve:18458 log > follow.out 2>&1 &
+sleep 8
+python3 tools/regtest/caller.py 18458 polite 127.0.0.2 2> polite.log &
+python3 tools/regtest/caller.py 18458 deaf 127.0.0.3 "$C" 2> deaf.log &
+wait; cat deaf.log polite.log; grep "peer 1" follow.out; grep watchdog $D/debug.log
+```
+
+```
+caller: asking for 1000 Block(s), twenty times, and reading nothing
+caller: hanging up after 45 s deaf
+caller: still connected after 61.1 s                <- polite, until the node was stopped
+peer 1 went while being sent a block: Tcp.writeBytes: Connection reset by peer (os error 104)
+2026-09-17T07:01:51.032Z 1789628511032 watchdog slow turn: 44s between two polls, handling getdata from peer 1
+```
+
+Forty-four seconds is the deaf caller's whole silence: the loop sat in one
+`writeBytes` until the far end hung up, and the polite caller beside it was
+neither served nor swept during it. That is the mainnet shape at regtest
+scale, and the line now says which Message and which Peer; before it, the
+only trace was a `workedMs` in `metrics.log`. Moving the writes off the loop
+is its own issue.
+
+The second change has no honest Peer to show it with here — a regtest node
+with nobody to dial ends by the other rule, `no Candidate answered`, as it
+should — so the law and the mainnet log are its evidence.
+
 ## A Peer that lies
 
 Bitcoin Core is cooperative by construction: you cannot ask it for a bad

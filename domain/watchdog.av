@@ -10,7 +10,7 @@ module Watchdog
         "are Infra.Screen's Eye and the loop's, and the line goes to"
         "debug.log beside the decisions it records. Reporting only: what to"
         "do about a slow Block is a different decision."
-    exposes [overrun, blockBudgetMs, chunkBudgetOf, stopBudgetMs, slowChunk, slowChunkDone, slowBlock, slowStop, seconds]
+    exposes [overrun, blockBudgetMs, chunkBudgetOf, stopBudgetMs, turnBudgetMs, unheard, slowChunk, slowChunkDone, slowBlock, slowStop, slowTurn, seconds]
 
 fn overrun(startedMs: Int, nowMs: Int, budgetMs: Int) -> Bool
     ? "Whether more than the budget has passed since something started."
@@ -53,6 +53,60 @@ fn stopBudgetMs() -> Int
 verify stopBudgetMs
     stopBudgetMs() => 10000
 
+fn turnBudgetMs() -> Int
+    ? "How long one turn of the listen loop may work between two polls"
+      "before it is said: thirty seconds. A turn is one Message handled,"
+      "or one look at the clock; the mainnet node once worked 22 minutes in"
+      "one and 15 in the next with nothing in the log, and every Peer gave"
+      "up on it meanwhile (n1bor/btc-listener#359). The line names what the"
+      "turn was handling, which is the one thing the log did not have."
+    30000
+
+verify turnBudgetMs
+    turnBudgetMs() => 30000
+
+fn unheard(silentMs: Int, peers: Int, dialling: Bool, deadlineMs: Int) -> Option<String>
+    ? "Why the pool's silence ends the run, or None: nobody has spoken for"
+      "the whole deadline, and there is somebody who could have."
+      "An empty pool that is still dialling has nobody to hear, and the"
+      "silence it accrues is the dials' own timeouts, not a Network that"
+      "went quiet; the mainnet node ended itself on this rule with 4,096"
+      "Candidates in hand, fifteen dials into a stale Book after a stall"
+      "(n1bor/btc-listener#359). What ends such a pool is running out of"
+      "Candidates, which anyoneLeft decides."
+    match Bool.and(peers == 0, dialling)
+        true -> Option.None
+        false -> unheardFor(silentMs, deadlineMs)
+
+verify unheard
+    unheard(0, 3, false, 150000) => Option.None
+    unheard(149999, 3, true, 150000) => Option.None
+    unheard(150000, 3, true, 150000) => Option.Some("no Peer said anything for 150 seconds")
+    unheard(174601, 0, true, 150000) => Option.None
+    unheard(150000, 0, false, 150000) => Option.Some("no Peer said anything for 150 seconds")
+
+verify unheard law emptyDiallingPoolIsNeverUnheard
+    given silentMs: Int = [0, 149999, 150000, 174601, 86400000]
+    given deadlineMs: Int = [0, 1, 150000]
+    unheard(silentMs, 0, true, deadlineMs) => Option.None
+
+verify unheard law aPoolWithSomebodyKeepsTheRule
+    given silentMs: Int = [0, 149999, 150000, 174601]
+    given peers: Int = [1, 8, 125]
+    given dialling: Bool = [false, true]
+    when peers > 0
+    (unheard(silentMs, peers, dialling, 150000) == Option.None) => silentMs < 150000
+
+fn unheardFor(silentMs: Int, deadlineMs: Int) -> Option<String>
+    ? "The rule itself, for a pool with somebody in it or nobody to dial."
+    match silentMs < deadlineMs
+        true -> Option.None
+        false -> Option.Some("no Peer said anything for {Int.div(deadlineMs, 1000)} seconds")
+
+verify unheardFor
+    unheardFor(0, 150000) => Option.None
+    unheardFor(150000, 150000) => Option.Some("no Peer said anything for 150 seconds")
+
 fn seconds(ms: Int) -> String
     ? "Milliseconds as whole seconds, for a line a person reads."
     "{Int.div(ms, 1000)}s"
@@ -83,6 +137,17 @@ fn slowBlock(height: Int, blockId: String, transactions: Int, bytes: Int, tookMs
 
 verify slowBlock
     slowBlock(615203, "00ab", 2500, 1200000, 45000) => "slow block: Height 615203 00ab took 45s, 2500 Transaction(s), 1200000 bytes"
+
+fn slowTurn(handling: String, workedMs: Int) -> String
+    ? "The line for a turn that worked longer than its budget between two"
+      "polls, naming what it was handling. Written at the next poll, so a"
+      "turn that never ends writes nothing -- the metrics line's workedMs"
+      "is the one that survives that."
+    "slow turn: {seconds(workedMs)} between two polls, handling {handling}"
+
+verify slowTurn
+    slowTurn("getdata from peer 12", 1326381) => "slow turn: 1326s between two polls, handling getdata from peer 12"
+    slowTurn("a quiet turn", 45000) => "slow turn: 45s between two polls, handling a quiet turn"
 
 fn slowStop(tookMs: Int) -> String
     ? "The line for a stop that took longer than its budget to land."
