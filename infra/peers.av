@@ -1742,11 +1742,11 @@ fn greeting(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, seenHeigh
       "it comes back as a Joined that did not seat, carrying the pool as it"
       "stands (#304). It was an Err carrying a String, and the callers that"
       "catch it then fell back to the pool they had held before the"
-      "Handshake. Every Peer this wait"
-      "had closed and forgotten in the meantime was still named in that pool,"
-      "so the next Wait.poll asked the runtime about a Connection it had"
-      "already released and ended the node with no Peer at fault: mainnet"
-      "stopped that way twice in a day, at Height 779373 and again at 780365."
+      "Handshake. Every Peer this wait had closed and forgotten in the"
+      "meantime was still named in that pool, so the next Wait.poll asked"
+      "the runtime about a Connection it had already released and ended the"
+      "node with no Peer at fault: mainnet stopped that way twice in a day,"
+      "at Height 779373 and again at 780365."
     ! [
         Console.error, Console.print,
         Process.stopRequested,
@@ -1992,9 +1992,9 @@ fn blockWatermark() -> Int
       "byte below the watermark and the largest framed Block behind it. That"
       "holds one headers reply of two thousand Headers and not two of them"
       "(largestOtherMessage). So serving a Block is never itself the enqueue"
-      "that fails, which is what this bound is for, and it is still serving"
-      "that leaves the invs, pings and headers sharing the queue that much"
-      "and no more. A queue that fills costs a Peer its seat."
+      "that fails, which is what this bound is for. It is still serving that"
+      "leaves the invs, pings and headers sharing the queue with that much"
+      "room and no more, and a queue that fills costs a Peer its seat."
     4194304
 
 verify blockWatermark
@@ -2020,8 +2020,8 @@ fn blockMessageWatermark() -> Int
     ? "How many Messages may already be waiting on a Peer's wire before"
       "another Block is read off the disk for it."
       "Domain.Outbox bounds a queue by Messages as well as by bytes, and"
-      "the byte bound is the one that binds only while the Blocks being"
-      "asked for are large. Early mainnet Blocks are a couple of hundred"
+      "the byte bound is reached first only while the Blocks being asked"
+      "for are large. Early mainnet Blocks are a couple of hundred"
       "bytes each, so a Peer asking for the first thousand of them reaches"
       "two hundred and fifty-six Messages with sixty kilobytes waiting,"
       "and the enqueue that fails there is a Block this node chose to read."

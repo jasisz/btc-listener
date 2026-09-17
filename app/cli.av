@@ -491,9 +491,13 @@ fn said(outcome: Result<String, String>) -> Result<Unit, String>
 
 fn discover(network: Network) -> Result<Unit, String>
     ? "With no address given, ask a DNS seed of the chosen Network for one."
-      "Tcp.connect and not the dial trio: a resolver is one question to one"
-      "server with nothing else to keep alive while it is asked, which is the"
-      "shape blocking suits and the shape a Peer never had."
+      "The dial trio and a poll, the same as everything else here that opens"
+      "a socket. It was Tcp.connect, on the grounds that a resolver is one"
+      "question to one server with nothing else to keep alive while it is"
+      "asked. The company was the part with nothing to keep alive. The"
+      "process was not: while the question was out nothing else in this"
+      "program ran, a stop included. Infra.Resolver waits with a deadline of"
+      "its own now and looks for a stop between waits."
     ! [
         Console.error, Console.print,
         Infra.Kv.getAll,

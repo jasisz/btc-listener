@@ -4,9 +4,16 @@ module Resolver
         "Bitcoin publishes seed hostnames that answer with the addresses of"
         "reachable Peers. The question and the answer are built and read in"
         "Domain.Dns; this module only carries them over a socket."
-        "DNS over TCP puts a two-byte length in front of the message, which"
-        "makes the exchange exactly the shape exact-length reads are for: read"
-        "two bytes to learn the size, then read precisely that many."
+        "DNS over TCP puts a two-byte length in front of the message, so an"
+        "answer says how long it is before it says anything else. It used to"
+        "be read by asking for exactly that many bytes and waiting for them."
+        "A read that cannot come back until it has them is a read that cannot"
+        "be stopped, and the length is no help while the prefix itself is"
+        "split across two arrivals, which is what the exchange probe's"
+        "fragmented-prefix-and-body case sends. So what arrives is kept and"
+        "asked whether it is a whole answer yet (answerBytes,"
+        "completeAnswer), and the length is what settles that question"
+        "rather than what the socket is asked for."
     exposes [lookupAt, discover, discoverAll, seedsOf, resolverHost]
     depends [Infra.Readiness, Bytes, Domain.Dns, Domain.Address, Domain.Network]
     effects [

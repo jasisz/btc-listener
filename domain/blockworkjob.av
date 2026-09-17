@@ -60,9 +60,11 @@ verify connected
 
 fn connection(answer: Infra.BlockJobs.Reply) -> Domain.Connect.Connecting
     ? "A reply read back as a connection outcome."
-      "A decode reply arriving here would mean two jobs had been"
-      "mistaken for one another, so it is refused by name rather than"
-      "read as a Block that changed nothing."
+      "Reply is one type for both kinds of job, so a Decoded can reach"
+      "this function and nothing about the types will stop it. It leaves"
+      "as a refusal that says what it was, because the alternative is a"
+      "connect that reports no coins added and none spent, and a walk"
+      "that carries on from a Block it never connected."
     match answer
         Infra.BlockJobs.Reply.Refused(why) -> Domain.Connect.Connecting.Refused(why)
         Infra.BlockJobs.Reply.Connected(change) -> Domain.Connect.Connecting.Applied(fromChange(change))
@@ -123,11 +125,13 @@ verify toNetwork
     toNetwork(Domain.Network.Network.Regtest) => Infra.BlockJobs.Chain.Regtest
 
 fn toInput(value: Domain.Transaction.Input) -> Infra.BlockJobs.Input
-    ? "One Input across, field by field."
+    ? "An Input. previousTxid and previousIndex are the pair the far side"
+      "keys a spend on, and the witness travels as the list it is, empty"
+      "for an Input that has none."
     Infra.BlockJobs.Input(previousTxid = value.previousTxid, previousIndex = value.previousIndex, script = value.script, sequence = value.sequence, witness = value.witness)
 
 fn toInputs(values: List<Domain.Transaction.Input>, acc: List<Infra.BlockJobs.Input>) -> List<Infra.BlockJobs.Input>
-    ? "A list of Inputs across."
+    ? "Every Input of one Transaction, in the order it was decoded in."
       "Built by prepending to an accumulator and reversing at the end,"
       "which is one pass. Appending to the back of a growing list is a"
       "walk of that list per element, and a Transaction may have"
@@ -142,11 +146,15 @@ verify toInputs
     toInputs([], []) => []
 
 fn fromInput(value: Infra.BlockJobs.Input) -> Domain.Transaction.Input
-    ? "One Input back."
+    ? "An Input on its way home. The txid of the Transaction it belongs to"
+      "was settled when the Block was decoded and travels beside it, so a"
+      "field lost here disagrees with a txid rather than changing one."
     Domain.Transaction.Input(previousTxid = value.previousTxid, previousIndex = value.previousIndex, script = value.script, sequence = value.sequence, witness = value.witness)
 
 fn fromInputs(values: List<Infra.BlockJobs.Input>, acc: List<Domain.Transaction.Input>) -> List<Domain.Transaction.Input>
-    ? "A list of Inputs back, built the same way round."
+    ? "The same list home. An Input is named by where it sits in its"
+      "Transaction, so the order here is the value and not a way of"
+      "showing it, and the reverse at the end is what keeps it."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> fromInputs(rest, List.prepend(fromInput(head), acc))
@@ -156,11 +164,14 @@ verify fromInputs
     fromInputs([], []) => []
 
 fn toOutput(value: Domain.Transaction.Output) -> Infra.BlockJobs.Output
-    ? "One Output across."
+    ? "An Output, which is an amount in satoshis and the script that locks"
+      "it. The connecting weighs the amount and the Set keeps the script,"
+      "so neither is read or rewritten on the way."
     Infra.BlockJobs.Output(value = value.value, script = value.script)
 
 fn toOutputs(values: List<Domain.Transaction.Output>, acc: List<Infra.BlockJobs.Output>) -> List<Infra.BlockJobs.Output>
-    ? "A list of Outputs across."
+    ? "Every Output of one Transaction. previousIndex counts into this"
+      "list, so a spend that finds the wrong one finds it here."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> toOutputs(rest, List.prepend(toOutput(head), acc))
@@ -170,11 +181,13 @@ verify toOutputs
     toOutputs([], []) => []
 
 fn fromOutput(value: Infra.BlockJobs.Output) -> Domain.Transaction.Output
-    ? "One Output back."
+    ? "An Output on its way home, as part of a Transaction a decode reply"
+      "carried. Nothing has spent it yet; it becomes a coin only when the"
+      "owner connects the Block."
     Domain.Transaction.Output(value = value.value, script = value.script)
 
 fn fromOutputs(values: List<Infra.BlockJobs.Output>, acc: List<Domain.Transaction.Output>) -> List<Domain.Transaction.Output>
-    ? "A list of Outputs back."
+    ? "The same list home, with the positions previousIndex counts kept."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> fromOutputs(rest, List.prepend(fromOutput(head), acc))
@@ -192,7 +205,9 @@ fn toTransaction(value: Domain.Transaction.Transaction) -> Infra.BlockJobs.Trans
     Infra.BlockJobs.Transaction(version = value.version, inputs = toInputs(value.inputs, []), outputs = toOutputs(value.outputs, []), lockTime = value.lockTime, txid = value.txid, size = value.size, isSegWit = value.isSegWit)
 
 fn toTransactions(values: List<Domain.Transaction.Transaction>, acc: List<Infra.BlockJobs.Transaction>) -> List<Infra.BlockJobs.Transaction>
-    ? "A list of Transactions across."
+    ? "Every Transaction of one Block, in the order the Block holds them."
+      "That order is the coinbase first and then the rest, which is what"
+      "Domain.Connect.connected takes the Block apart by."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> toTransactions(rest, List.prepend(toTransaction(head), acc))
@@ -202,7 +217,9 @@ verify toTransactions
     toTransactions([], []) => []
 
 fn fromTransaction(value: Infra.BlockJobs.Transaction) -> Domain.Transaction.Transaction
-    ? "One Transaction back."
+    ? "A Transaction on its way home. Its Inputs and Outputs come back"
+      "through their own pairs, so what is left here is the five fields"
+      "that are not lists, txid and size and the SegWit flag among them."
     Domain.Transaction.Transaction(version = value.version, inputs = fromInputs(value.inputs, []), outputs = fromOutputs(value.outputs, []), lockTime = value.lockTime, txid = value.txid, size = value.size, isSegWit = value.isSegWit)
 
 fn transactions(values: List<Infra.BlockJobs.Transaction>, acc: List<Domain.Transaction.Transaction>) -> List<Domain.Transaction.Transaction>
@@ -217,11 +234,15 @@ verify transactions
     transactions([], []) => []
 
 fn toCoin(value: Domain.UtxoStore.Unspent) -> Infra.BlockJobs.Coin
-    ? "One unspent Output across."
+    ? "A coin the Block's spends were looked up in. height and coinbase go"
+      "with it because the far side has no Set to ask: without them it"
+      "cannot tell that an Output is a coinbase from Height 1 and not"
+      "spendable until 101."
     Infra.BlockJobs.Coin(txid = value.txid, index = value.index, value = value.value, script = value.script, height = value.height, coinbase = value.coinbase)
 
 fn toCoins(values: List<Domain.UtxoStore.Unspent>, acc: List<Infra.BlockJobs.Coin>) -> List<Infra.BlockJobs.Coin>
-    ? "A list of unspent Outputs across."
+    ? "The coins as a list, which is the shape a Map takes to cross and"
+      "the reason connectionTask gives for sending one."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> toCoins(rest, List.prepend(toCoin(head), acc))
@@ -231,11 +252,13 @@ verify toCoins
     toCoins([], []) => []
 
 fn fromCoin(value: Infra.BlockJobs.Coin) -> Domain.UtxoStore.Unspent
-    ? "One unspent Output back."
+    ? "A coin on its way home, either into the key coinMap builds for it"
+      "or into one of the two lists a Change carries."
     Domain.UtxoStore.Unspent(txid = value.txid, index = value.index, value = value.value, script = value.script, height = value.height, coinbase = value.coinbase)
 
 fn fromCoins(values: List<Infra.BlockJobs.Coin>, acc: List<Domain.UtxoStore.Unspent>) -> List<Domain.UtxoStore.Unspent>
-    ? "A list of unspent Outputs back."
+    ? "One of a Change's two lists home: what the Block put into the Set,"
+      "or what it took out."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> fromCoins(rest, List.prepend(fromCoin(head), acc))
@@ -245,11 +268,15 @@ verify fromCoins
     fromCoins([], []) => []
 
 fn toFee(value: Domain.Connect.TxFee) -> Infra.BlockJobs.Fee
-    ? "One Transaction's fee across."
+    ? "What one Transaction paid, on the answer's way out. Domain.Connect"
+      "puts the coinbase at the front of that list with a fee of zero and"
+      "the flag set, so the flag is what tells that zero apart from a"
+      "Transaction that worked out to nothing."
     Infra.BlockJobs.Fee(txid = value.txid, fee = value.fee, coinbase = value.coinbase)
 
 fn toFees(values: List<Domain.Connect.TxFee>, acc: List<Infra.BlockJobs.Fee>) -> List<Infra.BlockJobs.Fee>
-    ? "A list of fees across."
+    ? "The fees of a connected Block, coinbase first as Domain.Connect"
+      "left them."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> toFees(rest, List.prepend(toFee(head), acc))
@@ -259,11 +286,12 @@ verify toFees
     toFees([], []) => []
 
 fn fromFee(value: Infra.BlockJobs.Fee) -> Domain.Connect.TxFee
-    ? "One Transaction's fee back."
+    ? "One of those fees on its way home, to be counted against the Block"
+      "the owner is about to record."
     Domain.Connect.TxFee(txid = value.txid, fee = value.fee, coinbase = value.coinbase)
 
 fn fromFees(values: List<Infra.BlockJobs.Fee>, acc: List<Domain.Connect.TxFee>) -> List<Domain.Connect.TxFee>
-    ? "A list of fees back."
+    ? "All of them home, still coinbase first."
     match values
         [] -> List.reverse(acc)
         [head, ..rest] -> fromFees(rest, List.prepend(fromFee(head), acc))
