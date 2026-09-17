@@ -161,8 +161,14 @@ calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
 - A getdata for blocks is answered from a bounded per-peer queue of the
   requested identifiers rather than by framing every block where the message
   arrived. The follow loop reads one block off disk for a peer only while that
-  peer has less than 4 MiB waiting, which is a block's worth of room short of
-  the 8 MiB limit, so serving can no longer be what overflows the queue.
+  peer has less than 4 MiB and fewer than 128 messages waiting. Both bounds,
+  because the outbox refuses on whichever it reaches first and which one that
+  is depends on block size: 4 MiB over 256 messages puts the crossover at
+  16 KiB a block, and a peer asking for early mainnet blocks of a couple of
+  hundred bytes each would reach the message limit thousands of blocks before
+  the byte one. With both, serving is never itself the enqueue that fails. It
+  does leave the rest of the queue 194,281 bytes and 128 message slots, which
+  holds one 2,000-header reply and not two.
   Blocks leave in the order they were asked for, and blocks this node does not
   hold are still passed over in silence. `servedBlockCap` now caps the queue
   rather than one message, so a second getdata cannot lift it. A peer with

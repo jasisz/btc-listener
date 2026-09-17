@@ -1981,21 +1981,57 @@ fn written(pool: Pool, key: Int, connection: Tcp.Connection, command: String, pa
     flushConnection(Pool.update(pool, outboxes = Map.set(pool.outboxes, key, queued)), key, connection, queued)
 
 fn blockWatermark() -> Int
-    ? "How much may already be waiting on a Peer's wire before another Block"
-      "is read off the disk for it."
+    ? "How many bytes may already be waiting on a Peer's wire before another"
+      "Block is read off the disk for it."
       "A Block is at most four million bytes, and Domain.Outbox refuses"
       "anything that would take one Peer's queue past eight mebibytes. So a"
-      "Block read while four mebibytes are waiting still fits, with about two"
-      "hundred kilobytes over for the invs, pings and headers that share the"
-      "same queue. That is the whole of the arithmetic: the watermark is one"
-      "Block's worth of room short of the limit, rather than a number chosen"
-      "for how it performed. It is what makes serving a Block unable to be"
-      "the thing that fills the queue, and a full queue costs a Peer its seat."
+      "Block read while four mebibytes are waiting still fits. That is the"
+      "whole of the arithmetic: the watermark is one Block's worth of room"
+      "short of the limit, rather than a number chosen for how it performed."
+      "What it leaves is 194,281 bytes, which is the limit less a queue one"
+      "byte below the watermark and the largest framed Block behind it. That"
+      "holds one headers reply of two thousand Headers and not two of them"
+      "(largestOtherMessage). So serving a Block is never itself the enqueue"
+      "that fails, which is what this bound is for, and it is still serving"
+      "that leaves the invs, pings and headers sharing the queue that much"
+      "and no more. A queue that fills costs a Peer its seat."
     4194304
 
 verify blockWatermark
     blockWatermark() => 4194304
     Domain.Outbox.byteLimit() - blockWatermark() > 4000000 => true
+    Domain.Outbox.byteLimit() - (blockWatermark() - 1 + 4000024) => 194281
+    Domain.Outbox.byteLimit() - (blockWatermark() - 1 + 4000024) > largestOtherMessage() => true
+    Domain.Outbox.byteLimit() - (blockWatermark() - 1 + 4000024) > largestOtherMessage() * 2 => false
+
+fn largestOtherMessage() -> Int
+    ? "The largest Message this node puts on a wire that is not a Block: a"
+      "headers reply carrying Domain.Block.headersCap() Headers."
+      "Eighty-one bytes for each Header, three for the count in front of"
+      "them and twenty-four for the frame, which is 162,027 bytes. It is"
+      "written down so that the room blockWatermark leaves can be compared"
+      "against the thing most likely to want it, rather than described."
+    162027
+
+verify largestOtherMessage
+    largestOtherMessage() => 2000 * 81 + 3 + 24
+
+fn blockMessageWatermark() -> Int
+    ? "How many Messages may already be waiting on a Peer's wire before"
+      "another Block is read off the disk for it."
+      "Domain.Outbox bounds a queue by Messages as well as by bytes, and"
+      "the byte bound is the one that binds only while the Blocks being"
+      "asked for are large. Early mainnet Blocks are a couple of hundred"
+      "bytes each, so a Peer asking for the first thousand of them reaches"
+      "two hundred and fifty-six Messages with sixty kilobytes waiting,"
+      "and the enqueue that fails there is a Block this node chose to read."
+      "Half of what the queue is allowed goes to Blocks. The other half is"
+      "for the invs, pings and headers that share it."
+    128
+
+verify blockMessageWatermark
+    blockMessageWatermark() => 128
+    Domain.Outbox.messageLimit() - blockMessageWatermark() => 128
 
 fn wanting(pool: Pool, key: Int, hashes: List<List<Int>>, cap: Int) -> Pool
     ? "Remember the Blocks a Peer has asked for, rather than answering them"
@@ -2079,6 +2115,7 @@ verify wantedIn
     wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()]}, outboxes = {1 => wireAt(blockWatermark() - 1)}), [1], [1]) => Option.Some(Wanted(key = 1, hash = sampleHash()))
     wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()], 2 => [otherHash()]}, outboxes = {1 => wireAt(blockWatermark())}), [1, 2], [1, 2]) => Option.Some(Wanted(key = 2, hash = otherHash()))
     wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()], 2 => [otherHash()]}), [2], [1, 2]) => Option.Some(Wanted(key = 2, hash = otherHash()))
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()], 2 => [otherHash()]}), [1, 2], [1, 2]) => Option.Some(Wanted(key = 1, hash = sampleHash()))
 
 fn wantedFor(pool: Pool, seated: List<Int>, key: Int, rest: List<Int>, queue: List<List<Int>>) -> Option<Wanted>
     ? "A Peer with nothing waiting is passed over for the next one."
@@ -2091,10 +2128,10 @@ verify wantedFor
     wantedFor(opened(Network.Regtest), [1], 1, [], [sampleHash(), otherHash()]) => Option.Some(Wanted(key = 1, hash = sampleHash()))
 
 fn wantedIfRoom(pool: Pool, seated: List<Int>, key: Int, rest: List<Int>, hash: List<Int>) -> Option<Wanted>
-    ? "A Peer whose wire is already at the watermark waits its turn; one that"
-      "has gone since it asked is passed over here and loses its queue with"
-      "its key in forgotten."
-    match Bool.and(List.contains(seated, key), queuedBytes(pool, key) < blockWatermark())
+    ? "A Peer whose wire is already at either watermark waits its turn; one"
+      "that has gone since it asked is passed over here and loses its queue"
+      "with its key in forgotten."
+    match Bool.and(List.contains(seated, key), roomForBlock(queuedBytes(pool, key), queuedMessages(pool, key)))
         true -> Option.Some(Wanted(key = key, hash = hash))
         false -> wantedIn(pool, seated, rest)
 
@@ -2102,6 +2139,8 @@ verify wantedIfRoom
     wantedIfRoom(opened(Network.Regtest), [1], 1, [], sampleHash()) => Option.Some(Wanted(key = 1, hash = sampleHash()))
     wantedIfRoom(opened(Network.Regtest), [], 1, [], sampleHash()) => Option.None
     wantedIfRoom(Pool.update(opened(Network.Regtest), outboxes = {1 => wireAt(blockWatermark())}), [1], 1, [], sampleHash()) => Option.None
+    wantedIfRoom(Pool.update(opened(Network.Regtest), outboxes = {1 => wireHolding(blockMessageWatermark())}), [1], 1, [], sampleHash()) => Option.None
+    wantedIfRoom(Pool.update(opened(Network.Regtest), outboxes = {1 => wireHolding(blockMessageWatermark() - 1)}), [1], 1, [], sampleHash()) => Option.Some(Wanted(key = 1, hash = sampleHash()))
 
 fn queuedBytes(pool: Pool, key: Int) -> Int
     ? "How many bytes are already waiting on one Peer's wire."
@@ -2113,6 +2152,35 @@ verify queuedBytes
     queuedBytes(opened(Network.Regtest), 1) => 0
     queuedBytes(Pool.update(opened(Network.Regtest), outboxes = {1 => wireAt(7)}), 1) => 7
 
+fn roomForBlock(bytes: Int, messages: Int) -> Bool
+    ? "Whether a wire already carrying that much has room for another Block"
+      "read off the disk for it."
+      "Both bounds rather than either, because Domain.Outbox refuses on"
+      "whichever of the two it reaches first, and which one that is depends"
+      "on how large the Blocks a Peer is asking for happen to be. The byte"
+      "bound is reached first from about sixteen kilobytes a Block upward,"
+      "which is four mebibytes divided by two hundred and fifty-six, and"
+      "the Message bound below that."
+    Bool.and(bytes < blockWatermark(), messages < blockMessageWatermark())
+
+verify roomForBlock
+    roomForBlock(0, 0) => true
+    roomForBlock(blockWatermark() - 1, 0) => true
+    roomForBlock(blockWatermark(), 0) => false
+    roomForBlock(0, blockMessageWatermark() - 1) => true
+    roomForBlock(0, blockMessageWatermark()) => false
+    roomForBlock(blockWatermark(), blockMessageWatermark()) => false
+
+fn queuedMessages(pool: Pool, key: Int) -> Int
+    ? "How many Messages are already waiting on one Peer's wire."
+    match Map.get(pool.outboxes, key)
+        Option.None -> 0
+        Option.Some(queue) -> List.len(queue.chunks)
+
+verify queuedMessages
+    queuedMessages(opened(Network.Regtest), 1) => 0
+    queuedMessages(Pool.update(opened(Network.Regtest), outboxes = {1 => wireHolding(3)}), 1) => 3
+
 fn wireAt(bytes: Int) -> Queued
     ? "A wire carrying that many bytes, for the cases here. Only the count is"
       "read by the decision, so a case says the count rather than building"
@@ -2121,6 +2189,27 @@ fn wireAt(bytes: Int) -> Queued
 
 verify wireAt
     wireAt(7).bytes => 7
+
+fn wireHolding(count: Int) -> Queued
+    ? "A wire carrying that many Messages and no bytes, for the cases here."
+      "The Message count is the thing being said something about, so the"
+      "frames on it are empty and its byte count stays where an empty wire"
+      "leaves it."
+    Queued(chunks = framesOf(count, []), offset = 0, bytes = 0)
+
+verify wireHolding
+    List.len(wireHolding(3).chunks) => 3
+    wireHolding(3).bytes => 0
+
+fn framesOf(count: Int, acc: List<Bytes>) -> List<Bytes>
+    ? "That many empty frames."
+    match count > 0
+        true -> framesOf(count - 1, List.prepend(Bytes.empty(), acc))
+        false -> acc
+
+verify framesOf
+    List.len(framesOf(0, [])) => 0
+    List.len(framesOf(5, [])) => 5
 
 fn sampleHash() -> List<Int>
     ? "A stand-in Block identifier for the cases here, the length a real one is."
