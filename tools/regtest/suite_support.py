@@ -58,9 +58,14 @@ class Core:
             raise
         return self
 
-    def rpc(self, *args):
+    def rpc(self, *args, stdin=()):
+        # bitcoin-cli -stdin reads further arguments one per line, which is how
+        # a megabyte of transaction hex reaches an RPC: the exec argument limit
+        # is well below that on both Linux and macOS.
         result = subprocess.run([str(self.binaries / "bitcoin-cli"), "-datadir=" + str(self.data),
-            "-regtest", "-rpcport=" + str(self.rpc_port), *(json.dumps(a) if isinstance(a, bool) else str(a) for a in args)],
+            "-regtest", "-rpcport=" + str(self.rpc_port), *(["-stdin"] if stdin else []),
+            *(json.dumps(a) if isinstance(a, bool) else str(a) for a in args)],
+            input="\n".join(stdin) if stdin else None,
             text=True, capture_output=True, timeout=180 if args[0] == "generatetoaddress" else 30)
         if result.returncode:
             raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)

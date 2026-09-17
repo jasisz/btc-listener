@@ -27,9 +27,10 @@ transaction relay, confirmation and restoration from an abandoned branch;
 compact reconstruction without fetched transactions; serving Core from zero
 and from an old fork; a single announcement during a 2,000-block catch-up with
 a peer disconnect; hostile wire data, header/address floods and admission caps;
-a real PTY Screen; a corrupt local body; prune boundaries and assumevalid.
-The fresh catch-up directory needs `txindex` before `audit`, just like the
-manual command sequence below.
+a real PTY Screen; a corrupt local body; prune boundaries and assumevalid; and
+one getdata naming more Blocks than a Peer's outbox holds. The fresh catch-up
+directory needs `txindex` before `audit`, just like the manual command sequence
+below.
 
 The CI `regtest` job runs the release binary from the `compile` artifact.
 It downloads official Core 31.1 with a pinned checksum and uploads its JSON
@@ -2176,6 +2177,49 @@ is its own issue.
 The second change has no honest Peer to show it with here — a regtest node
 with nobody to dial ends by the other rule, `no Candidate answered`, as it
 should — so the law and the mainnet log are its evidence.
+
+The writes have since moved off the loop: every peer Message now waits in a
+per-Peer queue and each turn writes at most 64 KiB of it, so `Tcp.writeBytes`
+is gone from the application and no Peer can hold a turn by not reading. What
+that bought, and what it cost until the next section's test was written, is
+[one getdata larger than a Peer's outbox](#a-getdata-larger-than-a-peers-outbox).
+
+### A getdata larger than a Peer's outbox
+
+The queue that replaced the blocking write is bounded — 8 MiB and 256 Messages
+per Peer — and a Peer that fills it is dropped, which is the point of it. What
+was not the point is that this node could fill it on the Peer's behalf: a
+getdata for Blocks was answered by framing every Block it named, one after
+another, in the turn the Message arrived on. Bitcoin Core in initial block
+download asks one Peer for sixteen Blocks at a time. A mainnet Block is one to
+four megabytes, so the queue is full somewhere between the third and the sixth
+of them and the Peer syncing from us is dropped for having asked. Regtest
+Blocks are a few hundred bytes, so nothing else in this document notices.
+
+`tools/regtest/suite_serving.py` mines Blocks large enough to notice. A regtest
+Block cannot be made large by mining many ordinary Transactions — consensus
+weighs every non-witness byte four times, so a Block whose bytes are output
+scripts stops at about a megabyte — so it mines twelve of them, with
+`generateblock` and a raw Transaction of 120 large `OP_RETURN` outputs each.
+`generateblock` validates under consensus rules alone, so no standardness rule
+about data carriers applies, and the whole input value becomes fee, which
+nothing minds on a chain whose coinbases are worth nothing. Eleven mebibytes in
+twelve Blocks, asked for newest first in one getdata, from a Python Peer that
+reads at an ordinary speed:
+
+```
+served a Block of 962209 bytes to peer 1
+...
+peer 1 went while being sent a block: peer outbox is full
+```
+
+That is the log before the fix: nine Blocks framed, then the Peer gone. After
+it, all twelve arrive in the order the getdata gave, and the Peer that asked is
+still seated and still answering pings. The fix is a bounded queue of the
+requested identifiers and a watermark. A Block is read off the disk for a Peer
+only while that Peer has less than 4 MiB waiting, which is a Block's worth of
+room short of the limit, so what this node puts on a wire can no longer be what
+fills it.
 
 ## A Peer that lies
 

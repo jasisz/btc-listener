@@ -2162,8 +2162,13 @@ fn actingOn(state: Following, due: Due) -> Result<Unit, String>
     onMoved(withLog(state, noted), due.key, due.why)
 
 fn ticking(state: Following) -> Result<Unit, String>
-    ? "The rest of an ordinary turn: start a dial if the pool is short, then"
-      "wait a tick."
+    ? "The rest of an ordinary turn: start a dial if the pool is short, read"
+      "whatever Blocks the Peers that asked have room for, then wait a tick."
+      "The Blocks are read here rather than where the getdata was answered"
+      "because here is where this loop knows how much is still waiting on"
+      "each wire. The wait itself is shortened to a tenth of a second while"
+      "anything is queued (Infra.Peers.pollBudget), so a Peer being served"
+      "does not wait out a second of silence between Blocks."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
@@ -2177,7 +2182,7 @@ fn ticking(state: Following) -> Result<Unit, String>
         Work.cancel,
     ]
 
-    topped = saidSlowTurn(boarded(toppedUp(state)?, Time.unixMs())?, Time.unixMs())?
+    topped = servingBlocks(saidSlowTurn(boarded(toppedUp(state)?, Time.unixMs())?, Time.unixMs())?)?
     ticked = nextMessage(topped.pool, boardTick(topped.board))?
     polled = withWatch(Following.update(topped, pool = ticked.pool), pollReturnedAt(topped.watch, Time.unixMs()))
     tickState = firstAfterNone(polled, List.len(Infra.Peers.peerKeys(topped.pool)))?
@@ -3213,11 +3218,18 @@ verify hashOf
     Domain.Hash.reversedHex(hashOf("f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16")) => "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16"
 
 fn onAsked(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
-    ? "A Peer asking for Transactions we announced."
+    ? "A Peer asking for Transactions we announced, and for Blocks."
       "Answering is not a courtesy: a node that announces and then goes quiet"
       "wastes the round trip of every Peer that asked, and Peers drop one that"
       "does it. What we cannot answer is passed over in silence, which is what"
       "Core does with a getdata for something it no longer holds."
+      "Transactions are answered here, because a Transaction is kilobytes and"
+      "the Mempool already holds its bytes. Blocks are written down and read"
+      "off the disk later, one at a time, as each Peer's wire empties"
+      "(Infra.Peers.wanting, servingBlocks): Core in initial block download"
+      "asks one Peer for sixteen Blocks at a time, and framing them where the"
+      "Message arrived fills the eight mebibytes that Peer's queue is allowed"
+      "before the sixth mainnet Block, which costs it its seat."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
@@ -3231,11 +3243,11 @@ fn onAsked(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
         Work.cancel,
     ]
     txsOut = serving(state.pool, state.mempool, key, Domain.Inventory.requestedTxHashesOf(body))?
-    blocksOut = servingBlocks(withPool(state, txsOut), key, List.take(Domain.Inventory.requestedBlockHashesOf(body), servedBlockCap()))?
-    listen(blocksOut)
+    blocksOut = Infra.Peers.wanting(txsOut, key, Domain.Inventory.requestedBlockHashesOf(body), servedBlockCap())
+    listen(withPool(state, blocksOut))
 
 fn servedBlockCap() -> Int
-    ? "The most Blocks one getdata will be answered with."
+    ? "The most Blocks one Peer may have waiting to be served at once."
       "A getdata may name fifty thousand Blocks, and answering all of them"
       "means reading fifty thousand Blocks off disk and putting gigabytes on"
       "a wire nobody promised to read. Core caps a getdata at a thousand"
@@ -3244,86 +3256,58 @@ fn servedBlockCap() -> Int
       "The cap is on what we serve rather than on what may be asked, because"
       "refusing the Message outright would break a Peer that asked politely"
       "for more than we will give at once."
+      "It counts the queue rather than the Message, so a Peer that sends a"
+      "second getdata before the first is finished cannot go past it."
     1000
 
 verify servedBlockCap
     servedBlockCap() => 1000
 
-fn servingBlocks(state: Following, key: Int, asked: List<List<Int>>) -> Result<Following, String>
-    ? "Blocks a Peer asked for, out of our own Segments."
+fn servingBlocks(state: Following) -> Result<Following, String>
+    ? "Blocks Peers have asked for, out of our own Segments, as their wires"
+      "empty."
       "This is the half that makes a node worth syncing from: Headers say"
       "what the chain is, Blocks are the chain. A Block we do not hold is"
       "passed over in silence, which is what Core does with a getdata for"
       "something it has pruned or never had."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match asked
-        [] -> Result.Ok(state)
-        [head, ..tail] -> servingBlock(state, key, head, tail)
+      "One turn of the loop reads Blocks until every Peer that asked has its"
+      "watermark's worth waiting, and stops there rather than at the end of"
+      "what was asked for. Which Peer and which Block is"
+      "Infra.Peers.nextBlockWanted's to say, and nothing here reads a socket:"
+      "the disk is touched only on this loop's own turn."
+      "Infra.Working deliberately holds no Infra.Kv or Disk.readBytesAt, so"
+      "the serving turns that run while a Block is being decoded answer pings"
+      "and drain wires but read no Blocks. A Peer that asks during one waits"
+      "until the loop has its turn back, which is bounded by the walk rather"
+      "than by the Peer."
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
+    match Infra.Peers.nextBlockWanted(state.pool)
+        Option.None -> Result.Ok(state)
+        Option.Some(wanted) -> servingBlock(state, wanted)
 
-fn servingBlock(state: Following, key: Int, hash: List<Int>, rest: List<List<Int>>) -> Result<Following, String>
+fn servingBlock(state: Following, wanted: Infra.Peers.Wanted) -> Result<Following, String>
     ? "One Block, by the Id the getdata named it with."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    located = Infra.Store.get(state.store, Domain.IndexKeys.blockKey(Domain.Hash.reversedHex(hash))?)?
-    servingLocated(state, key, hash, rest, located)
+      "The identifier leaves the queue before the bytes are looked for, so"
+      "neither a Block we do not hold nor a Peer that goes mid-write can put"
+      "this turn back where it started."
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
+    located = Infra.Store.get(state.store, Domain.IndexKeys.blockKey(Domain.Hash.reversedHex(wanted.hash))?)?
+    servingLocated(withPool(state, Infra.Peers.blockServed(state.pool, wanted.key)), wanted.key, located)
 
-fn servingLocated(state: Following, key: Int, hash: List<Int>, rest: List<List<Int>>, located: Option<Bytes>) -> Result<Following, String>
+fn servingLocated(state: Following, key: Int, located: Option<Bytes>) -> Result<Following, String>
     ? "A Block we never fetched, or one whose bytes we can read back."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     match located
-        Option.None -> servingBlocks(state, key, rest)
-        Option.Some(stored) -> sendingBlock(state, key, rest, Domain.Index.decodeLocation(stored)?)
+        Option.None -> servingBlocks(state)
+        Option.Some(stored) -> sendingBlock(state, key, Domain.Index.decodeLocation(stored)?)
 
-fn sendingBlock(state: Following, key: Int, rest: List<List<Int>>, location: Location) -> Result<Following, String>
+fn sendingBlock(state: Following, key: Int, location: Location) -> Result<Following, String>
     ? "The Block off the Segment and onto the wire, exactly as it was stored."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     payload = Infra.Blocks.read(state.blocks, location)?
     sent = Infra.Peers.tell(state.pool, key, "block", payload)?
     _said = saidLineIfPlain(state.watch, "served a Block of {List.len(Bytes.octets(payload))} bytes to peer {key}")
-    servingBlocks(withPool(state, sent), key, rest)
+    servingBlocks(withPool(state, sent))
 
 fn serving(pool: Pool, mempool: Mempool, key: Int, asked: List<List<Int>>) -> Result<Pool, String>
     ? "Each identifier asked for, answered from what we hold."

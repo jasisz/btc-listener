@@ -89,8 +89,22 @@ calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
   Each flush writes at most 64 KiB, accounts actual bytes, retains the exact
   offset, and watches write readiness only while bytes remain. Overflow or
   delayed write failure drops the offending peer. Closing a peer removes its
-  outbox, greeting and deferred input. These bounds intentionally refuse a
-  client that accumulates too much output.
+  outbox, greeting, pending block queue and deferred input. These bounds
+  intentionally refuse a client that accumulates too much output.
+- A getdata for blocks is answered from a bounded per-peer queue of the
+  requested identifiers rather than by framing every block where the message
+  arrived. The follow loop reads one block off disk for a peer only while that
+  peer has less than 4 MiB waiting, which is a block's worth of room short of
+  the 8 MiB limit, so serving can no longer be what overflows the queue.
+  Blocks leave in the order they were asked for, and blocks this node does not
+  hold are still passed over in silence. `servedBlockCap` now caps the queue
+  rather than one message, so a second getdata cannot lift it. A peer with
+  anything queued shortens the poll to 100 ms. Transaction serving is
+  unchanged: the mempool already holds those bytes.
+  `Infra.Working` has no `Infra.Kv` or `Disk.readBytesAt` effects and
+  does not get them, so the serving turns that run while a Work job is pending
+  drain wires and answer pings but read no blocks; a request that arrives
+  during one waits for the loop's next turn.
 - The board retains up to sixteen clients and accepts at most four per turn.
   Each client has a bounded 4 KiB request, a response offset and a single
   five-second lifetime. Partial headers and responses survive across turns.
@@ -130,7 +144,9 @@ running computation.
 
 `tools/regtest/suite.py` automates fresh isolated Core nodes, the four script
 types, reorganisations and undo, relay, compact reconstruction, inbound sync,
-catch-up announcements, hostile peers, the terminal Screen and storage guards.
+catch-up announcements, hostile peers, the terminal Screen, storage guards and
+one getdata whose blocks come to more than a peer's outbox holds
+(`tools/regtest/suite_serving.py`).
 It keeps a JSON report and logs after cleaning up its processes. CI consumes
 the existing native build artifact and runs this suite against pinned Core 31.1.
 See [the standing regtest guide](regtest-testing.md) for invocation and scope.

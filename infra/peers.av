@@ -19,7 +19,7 @@ module Peers
         "has to be written in terms of the other."
         "Per ADR 0008 this module owns peer sockets and hands values back;"
         "the caller alone applies results to chain state."
-    exposes [watchSockets, popSpare, Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, opened, listening, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers, claimsOf]
+    exposes [watchSockets, popSpare, Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, Wanted, opened, listening, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, wanting, blockServed, nextBlockWanted, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers, claimsOf]
     depends [Domain.Outbox, Infra.Readiness, Bytes, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Handshake, Domain.Inbox, Domain.Message, Domain.Network, Domain.Snapshot, Domain.Version]
     effects [
         Console.error, Console.print,
@@ -53,6 +53,7 @@ record Pool
     inboundCap: Int
     greetings: Map<Int, Greeting>
     outboxes: Map<Int, Queued>
+    pending: Map<Int, List<List<Int>>>
 
 record Dialing
     key: Int
@@ -92,6 +93,10 @@ record Heard
 record Polled
     pool: Pool
     ready: List<Int>
+
+record Wanted
+    key: Int
+    hash: List<Int>
 
 fn readChunk() -> Int
     ? "How many bytes to take off a ready socket at once."
@@ -1072,7 +1077,7 @@ fn listening(pool: Pool, port: Int, services: Int, height: Int) -> Result<Pool, 
 
 fn opened(network: Network) -> Pool
     ? "A pool with nothing in it."
-    Pool(network = network, sockets = Map.fromList([]), standing = Domain.Inbox.noStanding(), spare = [], serves = 0, height = 0, heardMs = Map.fromList([]), anyHeardMs = 0, polledMs = 0, plain = true, dialing = Option.None, settled = [], port = 0, seenAs = Map.fromList([]), toldMs = 0, inboundCap = inboundDefault(), greetings = {}, outboxes = {})
+    Pool(network = network, sockets = Map.fromList([]), standing = Domain.Inbox.noStanding(), spare = [], serves = 0, height = 0, heardMs = Map.fromList([]), anyHeardMs = 0, polledMs = 0, plain = true, dialing = Option.None, settled = [], port = 0, seenAs = Map.fromList([]), toldMs = 0, inboundCap = inboundDefault(), greetings = {}, outboxes = {}, pending = {})
 
 fn withStanding(pool: Pool, standing: Map<Int, Standing>) -> Pool
     ? "The pool, with what is known about the Peers moved on."
@@ -1893,6 +1898,163 @@ fn written(pool: Pool, key: Int, connection: Tcp.Connection, command: String, pa
     queued = Domain.Outbox.enqueue(Option.withDefault(Map.get(pool.outboxes, key), Domain.Outbox.empty()), framed)?
     flushConnection(Pool.update(pool, outboxes = Map.set(pool.outboxes, key, queued)), key, connection, queued)
 
+fn blockWatermark() -> Int
+    ? "How much may already be waiting on a Peer's wire before another Block"
+      "is read off the disk for it."
+      "A Block is at most four million bytes, and Domain.Outbox refuses"
+      "anything that would take one Peer's queue past eight mebibytes. So a"
+      "Block read while four mebibytes are waiting still fits, with about two"
+      "hundred kilobytes over for the invs, pings and headers that share the"
+      "same queue. That is the whole of the arithmetic: the watermark is one"
+      "Block's worth of room short of the limit, rather than a number chosen"
+      "for how it performed. It is what makes serving a Block unable to be"
+      "the thing that fills the queue, and a full queue costs a Peer its seat."
+    4194304
+
+verify blockWatermark
+    blockWatermark() => 4194304
+    Domain.Outbox.byteLimit() - blockWatermark() > 4000000 => true
+
+fn wanting(pool: Pool, key: Int, hashes: List<List<Int>>, cap: Int) -> Pool
+    ? "Remember the Blocks a Peer has asked for, rather than answering them"
+      "all where it asked."
+      "One getdata may name a thousand Blocks and this node may hold every"
+      "one of them. Framing them all in one turn puts gigabytes into a queue"
+      "that is allowed eight mebibytes, and the Peer that asked politely is"
+      "the one dropped for it. Identifiers cost thirty-two bytes each, so"
+      "they are kept here and the bytes are read one Block at a time as the"
+      "wire empties."
+      "The cap counts what is already waiting rather than what this Message"
+      "named, so a Peer cannot lift it by asking twice."
+    wantingRoom(pool, key, Option.withDefault(Map.get(pool.pending, key), []), hashes, cap)
+
+verify wanting
+    Map.len(wanting(opened(Network.Regtest), 1, [], 1000).pending) => 0
+    Map.get(wanting(opened(Network.Regtest), 1, [sampleHash()], 1000).pending, 1) => Option.Some([sampleHash()])
+    Map.get(wanting(wanting(opened(Network.Regtest), 1, [sampleHash()], 1000), 1, [otherHash()], 1000).pending, 1) => Option.Some([sampleHash(), otherHash()])
+    Map.get(wanting(wanting(opened(Network.Regtest), 1, [sampleHash()], 1), 1, [otherHash()], 1).pending, 1) => Option.Some([sampleHash()])
+
+fn wantingRoom(pool: Pool, key: Int, held: List<List<Int>>, hashes: List<List<Int>>, cap: Int) -> Pool
+    ? "As many as the cap leaves room for, behind whatever is already waiting."
+    wantingKept(pool, key, List.concat(held, List.take(hashes, Int.max(cap - List.len(held), 0))))
+
+verify wantingRoom
+    Map.get(wantingRoom(opened(Network.Regtest), 1, [sampleHash()], [otherHash()], 2).pending, 1) => Option.Some([sampleHash(), otherHash()])
+    Map.get(wantingRoom(opened(Network.Regtest), 1, [sampleHash()], [otherHash()], 1).pending, 1) => Option.Some([sampleHash()])
+
+fn wantingKept(pool: Pool, key: Int, queue: List<List<Int>>) -> Pool
+    ? "An empty queue is no entry at all. A key that mapped to nothing would"
+      "shorten every poll on behalf of a Peer with nothing left to send."
+    match queue
+        [] -> Pool.update(pool, pending = Map.remove(pool.pending, key))
+        [head, ..rest] -> Pool.update(pool, pending = Map.set(pool.pending, key, queue))
+
+verify wantingKept
+    Map.len(wantingKept(opened(Network.Regtest), 1, []).pending) => 0
+    Map.len(wantingKept(wanting(opened(Network.Regtest), 1, [sampleHash()], 1000), 1, []).pending) => 0
+    Map.get(wantingKept(opened(Network.Regtest), 1, [sampleHash(), otherHash()]).pending, 1) => Option.Some([sampleHash(), otherHash()])
+
+fn blockServed(pool: Pool, key: Int) -> Pool
+    ? "The Block at the head of this Peer's queue has been dealt with, whether"
+      "it went onto the wire or was passed over for not being held."
+      "Taken before the write rather than after it, so a Peer that goes while"
+      "being sent the Block it asked for cannot be sent it again."
+    wantingKept(pool, key, List.drop(Option.withDefault(Map.get(pool.pending, key), []), 1))
+
+verify blockServed
+    Map.len(blockServed(opened(Network.Regtest), 1).pending) => 0
+    Map.len(blockServed(wanting(opened(Network.Regtest), 1, [sampleHash()], 1000), 1).pending) => 0
+    Map.get(blockServed(wanting(opened(Network.Regtest), 1, [sampleHash(), otherHash()], 1000), 1).pending, 1) => Option.Some([otherHash()])
+
+fn nextBlockWanted(pool: Pool) -> Option<Wanted>
+    ? "Which Peer, if any, should have a Block read off the disk for it now."
+      "Who is still seated is the one thing the decision cannot be written a"
+      "case about -- a Tcp.Socket is a capability resource nothing outside"
+      "the provider can build -- so it is read here, and the choice itself is"
+      "made over plain values in wantedIn."
+    wantedIn(pool, peerKeys(pool), Map.keys(pool.pending))
+
+verify nextBlockWanted
+    nextBlockWanted(opened(Network.Regtest)) => Option.None
+    nextBlockWanted(wanting(opened(Network.Regtest), 1, [sampleHash()], 1000)) => Option.None
+
+fn wantedIn(pool: Pool, seated: List<Int>, keys: List<Int>) -> Option<Wanted>
+    ? "The lowest-numbered Peer that has a Block waiting and room on its wire."
+      "Lowest first is arbitrary and bounded rather than unfair: a Peer holds"
+      "the turn only until its wire reaches the watermark, so a Peer asking"
+      "for a thousand Blocks cannot hold the one behind it for longer than a"
+      "queue takes to fill."
+    match keys
+        [] -> Option.None
+        [key, ..rest] -> wantedFor(pool, seated, key, rest, Option.withDefault(Map.get(pool.pending, key), []))
+
+verify wantedIn
+    wantedIn(opened(Network.Regtest), [1], []) => Option.None
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => List.drop([sampleHash()], 1)}), [1], [1]) => Option.None
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()]}), [1], [1]) => Option.Some(Wanted(key = 1, hash = sampleHash()))
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()]}), [], [1]) => Option.None
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()]}, outboxes = {1 => wireAt(blockWatermark())}), [1], [1]) => Option.None
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()]}, outboxes = {1 => wireAt(blockWatermark() - 1)}), [1], [1]) => Option.Some(Wanted(key = 1, hash = sampleHash()))
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()], 2 => [otherHash()]}, outboxes = {1 => wireAt(blockWatermark())}), [1, 2], [1, 2]) => Option.Some(Wanted(key = 2, hash = otherHash()))
+    wantedIn(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()], 2 => [otherHash()]}), [2], [1, 2]) => Option.Some(Wanted(key = 2, hash = otherHash()))
+
+fn wantedFor(pool: Pool, seated: List<Int>, key: Int, rest: List<Int>, queue: List<List<Int>>) -> Option<Wanted>
+    ? "A Peer with nothing waiting is passed over for the next one."
+    match queue
+        [] -> wantedIn(pool, seated, rest)
+        [hash, ..more] -> wantedIfRoom(pool, seated, key, rest, hash)
+
+verify wantedFor
+    wantedFor(opened(Network.Regtest), [1], 1, [], []) => Option.None
+    wantedFor(opened(Network.Regtest), [1], 1, [], [sampleHash(), otherHash()]) => Option.Some(Wanted(key = 1, hash = sampleHash()))
+
+fn wantedIfRoom(pool: Pool, seated: List<Int>, key: Int, rest: List<Int>, hash: List<Int>) -> Option<Wanted>
+    ? "A Peer whose wire is already at the watermark waits its turn; one that"
+      "has gone since it asked is passed over here and loses its queue with"
+      "its key in forgotten."
+    match Bool.and(List.contains(seated, key), queuedBytes(pool, key) < blockWatermark())
+        true -> Option.Some(Wanted(key = key, hash = hash))
+        false -> wantedIn(pool, seated, rest)
+
+verify wantedIfRoom
+    wantedIfRoom(opened(Network.Regtest), [1], 1, [], sampleHash()) => Option.Some(Wanted(key = 1, hash = sampleHash()))
+    wantedIfRoom(opened(Network.Regtest), [], 1, [], sampleHash()) => Option.None
+    wantedIfRoom(Pool.update(opened(Network.Regtest), outboxes = {1 => wireAt(blockWatermark())}), [1], 1, [], sampleHash()) => Option.None
+
+fn queuedBytes(pool: Pool, key: Int) -> Int
+    ? "How many bytes are already waiting on one Peer's wire."
+    match Map.get(pool.outboxes, key)
+        Option.None -> 0
+        Option.Some(queue) -> queue.bytes
+
+verify queuedBytes
+    queuedBytes(opened(Network.Regtest), 1) => 0
+    queuedBytes(Pool.update(opened(Network.Regtest), outboxes = {1 => wireAt(7)}), 1) => 7
+
+fn wireAt(bytes: Int) -> Queued
+    ? "A wire carrying that many bytes, for the cases here. Only the count is"
+      "read by the decision, so a case says the count rather than building"
+      "four mebibytes to say it."
+    Queued(chunks = [], offset = 0, bytes = bytes)
+
+verify wireAt
+    wireAt(7).bytes => 7
+
+fn sampleHash() -> List<Int>
+    ? "A stand-in Block identifier for the cases here, the length a real one is."
+    [1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8]
+
+verify sampleHash
+    List.len(sampleHash()) => 32
+
+fn otherHash() -> List<Int>
+    ? "A second identifier, so a case can tell order from coincidence."
+    List.prepend(9, List.drop(sampleHash(), 1))
+
+verify otherHash
+    List.len(otherHash()) => 32
+    otherHash() == sampleHash() => false
+
 fn awaitFrom(pool: Pool, key: Int, wanted: String) -> Result<Waited, String>
     ? "The next Message of this command from this Peer, with the deadline"
       "measured from now."
@@ -2454,7 +2616,10 @@ fn buffered(pool: Pool, key: Int, rest: List<Int>, arrived: Bytes) -> Result<Poo
 
 fn forgotten(pool: Pool, key: Int) -> Pool
     ? "Forget a Peer, without closing anything."
-    Pool.update(pool, sockets = Map.remove(pool.sockets, key), standing = Domain.Inbox.forgotten(pool.standing, key), heardMs = Map.remove(pool.heardMs, key), greetings = Map.remove(pool.greetings, key), outboxes = Map.remove(pool.outboxes, key), spare = withoutPeerSpare(pool.spare, key))
+      "Everything held under the key goes with it, the Blocks it asked for"
+      "included: a queue left behind would name a Peer that is not there, and"
+      "the key it names is handed out again to whoever dials next."
+    Pool.update(pool, sockets = Map.remove(pool.sockets, key), standing = Domain.Inbox.forgotten(pool.standing, key), heardMs = Map.remove(pool.heardMs, key), greetings = Map.remove(pool.greetings, key), outboxes = Map.remove(pool.outboxes, key), pending = Map.remove(pool.pending, key), spare = withoutPeerSpare(pool.spare, key))
 
 fn dropOne(pool: Pool, key: Int) -> Result<Pool, String>
     ? "Close one Peer's socket and forget it."
@@ -2575,7 +2740,14 @@ fn polling(pool: Pool, timeoutMs: Int) -> Result<Polled, String>
     pollingReady(ready, pollBudget(ready, timeoutMs))
 
 fn pollBudget(pool: Pool, requested: Int) -> Int
-    match Bool.or(Map.len(pool.greetings) > 0, Map.len(pool.outboxes) > 0)
+    ? "A tenth of a second at most while there is work this loop owes rather"
+      "than work a Peer owes it."
+      "Bytes waiting to be written and a Handshake half done are both work"
+      "that finishes without anybody saying anything, and so is a Block a"
+      "Peer has asked for and this node has not read off the disk yet: none"
+      "of the three wakes a poll of its own, so a full tick of silence would"
+      "be a tick of nothing happening."
+    match Bool.or(Map.len(pool.greetings) > 0, Bool.or(Map.len(pool.outboxes) > 0, Map.len(pool.pending) > 0))
         true -> Int.min(requested, 100)
         false -> requested
 
@@ -2583,6 +2755,7 @@ verify pollBudget
     pollBudget(opened(Network.Regtest), 1000) => 1000
     pollBudget(Pool.update(opened(Network.Regtest), greetings = {1 => sampleGreeting(true)}), 1000) => 100
     pollBudget(Pool.update(opened(Network.Regtest), greetings = {1 => sampleGreeting(true)}), 0) => 0
+    pollBudget(Pool.update(opened(Network.Regtest), pending = {1 => [sampleHash()]}), 1000) => 100
 
 record Greeting
     address: String

@@ -184,6 +184,11 @@ def hostile(s, a):
     exercise(s, a)
 
 
+def serving(s, a, data):
+    from suite_serving import exercise
+    exercise(s, a, data)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, type=Path)
@@ -211,6 +216,7 @@ def main():
             screen(s, a)
             chain_fault(s, a)
             storage(s, a, data)
+            serving(s, a, data)
             s.passed("suite-complete")
         except BaseException as error:
             s.report.append({"case": "suite", "status": "failed", "error": str(error)})
