@@ -74,7 +74,7 @@ because anything that opens the Index is several times faster that way. See
 ## Requirements
 
 - **Aver at the commit in [`.aver-version`](.aver-version)**. It includes the
-  Work/Wait compiler and host fixes, plus the pending native optimizations
+  Work/Wait compiler and host fixes, plus the native optimizations
   [#1384](https://github.com/jasisz/aver/pull/1384) and
   [#1388](https://github.com/jasisz/aver/pull/1388), and the Lean proof fix
   [#1387](https://github.com/jasisz/aver/pull/1387).

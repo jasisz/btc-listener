@@ -29,7 +29,7 @@ branch does not claim that cancellation terminates native computation.
 ## Compiler requirement and build
 
 Build with the Aver revision in `.aver-version`, including its matching
-`aver-rt`. The pending compiler changes and validation results are tracked in
+`aver-rt`. The compiler changes and validation results are tracked in
 [PR #361](https://github.com/n1bor/btc-listener/pull/361).
 
 The upstream provider Cargo manifests already contain the author's absolute
