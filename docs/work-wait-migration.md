@@ -77,6 +77,66 @@ all processes and sockets. Cancel mode requires no delivered result and a
 prompt owner return. Record mode replays after the real peer has gone away.
 Use the corresponding target path if CARGO_TARGET_DIR is set.
 
+## DNS exchange probe
+
+Seed discovery is the one rewritten network path nothing else reaches. A
+regtest network has no DNS seeds and the real ones are on the internet, so the
+new dial, write and reassembly loop shipped with no automated coverage at all.
+`Infra.Resolver.lookupAt` takes the server as an argument for exactly this
+reason: `tools/dns_probe.av` calls it and prints one line, and
+`tools/regtest/dns-probe.py` is the resolver on the other end of the socket.
+
+```sh
+aver compile tools/dns_probe.av --module-root . -o /tmp/btc-dns-probe
+cargo build --manifest-path /tmp/btc-dns-probe/Cargo.toml --profile iteration
+python3 tools/regtest/dns-probe.py /tmp/btc-dns-probe/target/iteration/dns_probe
+```
+
+Seven scenarios take about nineteen seconds. One sends the whole answer. One
+sends the whole answer and then closes, which is what a real resolver does. One
+splits the two-byte length prefix down the middle and sends the body in three
+further pieces. One closes halfway through the body it announced, which has to
+produce an error rather than a partial answer presented as a complete one and
+rather than a wait for bytes that are not coming. One sends a 64 KB answer of
+4,000 A records in 4 KiB pieces, none of which carries the message. One says
+nothing and is interrupted with SIGINT, which has to return through the
+cooperative stop. One says nothing and is left alone, which has to return when
+the fifteen-second deadline expires. Every scenario also reads the question
+that arrived and checks its length prefix, flags and A/IN section, so a probe
+that never wrote a well-formed question could not pass the read cases by
+accident. Each scenario has a ceiling and the harness fails rather than waits,
+so nothing here can pass by hanging.
+
+The deadline scenario costs the fifteen seconds it is measuring and there is no
+honest way to shorten it. An injectable deadline would be a test hook in
+production code, and the stop that is already there is what the SIGINT scenario
+uses. `--skip silent-until-deadline` leaves it out of a local run.
+
+CI runs this in the `compile` job and not under the Node host in `wasm-node`,
+where the Work probe runs. `wasm/host.mjs` serves `Wait.poll` through the Work
+host's codec, which reads the `aver:work/v1` descriptor and the `__cap_abi_`
+helpers the compiler emits for a program that binds a Work capability. The
+resolver binds none, so the module carries no descriptor and `createWorkHost`
+refuses it with `work: expected one aver:work/v1 descriptor`. Giving the probe
+a Work capability it has no use for, so that a host would accept it, would be a
+worse test than this one. The `compile` job already holds the toolchain and the
+Cargo target directory this needs, so the probe's own crate is the only new
+work there, and it runs before the binary is uploaded because a resolver that
+hangs is a reason not to publish one.
+
+The same scenarios run on the VM with no build at all, and six of the seven
+pass:
+
+```sh
+python3 tools/regtest/dns-probe.py --skip stopped-while-silent \
+  aver run tools/dns_probe.av --module-root . --
+```
+
+SIGINT does not reach `Process.stopRequested` under the VM -- the probe runs on
+to the deadline and the process is killed -- so `stopped-while-silent` has to
+be skipped there. That difference is why CI pays for the compiled binary rather
+than taking the cheaper run.
+
 ## Remaining network waits removed
 
 Four groups of network stalls remained after the first Work slice: inline
@@ -120,7 +180,9 @@ calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
   follow turns and enter the Work owner's combined wait on disjoint keys.
 - DNS uses beginConnect/dialled/readNow/writeNow with a single fifteen-second
   deadline covering connect, write, prefix and response. Stop is checked between
-  waits of at most 100 ms. Seed discovery remains a sequential facade used at
+  waits of at most 100 ms. This is the path the [DNS exchange
+  probe](#dns-exchange-probe) covers, against a fake resolver on loopback.
+  Seed discovery remains a sequential facade used at
   startup or when no peers/candidates remain; it does not run a dashboard turn
   during the lookup. Startup joined/handshake APIs likewise remain synchronous
   facades, with bounded waits and cooperative stop checks.

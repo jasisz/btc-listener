@@ -155,6 +155,18 @@ jobs:
           aver verify main.av --module-root . | tee verify.log
           tail -1 verify.log | grep -E "\| 0 failed" \
             || { echo "verify reported failures"; exit 1; }
+      # The probes under tools/ are entries of their own and nothing in main
+      # reaches them, so the step above walks past their cases. Their own
+      # helpers are small, but a verify block nobody runs is worse than no
+      # verify block: it reads as covered.
+      - name: Verify the probes, which are not in the program graph
+        run: |
+          for probe in tools/dns_probe.av tools/working_probe.av; do
+            echo "== $probe"
+            aver verify "$probe" --module-root . | tee verify.log
+            tail -1 verify.log | grep -E "\| 0 failed" \
+              || { echo "verify reported failures in $probe"; exit 1; }
+          done
 
   verify-corpus:
     name: aver verify (Core corpus, ${{ matrix.shard }})
@@ -367,6 +379,26 @@ jobs:
         run: |
           ldd --version | head -1
           objdump -T build/target/release/main | grep -oE "GLIBC_[0-9.]+" | sort -uV | tail -1
+      # Seed discovery is here rather than in wasm-node, where the Work probe
+      # lives, because the Node host cannot run this program. That host serves
+      # Wait.poll through the Work host's codec, which reads the aver:work/v1
+      # descriptor and the __cap_abi_ helpers the compiler emits for a program
+      # that binds a Work capability. The resolver binds none, so the module
+      # carries no descriptor and createWorkHost refuses it. Giving the probe
+      # a Work capability it has no use for, to make a host accept it, would
+      # be a worse test than this one.
+      #
+      # So it runs natively, in the job that has already paid for everything
+      # it needs: the same CARGO_TARGET_DIR this job's cache holds, so only
+      # the probe's own crate is new. It runs before the artifact is uploaded
+      # because a resolver that hangs is a reason not to publish a binary.
+      - name: Build the DNS resolver probe beside the release binary
+        run: |
+          aver compile tools/dns_probe.av --module-root . -o "$RUNNER_TEMP/btc-dns-probe"
+          CARGO_TARGET_DIR=build/target cargo build --release \
+            --manifest-path "$RUNNER_TEMP/btc-dns-probe/Cargo.toml"
+      - name: Whole, fragmented, truncated and oversized DNS answers
+        run: python3 tools/regtest/dns-probe.py build/target/release/dns_probe
       # Kept so the release publishes the exact binary this job built and
       # this runner image ran, rather than a second build of it (#219).
       - name: Keep the built binary for the release

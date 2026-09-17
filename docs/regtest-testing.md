@@ -45,6 +45,23 @@ node wasm/host.mjs /tmp/btc-work-wasm/working_probe.wasm --work-probe /tmp/work-
 node wasm/host.mjs /tmp/btc-work-wasm/working_probe.wasm --work-probe /tmp/work-payload.bin 2000 cancel
 ```
 
+The CI `compile` job builds the DNS probe beside the release binary and runs
+the rewritten seed exchange against a fake TCP resolver on loopback, which is
+the one network path a regtest network cannot reach:
+
+```sh
+aver compile tools/dns_probe.av --module-root . -o /tmp/btc-dns-probe
+cargo build --manifest-path /tmp/btc-dns-probe/Cargo.toml --profile iteration
+python3 tools/regtest/dns-probe.py /tmp/btc-dns-probe/target/iteration/dns_probe
+```
+
+Seven scenarios in about nineteen seconds: a whole answer, an answer followed
+by a close, a length prefix and body split across five sends, a connection
+closed before the announced body is complete, a 64 KB answer no single read
+holds, a cooperative stop and the fifteen-second deadline. See [the DNS
+exchange probe](work-wait-migration.md#dns-exchange-probe) for what each one
+has to produce and why it does not run under the Node host.
+
 The automated suite is not a claim to reproduce every historical manual
 measurement below: sustained hostile-peer soak, external-network dial timing,
 memory/RSS comparisons and Linux syscall-trace durability inspection remain
