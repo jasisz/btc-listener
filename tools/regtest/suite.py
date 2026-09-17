@@ -120,7 +120,9 @@ def restored_mempool(s, a, b):
     b.rpc("createwallet", "fork")
     b.mine(2)
     b.rpc("setnetworkactive", True)
-    with s.follow(a.peer + "," + b.peer, label="restore-tx") as live:
+    # The winning fork already exists before this connection. Ask B directly:
+    # A has no new tip to announce, and initial catch-up asks only the first peer.
+    with s.follow(b.peer, label="restore-tx") as live:
         live.tip(start + 2)
         live.wait("offered back from disconnected Block(s), 1 admitted", timeout=30)
     s.hashes(b, [start + 1, start + 2])
@@ -194,7 +196,7 @@ def main():
         s = Suite(args.binary.resolve(), args.output.resolve())
         (s.root / "environment.json").write_text(json.dumps({
             "binary_sha256": hashlib.sha256(s.binary.read_bytes()).hexdigest(),
-            "core_version": subprocess.check_output([str(args.core_bin / "bitcoind"), "--version"], text=True).splitlines()[0],
+            "core_version": subprocess.check_output([str(args.core_bin / "bitcoind"), "-version", "-nosettings"], text=True).splitlines()[0],
         }, indent=2) + "\n")
         nodes = [stack.enter_context(Core(args.core_bin.resolve(), s.root / name)) for name in ("core-a", "core-b", "core-c")]
         a, b, c = nodes
