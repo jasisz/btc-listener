@@ -1,7 +1,7 @@
 # Aver Work adapter
 
 host.mjs, codec.mjs and worker.mjs are unmodified copies of tools/wasm-work
-from the Aver commit pinned in ../../.aver-version (608d7c2f at this update).
+from the Aver commit pinned in ../../.aver-version (77ff2e66 at this update).
 They implement aver:work/v1 using isolated Node worker threads. LICENSE is
 copied from the same repository.
 
