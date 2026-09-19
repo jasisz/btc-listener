@@ -924,9 +924,9 @@ function standardImports() {
     },
     wait_poll: suspending(async (waitset, timeoutRef, _caller) => {
       try {
-        return guest.__rt_result_list_int_string_ok(await workHost.wait(waitset, timeoutRef));
+        return guest.__rt_result_wait_keys_ok(await workHost.wait(waitset, timeoutRef));
       } catch (error) {
-        return guest.__rt_result_list_int_string_err(jsToAver(`Wait.poll: ${error.message}`));
+        return guest.__rt_result_wait_keys_err(jsToAver(`Wait.poll: ${error.message}`));
       }
     }),
     tcp_write_now: (connectionRef, bytesRef, _caller) => {
