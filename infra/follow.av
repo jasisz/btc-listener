@@ -3944,7 +3944,7 @@ fn answeringHeaders(state: Following, key: Int, locator: List<List<Int>>) -> Res
     ? "The Headers above the newest Id in a Locator we know, to the Peer that asked."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.sync,
+        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
