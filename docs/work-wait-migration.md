@@ -1,30 +1,34 @@
 # Work/Wait migration
 
-This branch moves block decoding and pure UTXO connection onto bounded typed Work
-jobs. A single lookahead decodes Block N+1 while the owner resolves inputs
-and a second job connects Block N. The CLI owner resolves database inputs, serves peers while the
-job runs, and alone applies and persists its result. The exact existing
-`Domain.Block.transactionsOf` and `Domain.Connect.connected` algorithms run
-behind capability-owned Task/Reply adapters. A worker owns no database or socket.
-This is the explicit CLI owner using Work/Wait; it is not yet a generated
-`[run]` / yielding-process rewrite.
+`follow` runs as processes on Aver's generated loop. [`main.av`](../main.av)
+holds five of them: `starter` opens the node, `peer` runs once per seated Peer
+(`process peer seated by App.Owner.peers`), `walk` runs every Catch-up,
+`ticker` is the loop's own clock and `writer` empties the outboxes and serves
+the Blocks Peers asked for. Each asks for one step at a time through
+[`Infra.Wire`](../infra/wire.av) and [`Infra.Catching`](../infra/catching.av),
+and [`App.Owner`](../app/owner.av) answers from the one `Infra.Follow.Following`
+it keeps, so there is still a single writer (ADR 0008). An answer that cannot
+be given yet is a `Run.Wake`: a Peer parks on its socket, the walk parks on a
+decode or connect job it began or until the owner moves, the ticker parks on a
+second and the dial. The loop waits for all of them in one `Wait.poll` a turn.
+`main` calls `Run.all()` for `follow` only, so the CLI is still one binary.
 
-All eight `Tcp.poll` calls on the application path now use `Wait.poll`.
-Peer and dashboard readiness reads use `readNow`. A Work wait watches the job,
-connected sockets, listener and pending dial, with a 100 ms stop-check deadline.
-A read tick processes one batch even when it contains only an incomplete frame.
-A ping is answered while Work is pending; other frames remain deferred. Address
-gossip is folded into the Book, and the remaining deferred messages now pass
-through the ordinary dispatcher, oldest first, rather than being discarded.
-The existing queue still has its 64-message overflow policy.
+What changed is who waits, not the protocol. The dispatch, the Pool, the
+outbox, the greeting state machine, the Header, body and Set phases are the
+same functions, cut where they used to wait: `Infra.Download.batchAsked` and
+`batchHeard`, `Infra.Bodies.turned` and `blockLanded`, `Infra.ChainState.stepOnce`.
+The standalone `headers`, `bodies`, `utxo` and `listen` commands drive the same
+steps with their own `Wait.poll`, as pools of one. `Infra.Working` and
+`Infra.Tending` are gone: nothing waits on a job while serving Peers by hand.
 
-No block context can be replaced while this owner is awaiting these jobs. Both jobs settle before the owner
-commits Block N; every error or stop cancels the retained lookahead. The next
-height is never read past the requested target.
-Cancellation discards the answer and returns through the normal path that
-flushes earlier completed work. Generated Rust detaches a cancelled computation;
-its thread is not preempted and retains its job slot until it finishes. This
-branch does not claim that cancellation terminates native computation.
+Differences a reader of the logs will see: every Message is dispatched as it
+arrives, including during a Catch-up, where the old loop kept all but pings
+and addresses for later; an Announcement made during a Catch-up is held by the
+gate and taken as the next one. The run ends when the owner has closed the
+node; a failure is written to `.failed` in the chain directory for `main` to
+report, because the loop itself answers `Ok` however its processes ended.
+Startup (`Infra.Peers.joined`, the DNS seeds, `firstSeated`) and a reseed
+still wait inside one answer, before or instead of anything else happening.
 
 ## Compiler requirement and build
 
@@ -56,8 +60,9 @@ and data format are unchanged.
 
 ## Production owner responsiveness probe
 
-This entry uses the actual `Infra.Working`, `Infra.Peers`, `Infra.Tending` and
-`Domain.BlockWorkJob` implementation, with a local Bitcoin wire peer. It supplies
+This entry runs a Peer process and a decode request on one generated loop,
+over the actual `Infra.Peers` and `Infra.BlockJobs`/`Domain.BlockWorkJob`
+implementation, with a local Bitcoin wire peer. It supplies
 a synthetic payload containing repeated genesis transactions to keep the decoder
 busy. It is not a consensus-valid block, a throughput benchmark, or an end-to-end
 chain acceptance test. No database is opened by this probe.
@@ -179,10 +184,7 @@ calls to Tcp.connect, Tcp.readBytes, Tcp.readSome, or Tcp.writeBytes.
   `Process.stopRequested` and cannot notice a stop partway through. A peer
   with anything queued shortens the poll to 100 ms. Transaction serving is
   unchanged: the mempool already holds those bytes.
-  `Infra.Working` has no `Infra.Kv` or `Disk.readBytesAt` effects and
-  does not get them, so the serving turns that run while a Work job is pending
-  drain wires and answer pings but read no blocks; a request that arrives
-  during one waits for the loop's next turn.
+  Blocks are served by the writer process whatever the walk is doing.
 - The board retains up to sixteen clients and accepts at most four per turn.
   Each client has a bounded 4 KiB request, a response offset and a single
   five-second lifetime. Partial headers and responses survive across turns.
@@ -208,10 +210,10 @@ The Work adapter is copied unchanged from the pinned Aver source under
 subscriptions are removed when a job wins the wait. Drain events resume
 backpressured writers, and SIGINT/SIGTERM stop the Work owner.
 
-The production Work probe decodes 2,000 synthetic transactions in a Node worker
-while the main instance handles a fragmented ping. Delivery and cancellation
-both preserve the deferred inv; pong must precede the result, and cancellation
-must not deliver a decoded result. The full CLI separately rejects a corrupt
+The Work probe decodes 2,000 synthetic transactions in a Node worker while a
+Peer process on the same generated loop handles a fragmented ping. Both
+delivery and cancellation hear the inv while the job runs; pong must precede
+the result, and cancellation must not deliver a decoded result. The full CLI separately rejects a corrupt
 frame and exits promptly after its final peer disappears. A real Core regtest
 run synced through height 175 and stopped cooperatively.
 

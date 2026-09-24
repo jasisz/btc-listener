@@ -38,12 +38,12 @@ Contents
 
 ```mermaid
 flowchart TB
-    main["main.av<br/>32 lines: effects list + App.Cli.runCli()"]
+    main["main.av<br/>the CLI, and the processes follow runs as"]
     subgraph app ["app/ — argv → calls"]
-        cli["Cli"] --- node["Node"] --- maintain["Maintain"] --- lookup["Lookup"] --- show["Show"] --- usage["Usage"]
+        cli["Cli"] --- node["Node"] --- owner["Owner"] --- maintain["Maintain"] --- lookup["Lookup"] --- show["Show"] --- usage["Usage"]
     end
     subgraph infra ["infra/ — the only code with effects"]
-        peers["Peers · Tending · Follow · Download · Bodies · Peer · Resolver · Board"]
+        peers["Peers · Follow · Download · Bodies · Peer · Resolver · Board"]
         state["ChainState · Utxo · Rewind · Headers · Audit · Outputs · TxIndex · Spends · Mempool"]
         store["Store · Kv · Blocks · Lock · Prune · Reindex · Screen · Metrics · Debug"]
     end
@@ -189,48 +189,46 @@ Index. Reads are positional: a Location names its bytes and
 
 ```mermaid
 sequenceDiagram
-    participant O as Owner (Follow / Working)
-    participant P as Infra.Peers (Pool)
-    participant S as Sockets
-    participant W as Wait / Work
-    O->>P: serve a bounded network turn
-    P->>S: writeNow queued prefixes / readNow available bytes
-    S-->>P: progress, no progress, or peer-local failure
-    P->>P: buffer frames and advance pending greetings
-    P-->>O: updated Pool and messages
-    O->>W: poll socket interests + job, deadline 100 ms
-    W-->>O: readiness hints
-    O->>W: take job result (may still be None)
-    W-->>O: typed result when ready
-    O->>O: apply completed work to chain state
+    participant L as Generated loop (main.av)
+    participant R as Processes (peer, walk, ticker, writer)
+    participant O as App.Owner (Follow)
+    participant S as Sockets / Work
+    R->>L: request (heard, handled, connected, ...)
+    L->>O: ask the owner
+    O->>S: readNow / writeNow / begin / take
+    O-->>L: an answer, or Run.Wake (socket, job, deadline, Settled)
+    L->>S: one Wait.poll over every parked item
+    S-->>L: ready keys
+    L->>O: ask the parked requests again
 ```
 
 [`Infra.Peers`](../infra/peers.av) owns peer sockets, inboxes, pending
-greetings and outboxes. [`Infra.Working`](../infra/working.av) retains the
-current owner state while a block calculation runs. The important boundaries:
+greetings and outboxes. Under `follow`, [`App.Owner`](../app/owner.av) holds
+the node's one `Following` and answers the processes in [`main.av`](../main.av)
+one request at a time; the loop Aver generates there does the waiting. The
+important boundaries:
 
 - **Reads and writes retain partial progress.** `Tcp.readNow` returns available
   bytes or no progress; [`Domain.Inbox`](../domain/inbox.av) keeps incomplete
   frames and checks whole Messages. [`Domain.Outbox`](../domain/outbox.av)
   retains FIFO order across short `Tcp.writeNow` calls. A flush offers at most
   64 KiB per Peer; each outbox is capped at 8 MiB and 256 Messages.
-- **Wait sets reflect their caller.** `Peers.awaitTick` watches peer reads and
-  pending writes, excluding the listener to avoid spinning on an unaccepted
-  caller. It returns an updated Pool and an optional Message. The Work owner
-  combines those interests with the listener, pending dial, job and retained
-  dashboard connections, using disjoint integer keys and a 100 ms stop-check
-  deadline. Readiness is a hint: a subsequent read or job take may find nothing.
+- **Each request parks on what it needs.** A Peer's process parks on its own
+  socket (`Peers.hearing`), the writer on the sockets still owed bytes, the
+  Catch-up on a job or until the owner moves, the clock on a second and the
+  dial. The generated loop gives every parked item its own key in one
+  `Wait.poll`. Readiness is a hint: a subsequent read or job take may find
+  nothing. The standalone commands still use `Peers.awaitTick`.
 - **Admission does not await a Handshake.** Accepted callers and completed
   active dials reserve a slot with pending greeting state. Each turn handles
   at most four frames per pending Peer. The absolute ten-second deadline
   never renews; at most eight early Messages are retained, and ordinary
   dispatch sees the Peer only after `verack`. The startup `joined` facade
   still waits for its result, with stop checks.
-- **A conversation can remain straight-line.** `awaitFrom(pool, key, wanted)`
-  waits for a named command while pumping the pool and answering pings.
-  Other Messages enter the existing 64-message spare queue. During Work,
-  address gossip updates the Book; remaining deferred Messages later pass
-  through normal dispatch in FIFO order.
+- **A conversation can remain straight-line.** The walk asks for a batch of
+  Headers and parks until the Peer's own process hands the answer over; every
+  other Message is dispatched as it arrives, including during a Catch-up. The
+  standalone commands keep `awaitFrom`, which spares other Messages.
 - **Deadlines describe different failures.** The pool can be silent for 150 s;
   a Peer has 60 s to answer a question. A Handshake has its own ten-second
   deadline. A malformed Message, reset, failed write or full outbox drops the
@@ -245,17 +243,13 @@ current owner state while a block calculation runs. The important boundaries:
 Resource ownership also explains the older #304 fix: a failed synchronous
 Handshake must return the updated Pool, not a snapshot naming a socket that
 was already closed. Active greetings now advance in the current Pool.
-The defensive poll path still sheds released connections; the inherited
-catch-up error path can still return an older snapshot
-([`caughtUp`](../infra/follow.av)), so that broader limitation is not claimed
-fixed here.
+The defensive poll path still sheds released connections. A Catch-up that
+fails on a Peer now retries on the owner's current state rather than on a
+snapshot taken before it began.
 
-[`Infra.Tending`](../infra/tending.av) carries the Pool, Address Book and
-next key as `Kept`: it answers pings, advances dials and greetings, tops up,
-accepts callers and advertises the node. The Work owner tends this company
-on each serving turn. Existing walks also retain their periodic tending
-through [`Infra.Screen`](../infra/screen.av). A pool that empties can reseed
-from DNS rather than ending the run.
+The clock process advances dials, tops up, accepts callers, answers the Board
+and advertises the node once a second, whatever the walk is doing. A pool that
+empties can reseed from DNS rather than ending the run.
 
 The Handshake and wire formats are pure:
 [`Domain.Handshake`](../domain/handshake.av),

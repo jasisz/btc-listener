@@ -74,10 +74,8 @@ because anything that opens the Index is several times faster that way. See
 ## Requirements
 
 - **Aver at the commit in [`.aver-version`](.aver-version)**. It includes the
-  Work/Wait compiler and host fixes, plus the native optimizations
-  [#1384](https://github.com/jasisz/aver/pull/1384) and
-  [#1388](https://github.com/jasisz/aver/pull/1388), and the Lean proof fix
-  [#1387](https://github.com/jasisz/aver/pull/1387).
+  process layer `follow` runs on ([#1421](https://github.com/jasisz/aver/pull/1421)):
+  answer modules, `Run.Wake`, processes seated by key and `Run.all()`.
   Follow the [migration build instructions](docs/work-wait-migration.md#compiler-requirement-and-build).
   See [Moving the Aver pin](#moving-the-aver-pin).
 - `clang` and `libclang-dev`, for the RocksDB bindings.
@@ -890,10 +888,10 @@ hours, so this is not a corner case.
 
 So bytes are taken as they come and kept per Peer, and Messages are cut off the
 front of what has accumulated. `Wait.poll` watches peer reads and pending
-writes. During block work, the owner combines these with the job, dial,
-listener and dashboard connections. Handshakes and partial writes retain
-their state between bounded turns; callers can still ask one Peer for Headers
-and wait while the pool reads and answers pings from the others. See the
+writes. Under `follow` every Peer has a process of its own, and the one wait
+is the generated loop's: a Peer parks on its socket, the Catch-up parks on a
+job or on the owner moving, and the clock parks on a second. Handshakes and
+partial writes retain their state between turns. See the
 [Work/Wait migration and acceptance results](docs/work-wait-migration.md).
 
 A header announcing more than **4,000,000 bytes** — Bitcoin Core's
@@ -1320,10 +1318,11 @@ chmod +x main && ./main help
 
 ### The wasm-gc conformance harness
 
-The Work/Wait owner also runs through the Node host. `Wait.poll` combines
-socket readiness with jobs executed in isolated Node workers; JSPI suspends the
-main wasm call while the Node event loop handles sockets. The harness tests
-fragmented pings, deferred announcements, result delivery and cancellation.
+The Work probe also runs through the Node host: a Peer process and a decode
+request on one generated loop. `Wait.poll` combines socket readiness with jobs
+executed in isolated Node workers; JSPI suspends the main wasm call while the
+Node event loop handles sockets. The harness tests fragmented pings, an
+announcement heard while the job runs, result delivery and cancellation.
 Its in-memory KV and temporary Disk still make it a conformance harness.
 
 The same release carries `main.wasm`: the whole listener compiled to

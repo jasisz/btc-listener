@@ -287,10 +287,11 @@ write, and the caller drops the Peer.
 sockets and per-Peer buffers. `Tcp.readNow` takes available bytes;
 `domain/inbox.av` extracts whole Messages. `Tcp.writeNow` consumes a bounded
 prefix of the FIFO outbox, preserving the remainder for a later turn.
-`Wait.poll` watches read/write interests; the Work owner also watches the job,
-listener, dial and retained dashboard connections. `awaitFrom` remains the
-straight-line conversation facade. Every phase is a pool — `headers`, `bodies`
-and `listen` are pools of one. The pool idle deadline is 150s; an answer has
+Under `follow` the waiting is Aver's generated loop (`main.av`): one process
+per seated Peer, one walking the Catch-up, one for the clock, one draining the
+outboxes, all answered by `app/owner.av` over one `Infra.Follow.Following`.
+The standalone commands keep `Wait.poll` and `awaitFrom`, the straight-line
+conversation facade: `headers`, `bodies` and `listen` are pools of one. The pool idle deadline is 150s; an answer has
 60s. A pending Handshake has one non-renewing 10s deadline and handles at most
 four frames per turn. Admission and active dials no longer wait inline for
 `verack`; the startup `joined` facade still waits, with stop checks.
