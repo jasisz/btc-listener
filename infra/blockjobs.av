@@ -8,70 +8,25 @@ module BlockJobs
         "needs nothing but the bytes. So it is a capability: begin hands"
         "over a Task, take collects the answer, and in between the loop"
         "goes on reading its Peers and answering their pings."
-        "The types here are the contract's own. An operation may only name"
-        "types the capability declares, so a Task cannot carry a"
-        "Domain.Transaction and a Reply cannot carry a"
-        "Domain.Connect.Change; Domain.BlockWorkJob is the translation and"
-        "says what that costs."
+        "A job kind may name the types of the modules it depends on"
+        "(jasisz/aver#1401), so a Task carries Domain.Transaction's"
+        "Transactions and Domain.UtxoStore's coins as they are, and a Reply"
+        "carries Domain.Connect's Change. Their layouts are part of this"
+        "contract's hash: a field added to any of them is a new contract."
         "Nothing but data crosses this. No socket, no Store, no write: the"
         "answer goes back to the owner and the owner applies it, which is"
         "the single writer ADR 0008 asks for."
-    depends [Bytes, Work]
-    exposes [Task, Reply, Chain, Input, Output, Transaction, Coin, Fee, Change, begin, take]
-
-type Chain
-    Mainnet
-    Testnet
-    Signet
-    Regtest
+    depends [Bytes, Work, Domain.Connect, Domain.Network, Domain.Transaction, Domain.UtxoStore]
+    exposes [Task, Reply, begin, take]
 
 type Task
     Decode(Bytes)
-    Connect(Chain, Int, List<Transaction>, List<Coin>)
+    Connect(Domain.Network.Network, Int, List<Domain.Transaction.Transaction>, Map<Bytes, Domain.UtxoStore.Unspent>)
 
 type Reply
-    Decoded(List<Transaction>)
-    Connected(Change)
+    Decoded(List<Domain.Transaction.Transaction>)
+    Connected(Domain.Connect.Change)
     Refused(String)
-
-record Input
-    previousTxid: String
-    previousIndex: Int
-    script: String
-    sequence: Int
-    witness: List<String>
-
-record Output
-    value: Int
-    script: String
-
-record Transaction
-    version: Int
-    inputs: List<Input>
-    outputs: List<Output>
-    lockTime: Int
-    txid: String
-    size: Int
-    isSegWit: Bool
-
-record Coin
-    txid: Bytes
-    index: Int
-    value: Int
-    script: Bytes
-    height: Int
-    coinbase: Bool
-
-record Fee
-    txid: String
-    fee: Int
-    coinbase: Bool
-
-record Change
-    added: List<Coin>
-    removed: List<Coin>
-    fees: Int
-    confirmed: List<Fee>
 
 operation begin(task: Task) -> Result<Work.Job, String>
     ? "Start one pure calculation without waiting for its answer."

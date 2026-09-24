@@ -670,7 +670,7 @@ fn decodedTransactions(reply: Infra.BlockJobs.Reply) -> Result<List<Domain.Trans
       "quietly read as a Block with nothing in it."
     match reply
         Infra.BlockJobs.Reply.Refused(why) -> Result.Err(why)
-        Infra.BlockJobs.Reply.Decoded(txs) -> Result.Ok(Domain.BlockWorkJob.transactions(txs, []))
+        Infra.BlockJobs.Reply.Decoded(txs) -> Result.Ok(txs)
         Infra.BlockJobs.Reply.Connected(_) -> Result.Err("a connection result cannot settle a decode job")
 
 verify decodedTransactions
