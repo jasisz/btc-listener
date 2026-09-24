@@ -1,0 +1,253 @@
+module ProbeOwner
+    intent =
+        "What the Work probe's processes ask, answered over the production"
+        "Infra.Peers pool and Infra.BlockJobs job kind: the one Peer greeted,"
+        "its Messages read as they arrive and a ping answered, and the payload"
+        "decoded by a job this module begins and parks the request on."
+        "Nothing here waits. The job and the Peer are two things the"
+        "generated loop's one wait covers at once, which is the whole claim"
+        "the probe exists to check."
+    depends [Bytes, Tcp, Wait, Work, Domain.Address, Domain.Network, Infra.BlockJobs, Infra.Peers, Infra.Wire, Tools.Decoding]
+    exposes [State, fresh, peers, started, heard, handled, ticked, drained, decoded, finished]
+    effects [
+        Args.get,
+        Console.error, Console.print,
+        Disk.readBytes,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    answers [Infra.Wire, Tools.Decoding]
+
+record State
+    pool: Option<Pool>
+    job: Option<Work.Job>
+    over: Bool
+
+fn fresh() -> State
+    ? "No Peer yet, no job begun."
+    State(pool = Option.None, job = Option.None, over = false)
+
+verify fresh
+    fresh().over => false
+
+fn peers(state: State) -> List<Int>
+    ? "The one Peer, while the probe holds it."
+    match state.over
+        true -> []
+        false -> match state.pool
+            Option.None -> []
+            Option.Some(pool) -> Infra.Peers.seatedKeys(pool)
+
+verify peers
+    peers(fresh()) => []
+
+fn started(state: State) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
+    ? "The Peer named first on the command line, dialled and greeted."
+    ! [
+        Args.get,
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match state.pool
+        Option.Some(_) -> (state, Result.Ok(Infra.Wire.Started.Running))
+        Option.None -> joinedWith(state, joinedFrom(Args.get()))
+
+fn joinedFrom(args: List<String>) -> Result<Pool, String>
+    ? "HOST:PORT, then the payload path."
+    ! [
+        Console.error, Console.print,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match args
+        [] -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
+        [peer, ..rest] -> Infra.Peers.joinedOnly(Infra.Peers.opened(Network.Regtest), 0, Domain.Address.fromPeerText(peer, 18444)?)
+
+fn joinedWith(state: State, joined: Result<Pool, String>) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
+    ? "Greeted, or the reason the probe cannot run."
+    match joined
+        Result.Err(why) -> (State.update(state, over = true), Result.Ok(Infra.Wire.Started.Failed(why)))
+        Result.Ok(pool) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Started.Running))
+
+verify joinedWith
+    joinedWith(fresh(), Result.Err("no")) => (State.update(fresh(), over = true), Result.Ok(Infra.Wire.Started.Failed("no")))
+
+fn heard(state: State, key: Int) -> Tuple<State, Result<Infra.Wire.Heard, Run.Wake>>
+    ? "The Peer's next whole Message, or a park on its socket."
+    ! [Console.error, Console.print, Random.int, Tcp.close, Tcp.readNow, Tcp.writeNow, Time.unixMs]
+    match state.over
+        true -> (state, Result.Ok(Infra.Wire.Heard.Gone))
+        false -> match state.pool
+            Option.None -> (state, Result.Err(Run.Wake.Settled(Option.None)))
+            Option.Some(pool) -> hearing(state, Infra.Peers.hearing(pool, key, Time.unixMs()))
+
+fn hearing(state: State, outcome: Result<Hearing, String>) -> Tuple<State, Result<Infra.Wire.Heard, Run.Wake>>
+    ? "A Message, the Peer gone, or a park on its socket."
+    match outcome
+        Result.Err(why) -> (State.update(state, over = true), Result.Ok(Infra.Wire.Heard.Gone))
+        Result.Ok(one) -> match one
+            Hearing.Said(pool, frame) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Heard.Message(frame.command, frame.body)))
+            Hearing.Went(pool) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Heard.Gone))
+            Hearing.Quiet(pool, connection, dueMs) -> (State.update(state, pool = Option.Some(pool)), Result.Err(Run.Wake.Until([Wait.Item.Socket(Tcp.Socket.Connected(connection))], Option.None)))
+
+verify hearing
+    hearing(fresh(), Result.Err("no")) => (State.update(fresh(), over = true), Result.Ok(Infra.Wire.Heard.Gone))
+
+fn handled(state: State, key: Int, command: String, body: List<Int>) -> Tuple<State, Result<Bool, Run.Wake>>
+    ? "A ping answered to the Peer that sent it; anything else said, with"
+      "the key it came from and its length, so a harness can see it was"
+      "heard while the job ran."
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow]
+    match state.pool
+        Option.None -> (state, Result.Ok(false))
+        Option.Some(pool) -> match command == "ping"
+            true -> ponged(state, pongTo(pool, key, body))
+            false -> (state, Result.Ok(saidHeard(key, command, List.len(body))))
+
+fn pongTo(pool: Pool, key: Int, body: List<Int>) -> Result<Pool, String>
+    ? "The nonce echoed back to the Peer that sent it."
+    ! [Console.error, Tcp.close, Tcp.writeNow]
+    Infra.Peers.tell(pool, key, "pong", Bytes.fromList(body)?)
+
+fn ponged(state: State, told: Result<Pool, String>) -> Tuple<State, Result<Bool, Run.Wake>>
+    ? "The pong on its wire, or the Peer lost."
+    match told
+        Result.Err(why) -> (State.update(state, over = true), Result.Ok(false))
+        Result.Ok(pool) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(true))
+
+verify ponged
+    ponged(fresh(), Result.Err("no")) => (State.update(fresh(), over = true), Result.Ok(false))
+
+fn saidHeard(key: Int, command: String, length: Int) -> Bool
+    ? "The line a harness looks for, and the Peer still being read."
+    ! [Console.print]
+    _said = Console.print("heard {key}:{command}:{length}")
+    true
+
+fn ticked(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "The probe keeps no clock."
+    (state, Result.Ok(Infra.Wire.Turned.Over))
+
+verify ticked
+    ticked(fresh()) => (fresh(), Result.Ok(Infra.Wire.Turned.Over))
+
+fn drained(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "The probe writes one pong at a time and needs no writer."
+    (state, Result.Ok(Infra.Wire.Turned.Over))
+
+verify drained
+    drained(fresh()) => (fresh(), Result.Ok(Infra.Wire.Turned.Over))
+
+fn decoded(state: State) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "The job begun on the first ask, once the Peer is greeted, and the"
+      "request parked on it; later asks take it. The park also has a tenth"
+      "of a second on it, because a stop asked for is noticed by asking,"
+      "and a stop cancels the job rather than waiting it out."
+    ! [
+        Args.get,
+        Console.print,
+        Disk.readBytes,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take,
+        Process.stopRequested,
+        Work.cancel,
+    ]
+    match state.pool
+        Option.None -> (state, Result.Err(Run.Wake.Settled(Option.None)))
+        Option.Some(_) -> match state.job
+            Option.None -> begun(state, payloadFrom(Args.get()))
+            Option.Some(job) -> askedAbout(state, job, Process.stopRequested())
+
+fn payloadFrom(args: List<String>) -> Result<Bytes, String>
+    ? "The payload file, read whole."
+    ! [Disk.readBytes]
+    match args
+        [] -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
+        [peer, ..rest] -> match rest
+            [] -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
+            [path, ..more] -> Disk.readBytes(path)
+
+fn begun(state: State, payload: Result<Bytes, String>) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "Say the work is starting, begin it, and park on it."
+    ! [Console.print, Infra.BlockJobs.begin]
+    match payload
+        Result.Err(why) -> (state, Result.Ok(Tools.Decoding.Decoded.Refused(why)))
+        Result.Ok(bytes) -> parkedOn(state, startedWork(Infra.BlockJobs.Task.Decode(bytes)))
+
+fn startedWork(task: Infra.BlockJobs.Task) -> Result<Work.Job, String>
+    ? "The line a harness starts its Peer's script on, then the job."
+    ! [Console.print, Infra.BlockJobs.begin]
+    _said = Console.print("work starting")
+    Infra.BlockJobs.begin(task)
+
+fn parkedOn(state: State, job: Result<Work.Job, String>) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "A job begun is parked on; one refused answers the refusal."
+    match job
+        Result.Err(why) -> (state, Result.Ok(Tools.Decoding.Decoded.Refused(why)))
+        Result.Ok(one) -> (State.update(state, job = Option.Some(one)), Result.Err(Run.Wake.Until([Wait.Item.Job(one)], Option.Some(100))))
+
+verify parkedOn
+    parkedOn(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Tools.Decoding.Decoded.Refused("no")))
+
+fn askedAbout(state: State, job: Work.Job, stopping: Bool) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "A stop cancels; otherwise the job is taken."
+    ! [Infra.BlockJobs.take, Work.cancel]
+    match stopping
+        true -> cancelledJob(state, job)
+        false -> takenFrom(state, job, Infra.BlockJobs.take(job))
+
+fn cancelledJob(state: State, job: Work.Job) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "The job let go, and the answer says so."
+    ! [Work.cancel]
+    _cancelled = Work.cancel(job)
+    (State.update(state, job = Option.None), Result.Ok(Tools.Decoding.Decoded.Cancelled))
+
+fn takenFrom(state: State, job: Work.Job, taken: Result<Option<Infra.BlockJobs.Reply>, String>) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "Still running parks again on the same job; a finished one answers."
+    takenWith(state, taken, Run.Wake.Until([Wait.Item.Job(job)], Option.Some(100)))
+
+fn takenWith(state: State, taken: Result<Option<Infra.BlockJobs.Reply>, String>, again: Run.Wake) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
+    ? "The answer, or the wake that brings this request back."
+    match taken
+        Result.Err(why) -> (State.update(state, job = Option.None), Result.Ok(Tools.Decoding.Decoded.Refused(why)))
+        Result.Ok(found) -> match found
+            Option.None -> (state, Result.Err(again))
+            Option.Some(reply) -> (State.update(state, job = Option.None), Result.Ok(decodedOf(reply)))
+
+verify takenWith
+    takenWith(fresh(), Result.Ok(Option.None), Run.Wake.Until([], Option.Some(100))) => (fresh(), Result.Err(Run.Wake.Until([], Option.Some(100))))
+    takenWith(fresh(), Result.Err("gone"), Run.Wake.Until([], Option.Some(100))) => (fresh(), Result.Ok(Tools.Decoding.Decoded.Refused("gone")))
+    takenWith(fresh(), Result.Ok(Option.Some(Infra.BlockJobs.Reply.Decoded([]))), Run.Wake.Until([], Option.Some(100))) => (fresh(), Result.Ok(Tools.Decoding.Decoded.Transactions(0)))
+
+fn decodedOf(reply: Infra.BlockJobs.Reply) -> Tools.Decoding.Decoded
+    ? "How many Transactions the payload decoded to."
+    match reply
+        Infra.BlockJobs.Reply.Decoded(transactions) -> Tools.Decoding.Decoded.Transactions(List.len(transactions))
+        Infra.BlockJobs.Reply.Refused(why) -> Tools.Decoding.Decoded.Refused(why)
+        Infra.BlockJobs.Reply.Connected(_) -> Tools.Decoding.Decoded.Refused("a decode came back as a connection")
+
+verify decodedOf
+    decodedOf(Infra.BlockJobs.Reply.Decoded([])) => Tools.Decoding.Decoded.Transactions(0)
+    decodedOf(Infra.BlockJobs.Reply.Refused("bad")) => Tools.Decoding.Decoded.Refused("bad")
+
+fn finished(state: State) -> Tuple<State, Result<Unit, Run.Wake>>
+    ? "The Peer's socket given back, and every process let go."
+    ! [Tcp.close, Tcp.closeDial, Tcp.closeListener]
+    match state.pool
+        Option.None -> (State.update(state, over = true), Result.Ok(Unit))
+        Option.Some(pool) -> closedAll(state, Infra.Peers.closeAll(pool))
+
+fn closedAll(state: State, closed: Result<Pool, String>) -> Tuple<State, Result<Unit, Run.Wake>>
+    ? "Over, whatever the close said."
+    (State.update(state, over = true), Result.Ok(Unit))

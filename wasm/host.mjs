@@ -1091,8 +1091,8 @@ async function main() {
     if (workProbe) {
       if (!succeeded) throw new Error(averToJs(helper(resultType, "err_value")(result)));
       const expected = cancel ? "cancelled" : `decoded ${requestedArgs[2]}`;
-      if (!output.includes(expected) || !output.some(line => line.startsWith("deferred 0:inv:37")) || !fake.state.pong || (cancel && fake.state.delivered)) {
-        throw new Error(`Work probe did not preserve delivery/cancellation, pong and deferred inv: ${output.join("; ")}`);
+      if (!output.includes(expected) || !output.some(line => line.startsWith("heard 0:inv:37")) || !fake.state.pong || (cancel && fake.state.delivered)) {
+        throw new Error(`Work probe did not preserve delivery/cancellation, pong and the inv heard mid-job: ${output.join("; ")}`);
       }
       console.log(`btc-listener wasm Work ${cancel ? "cancellation" : "delivery"}: ok`);
       return;

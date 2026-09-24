@@ -32,7 +32,7 @@ module Blocks
         "its first append and again in synced, before its Locations go down"
         "-- and a difference is a named refusal. One stat per batch, not per"
         "Block; Domain.Segment.agreesWithDisk is the rule."
-    exposes [BlockStore, Appended, open, append, read, prune, synced, unsyncedIn, currentSegment, segmentPath, segmentNumberOf]
+    exposes [BlockStore, Appended, open, append, read, prune, synced, unsyncedIn, currentSegment, segmentPath, segmentNumberOf, fixture]
     depends [Bytes, Domain.Index, Domain.Segment]
     effects [
         Disk.appendBytes, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.sync, Disk.writeBytes,
@@ -430,3 +430,11 @@ fn pruneExisting(dir: String, segment: Int, belowSegment: Int, deleted: Int) -> 
     ! [Disk.delete, Disk.exists]
     _gone = Disk.delete(segmentPath(dir, segment))?
     pruneFrom(dir, segment + 1, belowSegment, deleted + 1)
+
+fn fixture(dir: String) -> BlockStore
+    ? "A Segment store that has never been written, for the cases elsewhere"
+      "that need one and must not open a directory to get it."
+    BlockStore(dir = dir, state = Domain.Segment.initial(), unsynced = [])
+
+verify fixture
+    fixture("d").dir => "d"

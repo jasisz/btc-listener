@@ -1,133 +1,91 @@
 module WorkingProbe
     intent =
-        "Exercise the Work owner against a real Peer, so that what happens"
-        "to the Peers while a Block is being decoded has automated"
-        "coverage."
-        "Infra.Working is the one thing the regtest suite cannot make a"
-        "node do on purpose. Waiting on a job is a thing the node only does"
-        "mid-walk, and the interesting cases -- a ping arriving a byte at a"
-        "time, a Block announced while the job runs -- are cases about the"
-        "serving turns rather than about the answer."
-        "So the payload is read off disk and handed to the same"
-        "Infra.Working.run the walk uses. What the job decodes does not"
-        "matter and the file is not required to be a Block anybody would"
+        "Exercise a job and a Peer on one generated loop against a real Peer,"
+        "so that what happens to the Peer while a Block is being decoded has"
+        "automated coverage."
+        "The interesting cases -- a ping arriving a byte at a time, a Block"
+        "announced while the job runs -- are cases about the turns rather"
+        "than about the answer, and the regtest suite cannot make a node"
+        "stand in them on purpose."
+        "So the payload is read off disk and decoded by the same"
+        "Infra.BlockJobs job kind the walk uses, begun by an answer module"
+        "and parked on, while the Peer's own process reads it through"
+        "Infra.Peers.hearing, which is the node's. What the job decodes does"
+        "not matter and the file is not required to be a Block anybody would"
         "accept: this is about the scheduler, and the consensus rules have"
         "their own corpus."
-    depends [Bytes, Domain.Address, Domain.AddressBook, Domain.BlockWorkJob, Domain.Network, Domain.Snapshot, Infra.BlockJobs, Infra.Metrics, Infra.Peers, Infra.Screen, Infra.Tending, Infra.Working]
+    depends [Domain.BlockWorkJob, Infra.Wire, Tools.Decoding, Tools.ProbeOwner]
     effects [
         Args.get,
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytes,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Infra.Wire.handled, Infra.Wire.heard, Infra.Wire.started,
+        Tools.Decoding.decoded, Tools.Decoding.finished,
+        yield,
     ]
+
+process peer seated by Tools.ProbeOwner.peers
 
 fn main() -> Result<Unit, String>
     ? "One Peer to keep and one payload to decode, both named on the"
-      "command line."
-    ! [
-        Args.get,
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytes,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+      "command line; the processes below do the rest."
+    ! [Args.get]
     match Args.get()
-        [peer, ..rest] -> match rest
-            [path, .._] -> exercise(peer, path)
+        [address, ..rest] -> match rest
+            [path, .._] -> Run.all()
             [] -> Result.Err("missing payload path")
         _ -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
 
-fn exercise(peer: String, path: String) -> Result<Unit, String>
-    ? "The whole probe: seat one Peer, then wait on one job the way the"
-      "walk waits on one."
-      "Every piece of this is the production one. The pool is"
-      "Infra.Peers, the Eye is Infra.Screen's with company kept on it, and"
-      "the waiting is Infra.Working.run. Nothing is stubbed, so a change"
-      "to the serving turn, to the poll budget or to the cancellation"
-      "rules is a change this probe sees. The payload is the only"
-      "artificial thing here."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytes,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    payload = Disk.readBytes(path)?
-    address = Domain.Address.fromPeerText(peer, 18444)?
-    pool = Infra.Peers.joinedOnly(Infra.Peers.opened(Network.Regtest), 0, address)?
-    eye = Infra.Screen.keeping(Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), Infra.Tending.kept(pool, Domain.AddressBook.noBook(), 1, Infra.Metrics.none()))
-    Console.print("work starting")
-    finished(Infra.Working.run(eye, Infra.BlockJobs.Task.Decode(payload))?)
+fn stop(view: Run.View) -> Bool
+    ? "A stop does not end the run by itself: the decode request notices"
+      "it, cancels the job and says so, and the run ends once the probe has"
+      "let its Peer go."
+    false
 
-fn finished(done: Infra.Working.Completed) -> Result<Unit, String>
-    ? "What the job came back with, then what the owner was left holding."
-      "The pool is read off the Eye that came out of the waiting, never"
-      "the one that went in, so a harness reading these lines is reading"
-      "the state the waiting actually produced. An owner that came back"
-      "with no company at all is a fault worth failing on: it would mean"
-      "the serving turns had lost the Peers they were serving."
-    ! [Console.print, Tcp.close, Tcp.closeDial, Tcp.closeListener]
-    Console.print(answerText(done.answer))
-    match done.eye.company
-        Option.None -> Result.Err("owner lost its pool")
-        Option.Some(held) -> finishPool(held.pool)
+verify stop
+    stop(Run.View(pending = {}, ready = [], askable = [], dropped = 0, stopping = true)) => false
 
-fn finishPool(pool: Infra.Peers.Pool) -> Result<Unit, String>
-    ? "What the Peers said while the job ran, printed, and the sockets"
-      "given back."
-      "The deferred line is the point of the probe as much as the answer"
-      "is: a Message that arrived mid-job and is not in it is a Message"
-      "the node would have lost."
-    ! [Console.print, Tcp.close, Tcp.closeDial, Tcp.closeListener]
-    Console.print("deferred {deferredText(Infra.Peers.spareOf(pool))}")
-    _closed = Infra.Peers.closeAll(pool)?
-    Result.Ok(Unit)
+fn starter() -> Unit
+    ? "The Peer greeted, once."
+    ! [Console.print, Infra.Wire.started, yield]
+    match Infra.Wire.started()
+        Infra.Wire.Started.Running -> Unit
+        Infra.Wire.Started.Failed(why) -> Console.print("could not start: {why}")
 
-fn answerText(answer: Option<Infra.BlockJobs.Reply>) -> String
+fn peer(key: Int) -> Unit
+    ? "The Peer's Messages, one at a time, for as long as it is held."
+    ! [Infra.Wire.handled, Infra.Wire.heard, yield]
+    heard = Infra.Wire.heard(key)
+    going = handledIf(key, heard)
+    match going
+        true -> peer(key)
+        false -> Unit
+
+fn handledIf(key: Int, heard: Infra.Wire.Heard) -> Bool
+    ? "A Message acted on, or the Peer gone."
+    ! [Infra.Wire.handled, yield]
+    match heard
+        Infra.Wire.Heard.Message(command, body) -> Infra.Wire.handled(key, command, body)
+        Infra.Wire.Heard.Gone -> false
+
+fn decoder() -> Unit
+    ? "The payload decoded, the answer said, then the Peer let go."
+    ! [Console.print, Tools.Decoding.decoded, Tools.Decoding.finished, yield]
+    said = answerText(Tools.Decoding.decoded())
+    _printed = Console.print(said)
+    Tools.Decoding.finished()
+
+fn answerText(answer: Tools.Decoding.Decoded) -> String
     ? "The one line a harness asserts the job's outcome on."
       "Cancelled, refused and decoded are spelled differently on purpose."
       "A stop and a Block that would not decode both end the walk, and a"
       "probe that printed the same word for them could not tell a"
       "cancellation that worked from one that was never reached."
     match answer
-        Option.None -> "cancelled"
-        Option.Some(one) -> match one
-            Infra.BlockJobs.Reply.Decoded(txs) -> "decoded {List.len(txs)}"
-            Infra.BlockJobs.Reply.Refused(why) -> "refused {why}"
-            Infra.BlockJobs.Reply.Connected(_) -> "unexpected connect result"
+        Tools.Decoding.Decoded.Cancelled -> "cancelled"
+        Tools.Decoding.Decoded.Transactions(count) -> "decoded {count}"
+        Tools.Decoding.Decoded.Refused(why) -> "refused {why}"
 
 verify answerText
-    answerText(Option.None) => "cancelled"
-    answerText(Option.Some(Infra.BlockJobs.Reply.Decoded([]))) => "decoded 0"
-    answerText(Option.Some(Infra.BlockJobs.Reply.Refused("bad"))) => "refused bad"
-
-fn deferredText(spare: List<Infra.Peers.Spare>) -> String
-    ? "Every kept Message as key, command and length, oldest first."
-      "The key and the order are what a harness checks: they say the"
-      "Messages were kept against the Peer that sent them and were not"
-      "reordered on the way."
-    match spare
-        [] -> ""
-        [one, ..rest] -> "{one.key}:{one.frame.command}:{List.len(one.frame.body)} {deferredText(rest)}"
-
-verify deferredText
-    deferredText([]) => ""
+    answerText(Tools.Decoding.Decoded.Cancelled) => "cancelled"
+    answerText(Tools.Decoding.Decoded.Transactions(0)) => "decoded 0"
+    answerText(Tools.Decoding.Decoded.Refused("bad")) => "refused bad"

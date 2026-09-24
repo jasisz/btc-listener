@@ -22,8 +22,8 @@ module Follow
         "and then serves the chain to (Stage 8, on the listen and accept that"
         "jasisz/aver#1131 asked for and #1138 delivered). Nothing in this"
         "loop is waiting on the runtime any more."
-    exposes [follow]
-    depends [Bytes, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Block, Domain.Body, Domain.Catchup, Domain.CompactBlock, Domain.Hash, Domain.HeaderTree, Domain.Inbox, Domain.Index, Domain.IndexKeys, Domain.Inventory, Domain.Mempool, Domain.Network, Domain.Screen, Domain.Screenlines, Domain.Snapshot, Domain.Target, Domain.Transaction, Domain.TreeStore, Domain.UtxoStore, Domain.Version, Infra.Blocks, Infra.Board, Infra.Bodies, Infra.ChainState, Infra.Debug, Infra.Download, Infra.Headers, Infra.Mempool, Infra.Metrics, Infra.Peers, Infra.Resolver, Infra.Rewind, Infra.Screen, Infra.Store, Domain.Watchdog, Infra.Tending]
+    exposes [Following, Catching, Walked, Asking, Batched, Aligning, Flown, Chunking, Stepping, Chunked, Onward, opened, seatedKeys, handled, turned, tickFor, tickSockets, drained, servingOwed, closed, dueFor, catchingOn, askedHeaders, wantsHeaders, flying, stopAsked, headersHeard, alignedFor, flownOnce, blockLanded, chunkBegun, chunkStepped, chunkEnded, caughtMoved, faultedOn, chainStopped, withPool, sampleFollowing, sampleCatching]
+    depends [Bytes, Tcp, Work, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Block, Domain.Body, Domain.Catchup, Domain.CompactBlock, Domain.Hash, Domain.HeaderTree, Domain.Inbox, Domain.Index, Domain.IndexKeys, Domain.Inventory, Domain.Mempool, Domain.Network, Domain.Screen, Domain.Screenlines, Domain.Snapshot, Domain.Target, Domain.Transaction, Domain.TreeStore, Domain.UtxoStore, Domain.Version, Infra.Blocks, Infra.Board, Infra.Bodies, Infra.ChainState, Infra.Debug, Infra.Download, Infra.Headers, Infra.Mempool, Infra.Metrics, Infra.Peers, Infra.Resolver, Infra.Rewind, Infra.Pace, Infra.Screen, Infra.Store, Domain.Watchdog]
     effects [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
@@ -163,29 +163,29 @@ fn withGate(state: Following, gate: Gate) -> Following
     ? "The state, with the Catch-up gate moved on."
     Following(pool = state.pool, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = gate)
 
-fn follow(network: Network, addresses: List<PeerAddress>, store: Store, blocks: BlockStore, screened: Bool, answering: Option<Int>, logging: Option<String>, noting: Option<String>, boarding: Option<Int>, inbound: Int) -> Result<Unit, String>
-    ? "Connect to every Peer given, catch up, then stay caught up."
-      "With screened true the listen loop runs as the Screen (#130): raw"
-      "mode is entered once the catch-up is done, and however the session"
-      "ends -- q, a polite stop, an error -- the terminal is restored here,"
+fn opened(network: Network, addresses: List<PeerAddress>, store: Store, blocks: BlockStore, screened: Bool, answering: Option<Int>, logging: Option<String>, noting: Option<String>, boarding: Option<Int>, inbound: Int) -> Result<Following, String>
+    ? "Connect to every Peer given, and open what the node answers on."
+      "With screened true the node runs as the Screen (#130): the terminal"
+      "is taken here, before the first Catch-up, and given back in closed,"
       "on the one path every ending shares."
       "With answering carrying a port the node also binds it and answers"
       "callers (#30). It is a word rather than a default because an inbound"
       "port is an attack surface, and a node should not open one because"
-      "somebody upgraded it. Listening starts after the outbound Peers have"
-      "been greeted and asked their questions, so a bound port never delays"
-      "catching up."
+      "somebody upgraded it. The port is bound before the outbound Peers"
+      "are greeted, and nothing reads a caller until the processes run."
+      "Nothing waits after this returns: the processes in main.av read the"
+      "Peers, walk the Catch-up and keep the clock, and each step they ask"
+      "for is one of the functions below."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
+        Disk.appendText,
+        Infra.Kv.get,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor,
+        Time.unixMs,
         Wait.poll,
-        Work.cancel,
     ]
     opening = logOf(logging, noting, Time.unixMs())
     noteOpened = Infra.Metrics.noting(opening, "start", "{Domain.Network.nameOf(network)} pid-run, {List.len(addresses)} seed address(es), screen {screened}")?
@@ -197,11 +197,781 @@ fn follow(network: Network, addresses: List<PeerAddress>, store: Store, blocks: 
     asked = askingAll(pool, Infra.Peers.peerKeys(pool))?
     bound = tellingCompact(asked, Infra.Peers.peerKeys(asked))?
     started = firstSeated(Following(pool = bound, store = store, blocks = blocks, book = book, nextKey = List.len(addresses), watch = freshWatch(Time.unixMs()), mempool = Domain.Mempool.empty(mempoolCap()), rebuilding = Option.None, log = metricsLog, board = board, gate = Domain.Catchup.noGate()), Domain.AddressBook.sizeOf(book))?
-    outcome = session(started, screened)
-    _ended = Result.withDefault(notedEnd(metricsLog, outcome), metricsLog)
-    _given = restoredIf(screened)
-    _board = boardClosed(board)
-    closeAfter(bound, outcome)
+    screenedInto(started, screened)
+
+fn seatedKeys(state: Following) -> List<Int>
+    ? "Every Peer with a socket of its own, greeted or greeting: one process each."
+    Infra.Peers.seatedKeys(state.pool)
+
+verify seatedKeys
+    seatedKeys(sampleFollowing()) => []
+
+fn sampleFollowing() -> Following
+    ? "A node with nobody connected and nothing stored, for the cases here."
+    Following(pool = Infra.Peers.opened(Network.Regtest), store = Infra.Store.fixture([]), blocks = Infra.Blocks.fixture("d"), book = Domain.AddressBook.noBook(), nextKey = 0, watch = freshWatch(0), mempool = Domain.Mempool.empty(1000), rebuilding = Option.None, log = Infra.Metrics.none(), board = Option.None, gate = Domain.Catchup.noGate())
+
+verify sampleFollowing
+    sampleFollowing().nextKey => 0
+
+fn sampleCatching() -> Catching
+    ? "A Catch-up just begun against Peer 1, for the cases here."
+    Catching(key = 1, why = "", stood = "", startedMs = 0, bookAt = 0, eye = eyeOf(sampleFollowing()), have = 0, pace = Infra.Pace.pacedFrom(0), askedMs = 0, reply = Option.None, aligned = Option.None, tipHeight = 0, flight = Option.None, sliceUntil = 0, standing = 0, blocks = leastChunk(), chunkTo = 0, chunkStartedMs = 0, setting = Option.None, final = false, built = Option.None)
+
+verify sampleCatching
+    sampleCatching().key => 1
+
+fn handled(state: Following, key: Int, command: String, body: List<Int>, nowMs: Int) -> Result<Following, String>
+    ? "One Message from one Peer acted on, after marking the Peer as heard."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Tcp.close, Tcp.writeNow,
+        Time.unixMs,
+    ]
+    handle(withWatch(heardFrom(state, key, nowMs), Watching.update(heardAt(state.watch, key, nowMs), handling = "{command} from peer {key}")), key, command, body)
+
+fn turned(state: Following, nowMs: Int) -> Result<Following, String>
+    ? "One look at the loop's own clock, which used to be the part of every"
+      "turn that was not a Message: ask the dial what it has become and say"
+      "so, tell the Network where we are, weigh every Peer's Handshake"
+      "Height against the tree's best (#328), start a dial if the pool is"
+      "short, answer the Board, then minding (#201) -- the frame, the keys,"
+      "the record, a caller admitted -- and the two rules silence decides."
+      "A rebuild nobody has answered for too long falls back to the whole"
+      "Block. An Err is the run ending, as it always was."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.Kv.get,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    held = List.len(Infra.Peers.peerKeys(state.pool))
+    told = firstAfterNone(dialsAsked(state)?, held)
+    knownAt = saidAdvertised(told, Infra.Peers.told(told.pool, nowMs)?)
+    weighed = withGate(knownAt, Domain.Catchup.weighingAll(knownAt.gate, Infra.Peers.claimsOf(knownAt.pool), heightOf(Infra.Headers.tipOf(knownAt.store)?)))
+    topped = boarded(toppedUp(weighed)?, nowMs)?
+    looked = minding(topped, nowMs)?
+    _somebody = anyoneLeft(List.len(Infra.Peers.peerKeys(looked.pool)), leftToDial(looked.book, Infra.Peers.dialingNow(looked.pool)))?
+    _alive = stillHeard(nowMs - looked.watch.anyHeardMs, List.len(Infra.Peers.peerKeys(looked.pool)), leftToDial(looked.book, Infra.Peers.dialingNow(looked.pool)))?
+    rebuiltOr(looked, staleRebuild(looked.rebuilding, nowMs))
+
+fn rebuiltOr(state: Following, stale: Option<Rebuilding>) -> Result<Following, String>
+    ? "A rebuild nobody has answered for too long, fetched the ordinary way."
+      "Without this a Peer that goes quiet after announcing a Block leaves"
+      "the node waiting for a Message that is never coming."
+    ! [Console.print, Disk.appendText, Time.unixMs]
+    match stale
+        Option.None -> Result.Ok(state)
+        Option.Some(pending) -> fellBack(state, pending.key, "peer {pending.key} did not send the compact Block for {pending.blockId} within {Int.div(rebuildDeadlineMs(), 1000)} seconds")
+
+fn tickFor(state: Following) -> Int
+    ? "How long until the loop's clock is looked at again."
+      "A Reader with a request still arriving or an answer still going out"
+      "is work this node owes and nothing will wake it for. A tenth of a"
+      "second while any Reader is held, and the ordinary tick otherwise, so"
+      "a browser does not wait a second between operations and a node"
+      "nobody is looking at still sleeps."
+    match state.board
+        Option.None -> tickMs()
+        Option.Some(one) -> match List.len(one.readers) > 0
+            true -> 100
+            false -> tickMs()
+
+verify tickFor
+    tickFor(sampleFollowing()) => tickMs()
+
+fn tickSockets(state: Following) -> List<Tcp.Socket>
+    ? "What the clock is also woken by: the dial in flight settling, and a"
+      "Board Reader with something to read or room to write."
+    List.concat(dialSockets(Infra.Peers.dialOf(state.pool)), boardSockets(state.board))
+
+verify tickSockets
+    tickSockets(sampleFollowing()) => []
+
+fn dialSockets(dial: Option<Tcp.Dial>) -> List<Tcp.Socket>
+    ? "The dial as a socket to wait on, if there is one."
+    match dial
+        Option.None -> []
+        Option.Some(one) -> [Tcp.Socket.Dialing(one)]
+
+verify dialSockets
+    dialSockets(Option.None) => []
+
+fn boardSockets(board: Option<Board>) -> List<Tcp.Socket>
+    ? "The Board's Readers as sockets to wait on."
+    match board
+        Option.None -> []
+        Option.Some(one) -> Map.values(Infra.Board.watchSockets(one))
+
+verify boardSockets
+    boardSockets(Option.None) => []
+
+fn drained(state: Following) -> Result<Following, String>
+    ? "Every outbox offered to its socket once, then the Blocks Peers asked"
+      "for read onto the wires that have room (#361)."
+    ! [Console.error, Console.print, Disk.readBytesAt, Infra.Kv.get, Tcp.close, Tcp.writeNow]
+    servingBlocks(withPool(state, Infra.Peers.flushedAll(state.pool)?))
+
+fn servingOwed(state: Following) -> Bool
+    ? "Whether some Peer is still owed a Block its wire has room for."
+    match Infra.Peers.nextBlockWanted(state.pool)
+        Option.None -> false
+        Option.Some(_) -> true
+
+verify servingOwed
+    servingOwed(sampleFollowing()) => false
+
+fn closed(state: Following, catching: Option<Catching>, outcome: Result<Unit, String>) -> Following
+    ? "The node shut down, whichever way it ended: a stop asked for, the"
+      "Screen's q answered with y, or a reason the run cannot go on."
+      "What the walk holds is put down first -- the Locations of Blocks"
+      "already in a Segment, the Set's window at a whole Block -- then the"
+      "terminal comes back when the Screen has it, so the last words land on"
+      "a terminal that can show them, then the Board and every socket are"
+      "closed and the metrics log says how the run ended."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    walked = walkPutDown(state, catching)
+    _screen = restoredFor(walked.watch.view)
+    _said = stopLine(walked.watch, outcome)
+    _slow = stopSaid(walked.log, walked.watch.stopAskedMs, Time.unixMs())
+    _board = boardClosed(walked.board)
+    _ended = notedEnd(walked.log, outcome)
+    _closed = Infra.Peers.closeAll(walked.pool)
+    walked
+
+fn stopLine(watch: Watching, outcome: Result<Unit, String>) -> Unit
+    ? "A stop says what it is doing; a failure is said by the command."
+    ! [Console.print]
+    match outcome
+        Result.Ok(_) -> saidLineIfPlain(watch, "stop requested; closing the pool and releasing the claim")
+        Result.Err(_) -> Unit
+
+fn walkPutDown(state: Following, catching: Option<Catching>) -> Following
+    ? "A Catch-up cut short keeps what it had done. A failure here is not"
+      "worth more than the ending already under way, so it is passed over."
+    ! [
+        Console.print,
+        Disk.size, Disk.sync,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match catching
+        Option.None -> state
+        Option.Some(one) -> chunkPutDown(flightPutDown(state, one), one.setting)
+
+fn flightPutDown(state: Following, catching: Catching) -> Following
+    ? "The Locations the download was holding back, written."
+    ! [Disk.size, Disk.sync, Infra.Kv.putAll]
+    match catching.flight
+        Option.None -> state
+        Option.Some(flight) -> match Infra.Bodies.settled(Infra.Bodies.reachedAt(flight, catching.tipHeight))
+            Result.Err(_) -> state
+            Result.Ok(one) -> Following.update(state, store = one.store, blocks = one.blocks)
+
+fn chunkPutDown(state: Following, setting: Option<Setting>) -> Following
+    ? "The Set's window written at the last whole Block."
+    ! [
+        Console.print,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match setting
+        Option.None -> state
+        Option.Some(one) -> match Infra.ChainState.endedChunk(one)
+            Result.Err(_) -> state
+            Result.Ok(built) -> Following.update(state, store = built.store)
+
+record Catching
+    key: Int
+    why: String
+    stood: String
+    startedMs: Int
+    bookAt: Int
+    eye: Eye
+    have: Int
+    pace: Pace
+    askedMs: Int
+    reply: Option<List<Int>>
+    aligned: Option<Realigned>
+    tipHeight: Int
+    flight: Option<Flight>
+    sliceUntil: Int
+    standing: Int
+    blocks: Int
+    chunkTo: Int
+    chunkStartedMs: Int
+    setting: Option<Setting>
+    final: Bool
+    built: Option<Built>
+
+record Walked
+    state: Following
+    catching: Catching
+
+fn dueFor(state: Following, first: Bool, nowMs: Int) -> Option<Due>
+    ? "The Peer the next Catch-up asks, if one is due. The first one of the"
+      "run is due at once and asks the lowest key, before anything has"
+      "announced anything, because a node that waited would sit idle until"
+      "the next Block was mined and then fail to connect it onto a Set that"
+      "was hours behind. After that it is whatever claim the gate holds"
+      "whose Peer may be obeyed now."
+    match first
+        true -> firstDue(Infra.Peers.peerKeys(state.pool))
+        false -> Domain.Catchup.dueNow(state.gate, nowMs)
+
+verify dueFor
+    dueFor(sampleFollowing(), true, 0) => Option.None
+    dueFor(sampleFollowing(), false, 0) => Option.None
+
+fn firstDue(keys: List<Int>) -> Option<Due>
+    ? "The lowest key held, with nothing to say about why."
+    match keys
+        [] -> Option.None
+        [head, ..tail] -> Option.Some(Due(key = head, why = ""))
+
+verify firstDue
+    firstDue([]) => Option.None
+    firstDue([3, 4]) => Option.Some(Due(key = 3, why = ""))
+
+fn catchingOn(state: Following, due: Due, nowMs: Int) -> Result<Walked, String>
+    ? "A Catch-up begun against one Peer: where the node stands read first,"
+      "so the gate can charge a Peer whose claim moved nothing (#300), and"
+      "genesis put in the Index, because no Peer will send it."
+    ! [Console.print, Infra.Kv.get, Infra.Kv.putAll, Time.now]
+    stood = standingNow(state.store)?
+    have = haveOf(state.store)?
+    planted = Infra.Download.withGenesis(state.pool.network, state.store)?
+    _said = saidWhy(state.watch, due.why)
+    taken = withGate(Following.update(state, store = planted), Domain.Catchup.taken(state.gate, due.key))
+    Result.Ok(Walked(state = taken, catching = Catching(key = due.key, why = due.why, stood = stood, startedMs = nowMs, bookAt = Domain.AddressBook.sizeOf(state.book), eye = eyeOf(taken), have = have, pace = Infra.Pace.pacedFrom(nowMs), askedMs = 0, reply = Option.None, aligned = Option.None, tipHeight = 0, flight = Option.None, sliceUntil = 0, standing = 0, blocks = leastChunk(), chunkTo = 0, chunkStartedMs = 0, setting = Option.None, final = false, built = Option.None)))
+
+fn saidWhy(watch: Watching, why: String) -> Unit
+    ? "The claim that started a Catch-up, when it had one."
+    ! [Console.print, Time.now]
+    match why == ""
+        true -> Unit
+        false -> saidLineIfPlain(watch, "{Time.now()}  {why}")
+
+fn restartedOn(catching: Catching, key: Int, have: Int) -> Catching
+    ? "The same Catch-up, asked of another Peer from the start."
+    Catching.update(catching, key = key, have = have, askedMs = 0, reply = Option.None, aligned = Option.None, tipHeight = 0, flight = Option.None, sliceUntil = 0, standing = 0, blocks = leastChunk(), chunkTo = 0, chunkStartedMs = 0, setting = Option.None, final = false, built = Option.None)
+
+fn eyeNow(state: Following, catching: Catching) -> Eye
+    ? "The walk's Eye with what the loop has moved since the last step: the"
+      "View a key changed, the Snapshot the clock refreshed, the log."
+      "What the walk alone keeps -- the chunk it is timing, when it last"
+      "drew -- stays as the walk left it."
+    Eye.update(catching.eye, view = state.watch.view, snapshot = state.watch.snapshot, log = state.log, candidates = Domain.AddressBook.sizeOf(state.book))
+
+fn foldedEye(state: Following, catching: Catching, eye: Eye) -> Walked
+    ? "What a step's Eye saw, back into the loop and kept for the next step."
+    Walked(state = withLog(withWatch(state, watchSeen(state.watch, eye)), eye.log), catching = Catching.update(catching, eye = eye))
+
+type Asking
+    Sent(Walked)
+    Paused(Walked)
+
+fn askedHeaders(state: Following, catching: Catching, nowMs: Int) -> Result<Asking, String>
+    ? "One getheaders to the Peer being caught up on, or the phase paused"
+      "when a stop was asked for."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.Kv.get,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    asked = Infra.Download.batchAsked(state.pool, catching.key, state.store, catching.have, catching.pace, eyeNow(state, catching))?
+    seen = foldedEye(withPool(state, asked.pool), Catching.update(catching, pace = asked.pace), asked.eye)
+    match asked.sent
+        true -> Result.Ok(Asking.Sent(Walked(state = seen.state, catching = Catching.update(seen.catching, askedMs = nowMs, reply = Option.None))))
+        false -> Result.Ok(Asking.Paused(seen))
+
+fn wantsHeaders(catching: Option<Catching>, key: Int, command: String) -> Bool
+    ? "Whether this Message is the answer the walk is waiting for: the first"
+      "headers from the Peer it asked, after it asked."
+    match catching
+        Option.None -> false
+        Option.Some(one) -> Bool.and(Bool.and(command == "headers", one.key == key), Bool.and(one.askedMs > 0, unanswered(one.reply)))
+
+verify wantsHeaders
+    wantsHeaders(Option.None, 1, "headers") => false
+
+fn unanswered(reply: Option<List<Int>>) -> Bool
+    ? "No answer kept yet."
+    match reply
+        Option.None -> true
+        Option.Some(_) -> false
+
+verify unanswered
+    unanswered(Option.None) => true
+    unanswered(Option.Some([])) => false
+
+fn flying(catching: Catching) -> Bool
+    ? "Whether the download is in the air, so a Block is its business."
+    match catching.flight
+        Option.None -> false
+        Option.Some(_) -> true
+
+verify flying
+    flying(sampleCatching()) => false
+
+fn stopAsked(state: Following, nowMs: Int) -> Following
+    ? "When the stop was first seen, unless a walk saw it earlier (#268)."
+    withWatch(state, stopAskedNow(state.watch, nowMs))
+
+record Batched
+    walked: Walked
+    more: Bool
+
+fn headersHeard(state: Following, catching: Catching, body: List<Int>) -> Result<Batched, String>
+    ? "The answer placed in the tree; more while it moved the tip."
+    ! [Console.print, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll, Time.unixMs]
+    answered = Infra.Download.batchHeard(state.pool.network, state.store, catching.have, body, eyeNow(state, catching))?
+    seen = foldedEye(Following.update(state, store = answered.store), Catching.update(catching, have = answered.have, askedMs = 0, reply = Option.None), answered.eye)
+    Result.Ok(Batched(walked = seen, more = answered.more))
+
+type Aligning
+    Ready(Walked)
+    Refused(Walked, String)
+
+fn alignedFor(state: Following, catching: Catching) -> Result<Aligning, String>
+    ? "The Set taken back to the fork, or the reason it cannot be (#290)."
+      "Everything Infra.Rewind can refuse is a fact about this node's own"
+      "chain directory -- a fork below the Undo window, a body that was"
+      "pruned, a Segment that will not read, Undo Data that will not decode"
+      "-- and none of it is the fault of the Peer that was asked for"
+      "Headers. It ends the run with every Peer still connected."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.Kv.applyAll, Infra.Kv.get,
+        Time.unixMs,
+    ]
+    _heard = saidBookIfPlain(state.watch, catching.bookAt, Domain.AddressBook.sizeOf(state.book))
+    realigning(state, catching, Infra.Rewind.realigned(state.store, state.blocks, eyeNow(state, catching)))
+
+fn realigning(state: Following, catching: Catching, aligned: Result<Realigned, String>) -> Result<Aligning, String>
+    ? "Refused, or the bodies above the fork planned."
+    ! [Disk.appendText, Infra.Kv.get, Time.unixMs]
+    match aligned
+        Result.Err(why) -> Result.Ok(Aligning.Refused(Walked(state = state, catching = catching), why))
+        Result.Ok(found) -> fetchPlanned(Following.update(state, store = found.store), catching, found)
+
+fn fetchPlanned(state: Following, catching: Catching, found: Realigned) -> Result<Aligning, String>
+    ? "The bodies above the fork to the tip, as a Flight not yet flown."
+    ! [Disk.appendText, Infra.Kv.get, Time.unixMs]
+    tipHeight = tipHeightOf(state.store)?
+    startLog = marking(state, state.pool, "bodies", found.from, tipHeight, true)?
+    marked = withLog(state, startLog)
+    Result.Ok(Aligning.Ready(Walked(state = marked, catching = Catching.update(catching, aligned = Option.Some(found), tipHeight = tipHeight, standing = found.from, flight = Option.Some(Infra.Bodies.takingOff(Infra.Bodies.opening(marked.pool, marked.store, marked.blocks, found.from, eyeNow(marked, catching), marked.book, marked.nextKey), found.from, tipHeight)), sliceUntil = 0, blocks = leastChunk()))))
+
+type Flown
+    Going(Walked, Int)
+    Sliced(Walked)
+    Landed(Walked)
+    Faulted(Walked, String)
+
+fn flownOnce(state: Following, catching: Catching, nowMs: Int) -> Result<Flown, String>
+    ? "One turn of the download, without its wait: what is owed by Peers"
+      "that went is wanted again, every Peer is given what it has room for,"
+      "a stall is charged, and the minute line said. Going says how long"
+      "until it is worth looking again when no Block arrives; a Block that"
+      "arrives is filed by the Peer's own process in the meantime."
+      "A slice ends after sliceMs so the Set gets a chunk (#185), and a stop"
+      "asked for ends the download with what is on disk."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    match catching.flight
+        Option.None -> flightLanded(state, catching, Option.None)
+        Option.Some(flight) -> flownFrom(state, catching, borrowedFlight(state, catching, flight), sliceFrom(catching.sliceUntil, nowMs), nowMs)
+
+fn borrowedFlight(state: Following, catching: Catching, flight: Flight) -> Flight
+    ? "The Flight holding the pool, the Stores and the Book as they are now."
+    Infra.Bodies.borrowing(flight, state.pool, state.store, state.blocks, eyeNow(state, catching), state.book, state.nextKey)
+
+fn sliceFrom(sliceUntil: Int, nowMs: Int) -> Int
+    ? "When this slice of the download ends: a new slice starts its clock now."
+    match sliceUntil <= 0
+        true -> nowMs + sliceMs()
+        false -> sliceUntil
+
+verify sliceFrom
+    sliceFrom(0, 100) => 100 + sliceMs()
+    sliceFrom(500, 100) => 500
+
+fn flownFrom(state: Following, catching: Catching, flight: Flight, sliceUntil: Int, nowMs: Int) -> Result<Flown, String>
+    ? "Ended, sliced, or another turn."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    match Bool.or(Bool.or(Process.stopRequested(), flight.progress.eye.stopped), Bool.not(Infra.Bodies.stillFlying(flight)))
+        true -> flightLanded(state, catching, Option.Some(flight))
+        false -> match Infra.Bodies.spent(sliceUntil, nowMs)
+            true -> Result.Ok(Flown.Sliced(withFlight(state, catching, flight, 0)))
+            false -> turnedFlight(state, catching, Infra.Bodies.reported(Infra.Bodies.stallChecked(Infra.Bodies.turned(flight)?)?, catching.tipHeight)?, sliceUntil, nowMs)
+
+fn turnedFlight(state: Following, catching: Catching, flight: Flight, sliceUntil: Int, nowMs: Int) -> Result<Flown, String>
+    ? "A grounded download lands; otherwise wait at most a tick."
+    ! [Disk.appendText, Disk.size, Disk.sync, Infra.Kv.putAll, Time.unixMs]
+    match Infra.Bodies.stillFlying(flight)
+        false -> flightLanded(state, catching, Option.Some(flight))
+        true -> Result.Ok(Flown.Going(withFlight(state, catching, flight, sliceUntil), Int.max(0, Int.min(Infra.Bodies.tickMs(), sliceUntil - nowMs))))
+
+fn withFlight(state: Following, catching: Catching, flight: Flight, sliceUntil: Int) -> Walked
+    ? "The download's shared parts back into the loop, and the Flight kept."
+    seen = foldedEye(fromFetched(state, flight.progress), catching, flight.progress.eye)
+    Walked(state = seen.state, catching = Catching.update(seen.catching, flight = Option.Some(flight), sliceUntil = sliceUntil))
+
+verify withFlight
+    withFlight(sampleFollowing(), sampleCatching(), Infra.Bodies.sampleFlight(), 9).catching.sliceUntil => 9
+
+fn fromFetched(state: Following, progress: Fetched) -> Following
+    ? "What a download step changed that the loop shares."
+    Following.update(state, pool = progress.pool, store = progress.store, blocks = progress.blocks, book = progress.book, nextKey = progress.nextKey)
+
+fn flightLanded(state: Following, catching: Catching, flight: Option<Flight>) -> Result<Flown, String>
+    ? "The download over: the Locations it held back written, and the"
+      "bodies record in the metrics log (#180). A fault on this node's own"
+      "side (#327) is the chain's, not a Peer's."
+    ! [Disk.appendText, Disk.size, Disk.sync, Infra.Kv.putAll, Time.unixMs]
+    match flight
+        Option.None -> Result.Ok(Flown.Landed(Walked(state = state, catching = catching)))
+        Option.Some(one) -> landedWith(state, catching, Infra.Bodies.settled(Infra.Bodies.reachedAt(one, catching.tipHeight))?)
+
+fn landedWith(state: Following, catching: Catching, fetched: Fetched) -> Result<Flown, String>
+    ? "Landed, or faulted."
+    ! [Disk.appendText, Time.unixMs]
+    bodiesLog = markingCounts(withLog(state, fetched.eye.log), fetched.pool, "bodies", fetched.reached, catching.tipHeight, fetched.count, fetched.bytes, true)?
+    seen = foldedEye(withLog(fromFetched(state, fetched), bodiesLog), Catching.update(catching, flight = Option.None, sliceUntil = 0), Eye.update(fetched.eye, log = bodiesLog))
+    match Infra.Bodies.faultOf(fetched)
+        Option.Some(why) -> Result.Ok(Flown.Faulted(seen, why))
+        Option.None -> Result.Ok(Flown.Landed(seen))
+
+fn blockLanded(state: Following, catching: Catching, body: List<Int>) -> Walked
+    ? "A Block a Peer sent while the download is flying, filed against what"
+      "is owed. A failure to file it grounds the download, which then ends"
+      "with the reason as a fault on this node's own side (#327)."
+    ! [
+        Console.error,
+        Disk.appendBytes, Disk.size, Disk.sync,
+        Infra.Kv.putAll,
+        Tcp.close,
+        Time.unixMs,
+    ]
+    match catching.flight
+        Option.None -> Walked(state = state, catching = catching)
+        Option.Some(flight) -> filedFlight(state, catching, borrowedFlight(state, catching, flight), body)
+
+fn filedFlight(state: Following, catching: Catching, flight: Flight, body: List<Int>) -> Walked
+    ? "Filed, or grounded."
+    ! [
+        Console.error,
+        Disk.appendBytes, Disk.size, Disk.sync,
+        Infra.Kv.putAll,
+        Tcp.close,
+        Time.unixMs,
+    ]
+    match Infra.Bodies.blockLanded(flight, body)
+        Result.Ok(filedOne) -> withFlight(state, catching, filedOne, catching.sliceUntil)
+        Result.Err(why) -> withFlight(state, catching, Infra.Bodies.grounded(flight, why), catching.sliceUntil)
+
+type Chunking
+    Begun(Walked, Int)
+    Refused(Walked, String)
+
+fn chunkBegun(state: Following, catching: Catching, final: Bool, nowMs: Int) -> Result<Chunking, String>
+    ? "A chunk of the Set begun. Between two slices of the download it is"
+      "sized by what the last chunk cost (#185); the final Set to the tip is"
+      "a run of chunks whose counts carry from one to the next (#238), and"
+      "it starts where the Set stands."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.Kv.applyAll, Infra.Kv.get,
+        Time.unixMs,
+    ]
+    base = finalFrom(catching, final, standingOf(state.store)?)
+    chunkTo = Int.min(base.tipHeight, base.standing + base.blocks)
+    noted = notedChunk(state, final, base.standing, chunkTo, base.tipHeight)?
+    eye = Infra.Screen.chunking(chunkEye(noted, base, final), base.standing + 1, chunkTo, nowMs, Domain.Watchdog.chunkBudgetOf(chunkMs()))
+    begunWith(noted, Catching.update(base, chunkTo = chunkTo, chunkStartedMs = nowMs, eye = eye), Infra.ChainState.begunChunk(noted.pool.network, noted.store, noted.blocks, chunkTo, base.tipHeight, eye, carriedIf(base, final)))
+
+fn finalFrom(catching: Catching, final: Bool, standing: Int) -> Catching
+    ? "The final Set starts its own counts, from where the Set stands."
+    match Bool.and(final, Bool.not(catching.final))
+        true -> Catching.update(catching, final = true, built = Option.None, standing = standing, blocks = leastChunk())
+        false -> catching
+
+verify finalFrom
+    finalFrom(sampleCatching(), true, 7).standing => 7
+    finalFrom(sampleCatching(), false, 7).standing => 0
+
+fn notedChunk(state: Following, final: Bool, standing: Int, chunkTo: Int, tipHeight: Int) -> Result<Following, String>
+    ? "The final Set's chunks are noted in the debug log, as they were."
+    ! [Disk.appendText, Time.unixMs]
+    match final
+        false -> Result.Ok(state)
+        true -> Result.Ok(withLog(state, Infra.Metrics.noting(state.log, "set", "connecting {standing + 1}..{chunkTo} of {tipHeight}, {List.len(Infra.Peers.peerKeys(state.pool))} Peer(s)")?))
+
+fn chunkEye(state: Following, catching: Catching, final: Bool) -> Eye
+    ? "The Eye a chunk carries; the final Set's with the company brought up to date."
+    match final
+        false -> eyeNow(state, catching)
+        true -> Infra.Screen.counting(Infra.Screen.eyeing(eyeNow(state, catching), companied(state.watch.snapshot, state.pool, state.book, state.mempool)), Domain.AddressBook.sizeOf(state.book))
+
+verify chunkEye
+    chunkEye(sampleFollowing(), sampleCatching(), false).candidates => 0
+    chunkEye(sampleFollowing(), sampleCatching(), true).candidates => 0
+
+fn carriedIf(catching: Catching, final: Bool) -> Option<Built>
+    ? "What the final Set has counted so far; a chunk between slices counts afresh."
+    match final
+        true -> catching.built
+        false -> Option.None
+
+verify carriedIf
+    Option.withDefault(carriedIf(Catching.update(sampleCatching(), built = Option.Some(Infra.ChainState.sampleBuilt(4))), true), Infra.ChainState.sampleBuilt(0)).reached => 4
+    Option.withDefault(carriedIf(Catching.update(sampleCatching(), built = Option.Some(Infra.ChainState.sampleBuilt(4))), false), Infra.ChainState.sampleBuilt(0)).reached => 0
+
+fn begunWith(state: Following, catching: Catching, begun: Result<Setting, String>) -> Result<Chunking, String>
+    ? "The chunk under way from the Height after the fork, or refused."
+    ! [Disk.appendText, Time.unixMs]
+    match begun
+        Result.Err(why) -> refusedChunk(state, catching, why)
+        Result.Ok(setting) -> Result.Ok(Chunking.Begun(withSetting(state, catching, setting), setting.height))
+
+fn withSetting(state: Following, catching: Catching, setting: Setting) -> Walked
+    ? "The chunk's Store and Eye back into the loop, and the chunk kept."
+    seen = foldedEye(Following.update(state, store = setting.walk.counted.store), catching, Infra.ChainState.eyeOfSetting(setting))
+    Walked(state = seen.state, catching = Catching.update(seen.catching, setting = Option.Some(setting)))
+
+verify withSetting
+    withSetting(sampleFollowing(), sampleCatching(), Infra.ChainState.sampleSetting(5)).catching.chunkTo => 0
+
+fn refusedChunk(state: Following, catching: Catching, why: String) -> Result<Chunking, String>
+    ? "Say which Height would not connect, and stop the Set there."
+    ! [Disk.appendText, Time.unixMs]
+    noted = Infra.Metrics.noting(state.log, "chain", "the Set stopped: {why}")?
+    Result.Ok(Chunking.Refused(Walked(state = withLog(state, noted), catching = Catching.update(catching, setting = Option.None)), why))
+
+type Stepping
+    Parked(Walked, Work.Job)
+    Next(Walked)
+    Ended(Walked)
+    Refused(Walked, String)
+
+fn chunkStepped(state: Following, catching: Catching) -> Result<Stepping, String>
+    ? "One step of the chunk: a job asked about or begun, or a Block into"
+      "the window. Parked names the job the walk waits on."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+        Work.cancel,
+    ]
+    match catching.setting
+        Option.None -> Result.Ok(Stepping.Ended(Walked(state = state, catching = catching)))
+        Option.Some(setting) -> steppedWith(state, catching, Infra.ChainState.stepOnce(Infra.ChainState.withSettingEye(setting, eyeNow(state, catching))))
+
+fn steppedWith(state: Following, catching: Catching, stepped: Result<Stepped, String>) -> Result<Stepping, String>
+    ? "What the step came to, with its Store and Eye back into the loop. A"
+      "Block that will not connect is the chain's refusal, not an error."
+    match stepped
+        Result.Err(why) -> Result.Ok(Stepping.Refused(Walked(state = state, catching = Catching.update(catching, setting = Option.None)), why))
+        Result.Ok(one) -> match one
+            Stepped.Waiting(setting, job) -> Result.Ok(Stepping.Parked(withSetting(state, catching, setting), job))
+            Stepped.Connected(setting) -> Result.Ok(Stepping.Next(withSetting(state, catching, setting)))
+            Stepped.Finished(setting) -> Result.Ok(Stepping.Ended(withSetting(state, catching, setting)))
+
+verify steppedWith
+    steppedWith(sampleFollowing(), sampleCatching(), Result.Err("no")) => Result.Ok(Stepping.Refused(Walked(state = sampleFollowing(), catching = sampleCatching()), "no"))
+
+type Chunked
+    Built(Walked, Bool)
+    Refused(Walked, String)
+
+fn chunkEnded(state: Following, catching: Catching, nowMs: Int) -> Result<Chunked, String>
+    ? "The chunk's window written. Built is true when the Set to the tip is"
+      "done: the chunk reached the tip, or stopped short of where it was"
+      "going, which is a body not held or a stop asked for."
+    ! [
+        Console.print,
+        Disk.appendText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match catching.setting
+        Option.None -> Result.Ok(Chunked.Built(Walked(state = state, catching = catching), true))
+        Option.Some(setting) -> endedWith(state, catching, Infra.ChainState.endedChunk(setting), nowMs)
+
+fn endedWith(state: Following, catching: Catching, ended: Result<Built, String>, nowMs: Int) -> Result<Chunked, String>
+    ? "Counted, sized and folded back, or refused."
+    ! [Disk.appendText, Time.unixMs]
+    match ended
+        Result.Err(why) -> chunkRefused(state, catching, why)
+        Result.Ok(built) -> builtWith(state, catching, Infra.ChainState.Built.update(built, eye = Infra.Screen.chunkDone(built.eye, built.reached, nowMs)?), nowMs)
+
+fn chunkRefused(state: Following, catching: Catching, why: String) -> Result<Chunked, String>
+    ? "The window would not write: the chain's refusal, noted."
+    ! [Disk.appendText, Time.unixMs]
+    noted = Infra.Metrics.noting(state.log, "chain", "the Set stopped: {why}")?
+    Result.Ok(Chunked.Refused(Walked(state = withLog(state, noted), catching = Catching.update(catching, setting = Option.None)), why))
+
+fn builtWith(state: Following, catching: Catching, built: Built, nowMs: Int) -> Result<Chunked, String>
+    ? "The next chunk sized from what this one cost."
+    seen = foldedEye(Following.update(state, store = built.store), catching, built.eye)
+    next = Catching.update(seen.catching, setting = Option.None, standing = built.reached, blocks = sized(built.reached - catching.standing, nowMs - catching.chunkStartedMs)?, built = builtIf(catching.final, built))
+    Result.Ok(Chunked.Built(Walked(state = seen.state, catching = next), Bool.and(catching.final, Bool.or(built.reached < catching.chunkTo, catching.chunkTo >= catching.tipHeight))))
+
+verify builtWith
+    Result.withDefault(builtWith(sampleFollowing(), Catching.update(sampleCatching(), chunkTo = 5, tipHeight = 5), Infra.ChainState.sampleBuilt(5), 0), Chunked.Refused(Walked(state = sampleFollowing(), catching = sampleCatching()), "")) => Chunked.Built(Walked(state = sampleFollowing(), catching = Catching.update(sampleCatching(), chunkTo = 5, tipHeight = 5, standing = 5)), false)
+
+fn builtIf(final: Bool, built: Built) -> Option<Built>
+    ? "The final Set keeps its counts for the line that ends it."
+    match final
+        true -> Option.Some(built)
+        false -> Option.None
+
+verify builtIf
+    Option.withDefault(builtIf(true, Infra.ChainState.sampleBuilt(3)), Infra.ChainState.sampleBuilt(0)).reached => 3
+    Option.withDefault(builtIf(false, Infra.ChainState.sampleBuilt(3)), Infra.ChainState.sampleBuilt(0)).reached => 0
+
+fn caughtMoved(state: Following, catching: Catching, nowMs: Int) -> Result<Following, String>
+    ? "The Catch-up done: the Set's line said, the Mempool swept of what"
+      "the Blocks confirmed and given back what a Reorganisation"
+      "disconnected, the Snapshot at the tip, and the gate told whether the"
+      "Peer that asked for it moved anything (#300). A run that ran long"
+      "holds one more ask of that Peer (#328), because every Announcement"
+      "made meanwhile was acted on in its own turn and may have been"
+      "outrun by what this Catch-up has since placed."
+    ! [Console.print, Disk.appendText, Infra.Kv.get, Time.unixMs]
+    built = Option.withDefault(catching.built, emptyBuilt(state, catching))
+    after = finishedWith(state, built, catching.tipHeight, unconfirmedOf(catching.aligned))?
+    back = backAtTip(after)?
+    stands = standingNow(back.store)?
+    Result.Ok(withGate(back, Domain.Catchup.recovering(chargedIf(back.gate, catching, List.contains(Infra.Peers.peerKeys(back.pool), catching.key), stands), Domain.Catchup.whoToAsk(catching.key, Infra.Peers.peerKeys(back.pool)), catching.startedMs, nowMs)))
+
+fn chargedIf(gate: Gate, catching: Catching, seated: Bool, stands: String) -> Gate
+    ? "Only a Catch-up a Peer asked for is charged to it."
+    match catching.why == ""
+        true -> gate
+        false -> Domain.Catchup.charging(gate, catching.key, seated, catching.stood == stands, catching.startedMs)
+
+verify chargedIf
+    chargedIf(Domain.Catchup.noGate(), sampleCatching(), true, "a") => Domain.Catchup.noGate()
+
+fn emptyBuilt(state: Following, catching: Catching) -> Built
+    ? "A Set that connected nothing, standing where it stood."
+    Built(store = state.store, blocks = 0, added = 0, removed = 0, fees = 0, reached = catching.standing, dropped = 0, views = [], eye = catching.eye, unconfirmed = [])
+
+fn unconfirmedOf(aligned: Option<Realigned>) -> List<Carried>
+    ? "The Transactions a Reorganisation took out of disconnected Blocks."
+    match aligned
+        Option.None -> []
+        Option.Some(one) -> one.unconfirmed
+
+verify unconfirmedOf
+    unconfirmedOf(Option.None) => []
+
+fn finishedWith(state: Following, built: Built, tipHeight: Int, unconfirmed: List<Carried>) -> Result<Following, String>
+    ? "The Set forward to the tip, and one line saying where that leaves it."
+    ! [Console.print, Disk.appendText, Infra.Kv.get, Time.unixMs]
+    backOut = List.concat(unconfirmed, built.unconfirmed)
+    seen = watchSeen(state.watch, built.eye)
+    _each = saidLinesIfPlain(seen, blockLinesOf(built.blocks, built.views))
+    _said = saidLineIfPlain(seen, "following at Height {built.reached}: {built.blocks} connected, {built.dropped} disconnected, set +{built.added} -{built.removed}")
+    setLog = Infra.Metrics.marked(built.eye.log, "set", built.reached, tipHeight, built.blocks, 0, Infra.Peers.polledMsOf(state.pool), List.len(Infra.Peers.peerKeys(state.pool)), Domain.AddressBook.sizeOf(state.book), built.added, built.removed, true)?
+    swept = sweptOf(built.store, state.mempool, built.blocks, built.dropped)?
+    restored = restoring(state.pool.network, built.store, swept, backOut, tipHeight, 0, List.len(backOut))?
+    Result.Ok(withWatch(Following.update(state, store = built.store, watch = seen, mempool = restored, log = setLog), watchAfterBuild(seen, built.views)))
+
+type Onward
+    Next(Walked)
+    Rest(Following)
+
+fn faultedOn(state: Following, catching: Catching, why: String) -> Result<Onward, String>
+    ? "Catch up on another Peer when this one would not do it."
+      "A Peer being asked for Headers or bodies can fail in ways that are"
+      "facts about it rather than about the chain: a Message that does not"
+      "match its own checksum, one framed for another Network, a Block that"
+      "is not the Block that was asked for, or simply no answer at all before"
+      "the deadline. With several Peers, stopping would mean the first Peer"
+      "named on the command line can end the node by lying once -- which is"
+      "what the misbehaviour test found it doing. So the Peer is dropped and"
+      "the Catch-up tried again on whoever is left. Each attempt removes a"
+      "Peer, so the retrying stops."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    kept = walkPutDown(state, Option.Some(catching))
+    _said = saidErrorIfPlain(kept.watch, "dropping peer {catching.key}: {why}")
+    shrunk = Infra.Peers.dropOne(kept.pool, catching.key)?
+    dropped = withGate(withPool(kept, shrunk), Domain.Catchup.forgotten(kept.gate, catching.key))
+    noted = Infra.Metrics.noting(dropped.log, "fault", "catch-up ended: {why}; charging it to a Peer and retrying with {List.len(Infra.Peers.peerKeys(dropped.pool))} left (#183)")?
+    onwardTo(withLog(dropped, noted), catching, why, Infra.Peers.peerKeys(dropped.pool))
+
+fn onwardTo(state: Following, catching: Catching, why: String, left: List<Int>) -> Result<Onward, String>
+    ? "Another Peer to ask, or nobody left and the reason the last one gave."
+    ! [
+        Console.error,
+        Disk.appendText,
+        Infra.Kv.get,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match left
+        [] -> Result.Ok(Onward.Rest(nobodyLeft(state, why)?))
+        [head, ..tail] -> Result.Ok(Onward.Next(Walked(state = state, catching = restartedOn(catching, head, haveOf(state.store)?))))
 
 fn boardIf(boarding: Option<Int>) -> Result<Option<Board>, String>
     ? "The status Board bound, if a port was asked for (#261)."
@@ -220,12 +990,7 @@ fn boardClosed(board: Option<Board>) -> Unit
 fn boarded(state: Following, nowMs: Int) -> Result<Following, String>
     ? "Anyone waiting on the Board answered, once a turn (#261). The"
       "Board never holds the loop: Infra.Board asks and does not wait."
-    ! [
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
-        Wait.poll,
-    ]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow]
     match state.board
         Option.None -> Result.Ok(state)
         Option.Some(one) -> boardedWith(state, one, nowMs)
@@ -233,7 +998,7 @@ fn boarded(state: Following, nowMs: Int) -> Result<Following, String>
 fn boardedWith(state: Following, one: Board, nowMs: Int) -> Result<Following, String>
     ? "The state unchanged whatever the Board did: a Reader is not a Peer,"
       "and what it did or failed to do is its own business."
-    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow, Wait.poll]
+    ! [Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow]
     answered = Infra.Board.served(one, state.watch.snapshot, nowMs)
     Result.Ok(Following.update(state, board = Option.Some(answered)))
 
@@ -262,9 +1027,8 @@ fn firstSeated(state: Following, left: Int) -> Result<Following, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -279,9 +1043,8 @@ fn seatingMore(state: Following, left: Int) -> Result<Following, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -307,9 +1070,8 @@ fn seatingOne(state: Following, left: Int) -> Result<Following, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -325,9 +1087,8 @@ fn seatingNext(state: Following, left: Int, dialing: Bool) -> Result<Following, 
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -493,86 +1254,6 @@ fn saidBook(before: Int, after: Int) -> Unit
         false -> Unit
         true -> Console.print("the Address Book holds {after} Candidate(s), up {after - before}")
 
-fn drainSpare(state: Following) -> Following
-    ? "Messages that arrived while something else was being waited for."
-      "A getaddr is answered while the Header phase is waiting for headers --"
-      "the two questions are asked seconds apart, and the answers do not"
-      "arrive in the order they were asked. The pool keeps what it was not"
-      "asked for; this is where it is looked at."
-      "It used to be emptied here as well. That was fair while the spare"
-      "held only what a catch-up had walked past, but a Block announced"
-      "while a Work job was running now lands in the same list, and"
-      "throwing it away is this node not hearing about a Block. So only"
-      "the addr Messages are taken, and everything else stays in the order"
-      "it arrived for the loop to dispatch a Message at a time."
-    Following(pool = dispatchPool(state.pool), store = state.store, blocks = state.blocks, book = bookAfter(state.book, Infra.Peers.spareOf(state.pool)), nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate)
-
-fn dispatchPool(pool: Pool) -> Pool
-    ? "The pool, with the addr Messages taken out of its spare and the rest"
-      "left where they were."
-    Pool.update(pool, spare = dispatchable(Infra.Peers.spareOf(pool), []))
-
-verify dispatchPool
-    Infra.Peers.spareOf(dispatchPool(Infra.Peers.opened(Network.Regtest))) => []
-    Infra.Peers.spareOf(dispatchPool(Infra.Peers.spared(Infra.Peers.spared(Infra.Peers.opened(Network.Regtest), 1, Frame(command = "inv", body = [1])), 2, Frame(command = "addr", body = [])))) => [Spare(key = 1, frame = Frame(command = "inv", body = [1]))]
-
-fn dispatchable(spare: List<Spare>, acc: List<Spare>) -> List<Spare>
-    ? "What is left after the addresses have been taken, in the order it"
-      "arrived and still carrying the key each Message came from."
-      "The key matters as much as the order: an inv kept from Peer three"
-      "is answered by asking Peer three for the Block, and a spare list"
-      "that had lost track of who said what would ask the wrong one."
-    match spare
-        [] -> List.reverse(acc)
-        [one, ..rest] -> match one.frame.command
-            "addr" -> dispatchable(rest, acc)
-            _ -> dispatchable(rest, List.prepend(one, acc))
-
-verify dispatchable
-    dispatchable([], []) => []
-    dispatchable([sampleAddrSpare()], []) => []
-    dispatchable([Spare(key = 3, frame = Frame(command = "inv", body = [1])), sampleAddrSpare(), Spare(key = 4, frame = Frame(command = "headers", body = [2]))], []) => [Spare(key = 3, frame = Frame(command = "inv", body = [1])), Spare(key = 4, frame = Frame(command = "headers", body = [2]))]
-
-fn bookAfter(book: Map<String, Candidate>, spare: List<Spare>) -> Map<String, Candidate>
-    ? "The Address Book, grown by whatever those Messages said."
-    match spare
-        [] -> book
-        [head, ..tail] -> bookAfter(spareInto(book, head), tail)
-
-verify bookAfter
-    bookAfter(Domain.AddressBook.noBook(), []) => Domain.AddressBook.noBook()
-    Domain.AddressBook.sizeOf(bookAfter(Domain.AddressBook.noBook(), [sampleAddrSpare()])) => 1
-    Domain.AddressBook.sizeOf(bookAfter(Domain.AddressBook.noBook(), [sampleAddrSpare(), sampleAddrSpare()])) => 1
-
-fn spareInto(book: Map<String, Candidate>, one: Spare) -> Map<String, Candidate>
-    ? "The only kept Message this stage acts on is an addr."
-      "Everything else a Peer said while we were waiting is left alone"
-      "here. It used to be let go at this point, as a Transaction with no"
-      "Mempool to hold it or an inv for a Block we would hear about again;"
-      "since a Work job can be what we were waiting for, the loop"
-      "dispatches those instead and this only takes the addresses."
-    match one.frame.command
-        "addr" -> Domain.AddressBook.heardAll(book, renderedAll(Domain.Addr.addressesOf(one.frame.body), []), one.key)
-        _ -> book
-
-verify spareInto
-    Domain.AddressBook.sizeOf(spareInto(Domain.AddressBook.noBook(), sampleAddrSpare())) => 1
-    Domain.AddressBook.sizeOf(spareInto(Domain.AddressBook.noBook(), Spare(key = 0, frame = Frame(command = "tx", body = [])))) => 0
-    Domain.AddressBook.sizeOf(spareInto(Domain.AddressBook.noBook(), Spare(key = 0, frame = Frame(command = "addr", body = [])))) => 0
-
-fn sampleAddrSpare() -> Spare
-    ? "An addr Message naming one Peer, for the cases here."
-    Spare(key = 0, frame = Frame(command = "addr", body = sampleAddrBody()))
-
-fn sampleAddrBody() -> List<Int>
-    ? "One addr entry: a count, a timestamp, services, an IPv4-mapped address"
-      "and a port."
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 1, 2, 3, 4, 32, 141]
-
-verify sampleAddrBody
-    List.len(sampleAddrBody()) => 31
-    Domain.Addr.addressesOf(sampleAddrBody()) => [Domain.Address.fromOctetsOn([1, 2, 3, 4], 8333)?]
-
 fn toppedUp(state: Following) -> Result<Following, String>
     ? "Start a dial when the node is short of Peers, and do not wait for it."
       "One at a time rather than a rush of them: a Handshake is a"
@@ -615,11 +1296,9 @@ fn dialsAsked(state: Following) -> Result<Following, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
         Random.int,
-        Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.writeNow,
         Time.unixMs,
-        Wait.poll,
     ]
     drainSettled(withPool(state, Infra.Peers.advanced(state.pool)?))
 
@@ -691,7 +1370,7 @@ fn joining(pool: Pool, addresses: List<PeerAddress>, key: Int) -> Result<Pool, S
         Console.error, Console.print,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -708,7 +1387,7 @@ fn joiningOne(pool: Pool, address: PeerAddress, rest: List<PeerAddress>, key: In
         Console.error, Console.print,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -725,7 +1404,7 @@ fn acceptedOrNot(outcome: Joined, address: PeerAddress, rest: List<PeerAddress>,
         Console.error, Console.print,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -739,7 +1418,7 @@ fn refused(pool: Pool, address: PeerAddress, rest: List<PeerAddress>, key: Int, 
         Console.error, Console.print,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
@@ -752,55 +1431,12 @@ fn accepted(pool: Pool, address: PeerAddress, rest: List<PeerAddress>, key: Int)
         Console.error, Console.print,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
         Wait.poll,
     ]
     _said = Console.print("peer {key} is {Domain.Address.toString(address)}")
     joining(pool, rest, key + 1)
-
-fn closeAfter(pool: Pool, outcome: Result<Unit, String>) -> Result<Unit, String>
-    ? "Always release every socket, whatever the session did."
-    ! [Tcp.close, Tcp.closeDial, Tcp.closeListener]
-    _closed = Infra.Peers.closeAll(pool)
-    outcome
-
-fn session(state: Following, screened: Bool) -> Result<Unit, String>
-    ? "Catch up on what was missed, then listen."
-      "For the Screen the terminal is taken before the catch-up: the walks"
-      "carry an Eye, draw the Overview every ten seconds, answer keys, and"
-      "stay silent on stdout -- the plain lines belong to the plain mode"
-      "(#130)."
-      "The catch-up before the first Announcement is not optional. A node that"
-      "waited would sit idle for as long as it took the next Block to be"
-      "mined, and would then connect it onto a Set that was hours or years"
-      "behind -- which is to say it would refuse it, correctly, and stop."
-      "It is timed (#328). This is the Catch-up that runs for an hour after"
-      "a reindex, and a Block announced into it used to be thrown away with"
-      "the rest of the spare; it is kept now and dispatched on a later turn"
-      "like any other. The gate is still the backstop: if the catch-up ran"
-      "long it holds one more ask of the Peer it ran against, and the first"
-      "turn of the loop acts on it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    withScreen = screenedInto(state, screened)?
-    startedMs = Time.unixMs()
-    first = firstKey(withScreen.pool)
-    started = caughtUp(withScreen, first)?
-    recovered = withGate(started, Domain.Catchup.recovering(started.gate, Domain.Catchup.whoToAsk(first, Infra.Peers.peerKeys(started.pool)), startedMs, Time.unixMs()))
-    match recovered.watch.leaving
-        true -> stopping(recovered)
-        false -> listen(recovered)
 
 fn screenedInto(state: Following, screened: Bool) -> Result<Following, String>
     ? "Take the terminal and open the Overview, when a Screen was asked for."
@@ -855,47 +1491,6 @@ verify lowestKey
     lowestKey([]) => Result.Err("no Peers")
     lowestKey([0, 1]) => Result.Ok(0)
 
-fn caughtUp(state: Following, key: Int) -> Result<Following, String>
-    ? "Catch up on one Peer, and if that Peer will not do it, on another."
-      "A Peer being asked for Headers or bodies can fail in ways that are"
-      "facts about it rather than about the chain: a Message that does not"
-      "match its own checksum, one framed for another Network, a Block that"
-      "is not the Block that was asked for, or simply no answer at all before"
-      "the deadline. With one Peer there was nothing to do but stop, and this"
-      "program did. With several, stopping would mean the first Peer named on"
-      "the command line can end the node by lying once -- which is what the"
-      "misbehaviour test found it doing."
-      "So the Peer is dropped and the catch-up tried again on whoever is"
-      "left. Each attempt removes a Peer, so the retrying stops."
-      "A refusal that is a fact about the chain is not one of those (#183)."
-      "It arrives as Caught.ChainStopped and ends the run where it stands,"
-      "with every Peer still connected. Before, it came back as an ordinary"
-      "Err and cost a Peer, then the same catch-up on the next Peer failed at"
-      "the same Height for the same reason, until the pool was empty and the"
-      "consensus reason was reported as though a Peer had said it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match catchingUp(state, key)
-        Result.Err(why) -> withoutPeer(state, key, why)
-        Result.Ok(caught) -> settledUp(state, caught)
-
-fn settledUp(state: Following, caught: Caught) -> Result<Following, String>
-    ? "The catch-up moved on, or the chain would not let it."
-    ! [Console.error]
-    match caught
-        Caught.Moved(moved) -> Result.Ok(moved)
-        Caught.ChainStopped(why) -> chainStopped(state, why)
-
 fn chainStopped(state: Following, why: String) -> Result<Following, String>
     ? "Stop, and say it was the chain and not the company."
       "Named apart from the Peer message so a reader of the last line knows"
@@ -904,43 +1499,6 @@ fn chainStopped(state: Following, why: String) -> Result<Following, String>
     ! [Console.error]
     _said = saidErrorIfPlain(state.watch, "the chain cannot be followed past here: {why}")
     Result.Err("the chain cannot be followed past here, and no Peer is at fault: {why}")
-
-fn withoutPeer(state: Following, key: Int, why: String) -> Result<Following, String>
-    ? "Drop the Peer that would not do it, then look for another."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    _said = saidErrorIfPlain(state.watch, "dropping peer {key}: {why}")
-    shrunk = Infra.Peers.dropOne(state.pool, key)?
-    onwardWith(Following(pool = shrunk, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = Domain.Catchup.forgotten(state.gate, key)), why)
-
-fn onwardWith(state: Following, why: String) -> Result<Following, String>
-    ? "Another Peer to ask, or nobody left and the reason the last one gave."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    _note = Infra.Metrics.noting(state.log, "fault", "catch-up ended: {why}; charging it to a Peer and retrying with {List.len(Infra.Peers.peerKeys(state.pool))} left (#183)")?
-    match Infra.Peers.peerKeys(state.pool)
-        [] -> nobodyLeft(state, why)
-        [head, ..tail] -> caughtUp(state, head)
 
 fn nobodyLeft(state: Following, why: String) -> Result<Following, String>
     ? "Every Peer refused, which used to end the run whatever the Address"
@@ -1018,123 +1576,6 @@ verify someUntried
     someUntried(Option.None) => Option.None
     someUntried(Option.Some("1.2.3.4:8333")) => Option.Some(true)
 
-type Caught
-    Moved(Following)
-    ChainStopped(String)
-
-fn catchingUp(state: Following, key: Int) -> Result<Caught, String>
-    ? "The three phases in the one order they can go in, asking one Peer."
-      "Headers first, because nothing below can act on a Block it cannot"
-      "place. Then the Set is taken back off any branch the Headers have just"
-      "abandoned, because the bodies to fetch are the ones above the fork and"
-      "not the ones above where the Set happened to stand. Then the bodies,"
-      "then the Set forward over them."
-      "The Peer asked is whichever one told us the chain had moved. Every"
-      "other Peer is read and kept alive throughout, which is the whole"
-      "reason this stage exists -- the single-Peer shape left them unheard"
-      "and unanswered for as long as a catch-up took."
-      "The Address Book is drained and the pool topped up between the Header"
-      "phase and the bodies, and again at the end, as well as every turn of"
-      "the listen loop. A node syncing from nothing spends minutes on Headers"
-      "and hours on bodies; draining only at the end would mean doing all of"
-      "that on the one Peer it was started with, which is the arrangement"
-      "this stage exists to end. The answer to a getaddr has arrived by the"
-      "time the Headers have."
-      "The top-up between phases costs nothing now (#202): it asks the dial"
-      "in flight what it became and starts another, and neither waits. Those"
-      "two calls used to be five seconds each, and they are the 5011 and"
-      "5034 ms that stood between the phase boundaries in every metrics log"
-      "this project has recorded."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    have = haveOf(state.store)?
-    grown = Infra.Download.headersOn(state.pool, key, state.store, have, eyeOf(state))?
-    headersLog = marking(withLog(state, grown.eye.log), grown.pool, "headers", haveOf(grown.store)?, 0, true)?
-    drained = drainSpare(Following(pool = grown.pool, store = grown.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = watchSeen(state.watch, grown.eye), mempool = state.mempool, rebuilding = state.rebuilding, log = headersLog, board = grown.eye.board, gate = state.gate))
-    _heard = saidBookIfPlain(drained.watch, Domain.AddressBook.sizeOf(state.book), Domain.AddressBook.sizeOf(drained.book))
-    afterHeaders = toppedUp(dialsAsked(drained)?)?
-    realigning(afterHeaders, key, Infra.Rewind.realigned(afterHeaders.store, state.blocks, eyeOf(afterHeaders)))
-
-fn realigning(state: Following, key: Int, aligned: Result<Realigned, String>) -> Result<Caught, String>
-    ? "The Set taken back to the fork, or the reason it cannot be (#290)."
-      "Everything Infra.Rewind can refuse is a fact about this node's own"
-      "chain directory -- a fork below the Undo window, a body that was"
-      "pruned, a Segment that will not read, Undo Data that will not decode"
-      "-- and none of it is the fault of the Peer that was asked for"
-      "Headers. Before this its Err was charged to that Peer, then to the"
-      "next, until the pool was empty. It is ChainStopped now: the run ends"
-      "with the reason and every Peer still connected."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match aligned
-        Result.Err(why) -> Result.Ok(Caught.ChainStopped(why))
-        Result.Ok(found) -> fetching(state, key, found)
-
-fn fetching(state: Following, key: Int, aligned: Realigned) -> Result<Caught, String>
-    ? "The bodies above the fork from the Peer asked, then the Set forward over them."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    tipHeight = tipHeightOf(state.store)?
-    startLog = marking(state, state.pool, "bodies", aligned.from, tipHeight, true)?
-    fetched = alternating(withLog(state, startLog), key, aligned, tipHeight)?
-    bodiesLog = markingCounts(withLog(state, fetched.eye.log), fetched.pool, "bodies", fetched.reached, tipHeight, fetched.count, fetched.bytes, true)?
-    match Infra.Bodies.faultOf(fetched)
-        Option.Some(why) -> Result.Ok(Caught.ChainStopped(why))
-        Option.None -> settling(connected(Following(pool = fetched.pool, store = fetched.store, blocks = fetched.blocks, book = fetched.book, nextKey = fetched.nextKey, watch = watchSeen(state.watch, fetched.eye), mempool = state.mempool, rebuilding = state.rebuilding, log = bodiesLog, board = fetched.eye.board, gate = state.gate), tipHeight, aligned.unconfirmed))
-
-fn settling(onward: Result<Settled, String>) -> Result<Caught, String>
-    ? "The Set forward, refused, or unable: the last two are the chain's (#290)."
-      "connected reads bodies this node holds and connects them; #183 made a"
-      "refusal ChainStopped, and an Err out of it -- a body on disk that will"
-      "not read or hash to its Id, a Store that will not answer -- is the"
-      "same kind of fact and ends the run the same way."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText,
-        Infra.Kv.get,
-        Process.stopRequested,
-        Random.int,
-        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match onward
-        Result.Err(why) -> Result.Ok(Caught.ChainStopped(why))
-        Result.Ok(settled) -> afterSet(settled)
-
-verify settling
-    settling(Result.Err("no")) => Result.Ok(Caught.ChainStopped("no"))
-
 fn sliceMs() -> Int
     ? "How long one slice of the download runs before the Set gets a turn"
       "(#185)."
@@ -1148,190 +1589,6 @@ fn sliceMs() -> Int
 
 verify sliceMs
     sliceMs() => 10000
-
-fn alternating(state: Following, key: Int, aligned: Realigned, tipHeight: Int) -> Result<Fetched, String>
-    ? "The download and the Set, a slice of each in turn (#185)."
-      "The download is mostly waiting on Peers and the Set is entirely"
-      "computing, so run on one thread they fill each other's gaps: measured"
-      "on random Peers the download is 88% idle, and that idle is what this"
-      "reclaims. What it cannot do is make a catch-up shorter than the Set"
-      "alone, which is the long pole under every arrangement."
-      "The two share exactly one thing, the Store: the Set reads bodies"
-      "through the b: keys the download writes. It passes between them a"
-      "slice then a chunk, never both at once, so there is no concurrency in"
-      "it -- only alternation."
-      "The Set stopping short is the signal to go back to fetching. A chunk"
-      "walks until the first Height the chain cannot supply, which during a"
-      "catch-up is the first Block the download has not landed yet, so the"
-      "hand-back needs no separate accounting of who has what."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    flying(Infra.Bodies.takingOff(startedFetch(state, aligned, tipHeight), aligned.from, tipHeight), tipHeight, aligned.from, leastChunk())
-
-fn startedFetch(state: Following, aligned: Realigned, tipHeight: Int) -> Fetched
-    ? "The download's opening state, as bodiesOn would have built it."
-    ! [Time.unixMs]
-    Infra.Bodies.opening(state.pool, aligned.store, state.blocks, aligned.from, eyeOf(state), state.book, state.nextKey)
-
-fn flying(flight: Flight, tipHeight: Int, standing: Int, blocks: Int) -> Result<Fetched, String>
-    ? "One slice of the download, then the Set as far as the download has"
-      "got, then round again."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    flown = Infra.Bodies.flying(Infra.Bodies.sliceUntil(flight, Time.unixMs() + sliceMs()), tipHeight)?
-    connecting(flown, tipHeight, standing, blocks)
-
-fn connecting(flown: Flight, tipHeight: Int, standing: Int, blocks: Int) -> Result<Fetched, String>
-    ? "A stop asked for -- a signal, or the Screen's y carried on the Eye --"
-      "settles the flight (#268): the walk ends a chunk at once on a stop,"
-      "and a flight that only asked for the next chunk went round forever,"
-      "which is #266's shape bounded. Otherwise:"
-      "a chunk of the Set over what has landed, unless the download is done"
-      "-- in which case the caller's own Set walk finishes the range."
-      "Settled before it is handed back, and that is not a detail: Locations"
-      "are held back locationBatch at a time, so a download that ends with a"
-      "part-full batch has that many Blocks on disk whose b: keys were never"
-      "written. Sequentially bodiesOn did this settle; the driver has to do"
-      "it too. Skipping it cost 1,538 Blocks of a 49,538 regtest chain --"
-      "the range came back one batch short and the audit agreed with it,"
-      "because the Index genuinely did not name them."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Bool.or(Process.stopRequested(), Infra.Bodies.eyeOf(flown).stopped)
-        true -> Infra.Bodies.settled(Infra.Bodies.reachedAt(flown, tipHeight))
-        false -> match Infra.Bodies.stillFlying(flown)
-            false -> Infra.Bodies.settled(Infra.Bodies.reachedAt(flown, tipHeight))
-            true -> connectedSome(flown, tipHeight, standing, blocks)
-
-fn connectedSome(flown: Flight, tipHeight: Int, standing: Int, blocks: Int) -> Result<Fetched, String>
-    ? "One Set chunk over the Blocks the download has landed."
-      "Bounded at mostChunk Blocks, and that bound is the whole point. Asked"
-      "for tipHeight this walks the entire remaining range in one call, so"
-      "the alternation happens once and never again: mainnet spent 94"
-      "minutes inside a single chunk, wrote not one set note, tended no"
-      "Peer and answered no ping. The plan starts full -- every Height from"
-      "the Set's standing to the tip, whether or not the body is already on"
-      "disk -- so stillFlying is true on the first turn even for a node with"
-      "nothing left to fetch, and that is the path it took."
-      "A refusal is not answered here: the Set is walked again by connected"
-      "when the download finishes, and that is where a chain fault is"
-      "reported (#183). Here a chunk that will not go is simply a chunk that"
-      "connected nothing, and the download carries on."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    startedMs = Time.unixMs()
-    chunkLanded(flown, Infra.ChainState.buildFrom(Infra.Bodies.poolOf(flown).network, Infra.Bodies.storeOf(flown), Infra.Bodies.blocksOf(flown), Int.min(tipHeight, standing + blocks), tipHeight, Infra.Screen.chunking(Infra.Bodies.eyeOf(flown), standing + 1, Int.min(tipHeight, standing + blocks), startedMs, Domain.Watchdog.chunkBudgetOf(chunkMs())), Option.None), tipHeight, standing, blocks, startedMs)
-
-fn chunkLanded(flown: Flight, chunk: Result<Built, String>, tipHeight: Int, standing: Int, blocks: Int, startedMs: Int) -> Result<Fetched, String>
-    ? "What the chunk left behind, back into the Flight, and round again."
-      "The next chunk is sized from what this one cost, the same way"
-      "buildingTo sizes its own (#222): a Block count is a poor proxy for a"
-      "length of time, and the two sides only alternate evenly if each gets"
-      "comparable wall clock. Fixed at 250 Blocks the Set is a second a turn"
-      "on regtest against a ten-second download slice, and the overlap"
-      "collapses to almost nothing."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match chunk
-        Result.Err(why) -> flying(flown, tipHeight, standing, blocks)
-        Result.Ok(built) -> flying(Infra.Bodies.flyingWithEye(Infra.Bodies.withStore(flown, built.store), Infra.Screen.chunkDone(built.eye, built.reached, Time.unixMs())?), tipHeight, built.reached, sized(built.reached - standing, Time.unixMs() - startedMs)?)
-
-fn afterSet(onward: Settled) -> Result<Caught, String>
-    ? "A Set that refused ends the catch-up on its own terms (#183)."
-      "It is not a Peer's fault and no Peer is dropped for it: since #168 the"
-      "body that arrived was hashed and matched against what was owed, so it"
-      "is provably the Block that was asked for, and the Block Id came from a"
-      "Header the tree placed behind proof of work. The body is right. Either"
-      "the chain is one this program will not follow or this program is wrong"
-      "about it, and asking a different Peer cannot change which."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText,
-        Infra.Kv.get,
-        Process.stopRequested,
-        Random.int,
-        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match onward
-        Settled.Refused(why) -> Result.Ok(Caught.ChainStopped(why))
-        Settled.Done(upToTip) -> movedOn(upToTip)
-
-fn movedOn(upToTip: Following) -> Result<Caught, String>
-    ? "The Set is forward; drain and top up as every phase boundary does."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText,
-        Infra.Kv.get,
-        Process.stopRequested,
-        Random.int,
-        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    standing = toppedUp(dialsAsked(drainSpare(upToTip))?)?
-    caughtInto(backAtTip(standing))
-
-fn caughtInto(done: Result<Following, String>) -> Result<Caught, String>
-    ? "A catch-up that finished, as the answer catchingUp hands back."
-    match done
-        Result.Err(why) -> Result.Err(why)
-        Result.Ok(moved) -> Result.Ok(Caught.Moved(moved))
-
-verify caughtInto
-    caughtInto(Result.Err("no")) => Result.Err("no")
-    caughtInto(Result.Err("a Peer went")) => Result.Err("a Peer went")
 
 fn backAtTip(state: Following) -> Result<Following, String>
     ? "The catch-up has returned, so the Snapshot says so."
@@ -1349,11 +1606,10 @@ fn backAtTip(state: Following) -> Result<Following, String>
 
 fn eyeOf(state: Following) -> Eye
     ? "The Eye a walk carries, opened from what the loop already knows --"
-      "including the metrics log, because a walk records itself as well as"
-      "drawing itself (#180). The walk hands it back advanced, and the"
-      "caller folds it into the state so the next phase carries on from"
-      "where it left off."
-    Infra.Screen.watchedBy(state.watch.view, state.watch.snapshot, state.log, Domain.AddressBook.sizeOf(state.book), state.board)
+      "the View, the Snapshot, the metrics log and the Book's size -- so a"
+      "walk draws and logs the way the loop does. It carries no Board: the"
+      "loop's own clock answers the Board while a walk runs."
+    Infra.Screen.watchedBy(state.watch.view, state.watch.snapshot, state.log, Domain.AddressBook.sizeOf(state.book), Option.None)
 
 fn watchSeen(watch: Watching, eye: Eye) -> Watching
     ? "What a walk's Eye saw, folded back: the Snapshot it advanced, the"
@@ -1366,65 +1622,6 @@ fn saidBookIfPlain(watch: Watching, before: Int, after: Int) -> Unit
     match watch.view
         Option.None -> saidBook(before, after)
         Option.Some(view) -> Unit
-
-type Settled
-    Done(Following)
-    Refused(String)
-
-fn connected(state: Following, tipHeight: Int, unconfirmed: List<Carried>) -> Result<Settled, String>
-    ? "The Set forward to the tip, and one line saying where that leaves it."
-      "When only a few Blocks moved -- a node at the tip, hearing one Block"
-      "every ten minutes -- each one gets its own line, because those are the"
-      "Blocks a watcher is watching for. A catch-up of thousands stays with"
-      "the walk's own minute lines instead."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    chunked = buildingTo(state, tipHeight, standingOf(state.store)?, Option.None, leastChunk())?
-    settledOn(state, chunked, tipHeight, unconfirmed)
-
-fn settledOn(state: Following, chunked: Chunked, tipHeight: Int, unconfirmed: List<Carried>) -> Result<Settled, String>
-    ? "A chunk that refused stops the Set and says so; otherwise finish."
-    ! [Console.print, Disk.appendText, Infra.Kv.get, Time.unixMs]
-    match chunked.refused
-        Option.Some(why) -> Result.Ok(Settled.Refused(why))
-        Option.None -> settledWith(state, chunked, chunked.built, tipHeight, unconfirmed)
-
-fn settledWith(state: Following, chunked: Chunked, holding: Option<Built>, tipHeight: Int, unconfirmed: List<Carried>) -> Result<Settled, String>
-    ? "A Set that neither refused nor built anything is not a shape the chunk"
-      "loop can produce, and saying so is cheaper than pretending it cannot"
-      "be asked."
-    ! [Console.print, Disk.appendText, Infra.Kv.get, Time.unixMs]
-    match holding
-        Option.None -> Result.Err("the Set neither connected anything nor said why")
-        Option.Some(built) -> finished(state, chunked, built, tipHeight, unconfirmed)
-
-fn finished(state: Following, chunked: Chunked, built: Built, tipHeight: Int, unconfirmed: List<Carried>) -> Result<Settled, String>
-    ? "The Set forward to the tip, and one line saying where that leaves it."
-    ! [Console.print, Disk.appendText, Infra.Kv.get, Time.unixMs]
-    after = chunked.state
-    backOut = List.concat(unconfirmed, built.unconfirmed)
-    seen = watchSeen(after.watch, built.eye)
-    _each = saidLinesIfPlain(seen, blockLinesOf(built.blocks, built.views))
-    _said = saidLineIfPlain(seen, "following at Height {built.reached}: {built.blocks} connected, {built.dropped} disconnected, set +{built.added} -{built.removed}")
-    setLog = Infra.Metrics.marked(built.eye.log, "set", built.reached, tipHeight, built.blocks, 0, Infra.Peers.polledMsOf(after.pool), List.len(Infra.Peers.peerKeys(after.pool)), Domain.AddressBook.sizeOf(after.book), built.added, built.removed, true)?
-    swept = sweptOf(built.store, after.mempool, built.blocks, built.dropped)?
-    restored = restoring(after.pool.network, built.store, swept, backOut, tipHeight, 0, List.len(backOut))?
-    Result.Ok(Settled.Done(withWatch(Following(pool = after.pool, store = built.store, blocks = after.blocks, book = after.book, nextKey = after.nextKey, watch = seen, mempool = restored, rebuilding = after.rebuilding, log = setLog, board = built.eye.board, gate = state.gate), watchAfterBuild(seen, built.views))))
-
-record Chunked
-    state: Following
-    built: Option<Built>
-    refused: Option<String>
 
 fn chunkMs() -> Int
     ? "How long a chunk of the Set should take between two looks at the"
@@ -1515,36 +1712,6 @@ verify heightIn
     heightIn(Option.Some(Bytes.fromList([1, 2, 3]))) => Result.Err("a Set standing is at least 4 bytes, got 3")
     heightIn(Option.Some(Domain.UtxoStore.encodeReached(Domain.UtxoStore.Reached(height = 7, blockId = "ab"))?)) => Result.Ok(7)
 
-fn buildingTo(state: Following, tipHeight: Int, standing: Int, sofar: Option<Built>, blocks: Int) -> Result<Chunked, String>
-    ? "One chunk of the Set, then the pool, then the next chunk (#217)."
-      "The walk is the same walk: Infra.ChainState.build realigns, connects"
-      "and prunes exactly as it did for the whole range. It is simply asked"
-      "for at most chunkOf Blocks at a time, and between two of them every"
-      "Peer is read, pings are answered, the parked dial is asked what it"
-      "became and the pool topped up -- the three things the body walk does"
-      "at its boundaries, done here at every chunk because a Set walk has"
-      "no other boundaries for hours."
-      "A chunk that comes back short of what it was asked for is a walk that"
-      "stopped -- q, a signal, or a Block the chain cannot supply -- and is"
-      "handed back as it stands rather than asked again."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    chunkTo = Int.min(tipHeight, standing + blocks)
-    _note = Infra.Metrics.noting(state.log, "set", "connecting {standing + 1}..{chunkTo} of {tipHeight}, {List.len(Infra.Peers.peerKeys(state.pool))} Peer(s)")?
-    startedMs = Time.unixMs()
-    carried = eyeIn(sofar, eyeOf(state))
-    chunkOn(state, Infra.ChainState.buildFrom(state.pool.network, storeIn(sofar, state.store), state.blocks, chunkTo, tipHeight, Infra.Screen.keeping(Infra.Screen.chunking(Infra.Screen.counting(Infra.Screen.eyeing(carried, companied(carried.snapshot, state.pool, state.book, state.mempool)), Domain.AddressBook.sizeOf(state.book)), standing + 1, chunkTo, startedMs, Domain.Watchdog.chunkBudgetOf(chunkMs())), Infra.Tending.kept(state.pool, state.book, state.nextKey, state.log)), sofar), tipHeight, standing, chunkTo, startedMs)
-
 fn companied(snapshot: Snapshot, pool: Pool, book: Map<String, Candidate>, mempool: Mempool) -> Snapshot
     ? "The Snapshot a chunk carries, with the company brought up to date"
       "(#275): who is connected now, how many Candidates, the Mempool, the"
@@ -1558,204 +1725,6 @@ fn companied(snapshot: Snapshot, pool: Pool, book: Map<String, Candidate>, mempo
 verify companied
     List.len(companied(Domain.Snapshot.started(0), Infra.Peers.opened(Network.Regtest), Domain.AddressBook.noBook(), Domain.Mempool.empty(1000)).company.peers) => 0
     companied(Domain.Snapshot.started(0), Infra.Peers.opened(Network.Regtest), Domain.AddressBook.heard(Domain.AddressBook.noBook(), "1.2.3.4:8333", 0), Domain.Mempool.empty(1000)).company.candidates => 1
-
-fn chunkOn(state: Following, chunk: Result<Built, String>, tipHeight: Int, standing: Int, chunkTo: Int, startedMs: Int) -> Result<Chunked, String>
-    ? "The company the walk kept -- pool, Book, next key and the log its"
-      "seats were noted in -- comes back into the loop's state first"
-      "(#275); an Eye that kept nothing changes nothing."
-      "A chunk that refused is a fact about the chain, handed back rather"
-      "than raised (#183)."
-      "Raised, it reached caughtUp, which drops the Peer it asked and tries"
-      "the next one -- and the next one fails at the same Height, because"
-      "none of it was ever about the Peer. It terminated by losing every Peer"
-      "and then reporting the consensus reason as though a Peer had said it."
-      "The Store, the Disk and the Undo window are underneath this too, and"
-      "none of those is a Peer's fault either."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match chunk
-        Result.Err(why) -> refusedBy(state, why)
-        Result.Ok(next) -> match next.eye.company
-            Option.None -> chunkedOn(state, withEye(next, Infra.Screen.chunkDone(next.eye, next.reached, Time.unixMs())?), tipHeight, standing, chunkTo, startedMs)
-            Option.Some(company) -> chunkedOn(withLog(withNextKey(withBook(withPool(state, company.pool), company.book), company.nextKey), company.log), withEye(next, Infra.Screen.chunkDone(next.eye, next.reached, Time.unixMs())?), tipHeight, standing, chunkTo, startedMs)
-
-fn withEye(built: Built, eye: Eye) -> Built
-    ? "A chunk's result with its Eye moved on."
-    Built(store = built.store, blocks = built.blocks, added = built.added, removed = built.removed, fees = built.fees, reached = built.reached, dropped = built.dropped, views = built.views, eye = eye, unconfirmed = built.unconfirmed)
-
-verify withEye
-    withEye(sampleBuilt(1, 1), Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none())).blocks => 1
-
-fn refusedBy(state: Following, why: String) -> Result<Chunked, String>
-    ? "Say which Height would not connect, and stop the Set there."
-    ! [Disk.appendText, Time.unixMs]
-    noted = Infra.Metrics.noting(state.log, "chain", "the Set stopped: {why}")?
-    Result.Ok(Chunked(state = withLog(state, noted), built = Option.None, refused = Option.Some(why)))
-
-fn chunkedOn(state: Following, next: Built, tipHeight: Int, standing: Int, chunkTo: Int, startedMs: Int) -> Result<Chunked, String>
-    ? "The chunk connected: the range is done, or there is another chunk."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Bool.or(next.reached < chunkTo, chunkTo >= tipHeight)
-        true -> Result.Ok(Chunked(state = state, built = Option.Some(next), refused = Option.None))
-        false -> buildingTo(tendedBetween(state)?, tipHeight, next.reached, Option.Some(next), sized(next.reached - standing, Time.unixMs() - startedMs)?)
-
-fn storeIn(sofar: Option<Built>, before: Store) -> Store
-    ? "The Store the next chunk continues from: the walk's own once it has one."
-    match sofar
-        Option.None -> before
-        Option.Some(built) -> built.store
-
-verify storeIn
-    storeIn(Option.None, sampleBuilt(1, 1).store) => sampleBuilt(1, 1).store
-    storeIn(Option.Some(sampleBuilt(1, 1)), Infra.Store.fixture([])) => sampleBuilt(1, 1).store
-
-fn eyeIn(sofar: Option<Built>, before: Eye) -> Eye
-    ? "The Eye the next chunk carries: the walk's own once it has one, so"
-      "the frame clock and the metrics log run on across chunks."
-    match sofar
-        Option.None -> before
-        Option.Some(built) -> built.eye
-
-verify eyeIn
-    eyeIn(Option.None, sampleBuilt(1, 1).eye).candidates => 0
-    eyeIn(Option.Some(sampleBuilt(1, 1)), sampleBuilt(1, 1).eye).stopped => false
-
-fn sampleBuilt(blocks: Int, upTo: Int) -> Built
-    ? "A chunk that connected this many Blocks and got this far, for the cases."
-    Built(store = Infra.Store.fixture([]), blocks = blocks, added = blocks * 2, removed = blocks, fees = 0, reached = upTo, dropped = 0, views = [sampleView(upTo)], eye = Infra.Screen.watchedBy(Option.None, Domain.Snapshot.started(0), Infra.Metrics.none(), 0, Option.None), unconfirmed = [])
-
-verify sampleBuilt
-    sampleBuilt(3, 10).blocks => 3
-    sampleBuilt(3, 10).reached => 10
-
-fn sampleView(height: Int) -> BlockView
-    ? "One Block's view at a Height, for the cases."
-    BlockView(height = height, blockId = "", transactions = 1, bytes = 100, atMs = 0)
-
-verify sampleView
-    sampleView(5).height => 5
-
-fn tendedBetween(state: Following) -> Result<Following, String>
-    ? "What the loop owes the pool between two chunks of the Set (#217)."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    tendedInto(boarded(state, Time.unixMs())?, tendedPool(state.pool, spareLimit(), 0)?)
-
-fn tendedInto(state: Following, tending: Tended) -> Result<Following, String>
-    ? "What the tending heard, folded back before the dial and the top-up."
-      "A Peer that spoke to a tending has spoken, and until #222 that did"
-      "not move the silence clock: anyHeardMs is stamped by a handled spare"
-      "Message in the loop and by firstAfterNone, and a Set phase reaches"
-      "neither for hours. So a node coming out of a long Set phase with an"
-      "empty pool failed stillHeard on its first quiet turn -- hours of"
-      "silence judged against a 150-second rule -- and nobodyLeft's dialling"
-      "on never got its chance. The Peers were talking the whole time; only"
-      "the clock did not know."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText,
-        Process.stopRequested,
-        Random.int,
-        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    toppedUp(dialsAsked(withPool(heardIfAny(state, tending.heard), tending.pool))?)
-
-fn heardIfAny(state: Following, heard: Int) -> Following
-    ? "The silence clock, moved on only if somebody actually spoke."
-    ! [Time.unixMs]
-    match heard > 0
-        false -> state
-        true -> withWatch(state, heardAt(state.watch, Infra.Peers.listenerKey(), Time.unixMs()))
-
-fn spareLimit() -> Int
-    ? "How many Messages one tending reads before going back to the Set."
-      "Bounded so a Peer that never stops talking cannot hold the walk; the"
-      "pool keeps this many unasked-for Messages anyway."
-    64
-
-verify spareLimit
-    spareLimit() => 64
-
-record Tended
-    pool: Pool
-    heard: Int
-
-fn tendedPool(pool: Pool, budget: Int, heard: Int) -> Result<Tended, String>
-    ? "Read what every Peer has already sent, without waiting for more."
-      "A poll of zero milliseconds is the question 'is anything there'; a"
-      "ping is answered and everything else kept as spare for the loop,"
-      "exactly as the body walk does mid-phase."
-      "The count comes back because somebody having spoken is a fact the"
-      "silence clock wants and had no other way to learn (#222)."
-    ! [
-        Console.error, Console.print,
-        Process.stopRequested,
-        Random.int,
-        Tcp.close, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match budget <= 0
-        true -> Result.Ok(Tended(pool = pool, heard = heard))
-        false -> tendedOnce(Infra.Peers.awaitTick(pool, 0)?, budget, heard)
-
-fn tendedOnce(ticked: Tick, budget: Int, heard: Int) -> Result<Tended, String>
-    ? "Nothing there, or one Message to sort."
-    ! [
-        Console.error, Console.print,
-        Process.stopRequested,
-        Random.int,
-        Tcp.close, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match ticked.arrived
-        Option.None -> Result.Ok(Tended(pool = ticked.pool, heard = heard))
-        Option.Some(one) -> tendedWith(ticked.pool, one, budget, heard)
-
-fn tendedWith(pool: Pool, one: Spare, budget: Int, heard: Int) -> Result<Tended, String>
-    ? "A ping is answered; anything else is the loop's, later."
-    ! [
-        Console.error, Console.print,
-        Process.stopRequested,
-        Random.int,
-        Tcp.close, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match one.frame.command
-        "ping" -> tendedPool(Infra.Peers.tell(pool, one.key, "pong", Bytes.fromList(one.frame.body)?)?, budget - 1, heard + 1)
-        _ -> tendedPool(Infra.Peers.spared(pool, one.key, one.frame), budget - 1, heard + 1)
 
 fn sweptOf(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: Int) -> Result<Mempool, String>
     ? "The Mempool, after the chain moved under it."
@@ -1864,14 +1833,14 @@ fn restoring(network: Network, store: Store, pool: Mempool, unconfirmed: List<Ca
       "They arrive lowest Block first, so a parent is offered before any child"
       "that spends it. Offered the other way round, the child would find its"
       "parent's Output missing from the Set and be refused for good."
-    ! [Console.print, Disk.appendText, Infra.Kv.get]
+    ! [Console.print, Infra.Kv.get]
     match unconfirmed
         [] -> saidRestored(pool, back, offered)
         [head, ..tail] -> restoringOne(network, store, pool, head, tail, tipHeight, back, offered)
 
 fn restoringOne(network: Network, store: Store, pool: Mempool, one: Carried, rest: List<Carried>, tipHeight: Int, back: Int, offered: Int) -> Result<Mempool, String>
     ? "One of them, through the ordinary door."
-    ! [Console.print, Disk.appendText, Infra.Kv.get]
+    ! [Console.print, Infra.Kv.get]
     landing = Infra.Mempool.admitting(network, store, pool, one.bytes, tipHeight)?
     restoring(network, store, poolAfter(pool, landing), rest, tipHeight, back + oneIfAdmitted(landing), offered)
 
@@ -2048,33 +2017,6 @@ verify heightOf
     heightOf(Option.None) => 0
     heightOf(Option.Some(Placement(blockId = "aa", parentId = "bb", height = 7, work = 1))) => 7
 
-fn listen(state: Following) -> Result<Unit, String>
-    ? "Read Messages from every Peer for as long as any of them keeps sending."
-      "Until n1bor/btc-listener#112 this never returned of its own accord, so"
-      "stopping the node meant a signal and a claim left behind. Now every"
-      "turn asks Process.stopRequested first: a SIGINT or SIGTERM sets the"
-      "flag, the turn in flight finishes, and the loop returns -- through"
-      "releasingAfter, which is what deletes the claim. The check costs one"
-      "read of a flag; a stop during the idle poll waits out at most that"
-      "poll. A kill -9 still leaves the claim, and the claim's pid is what"
-      "makes that one decidable. The call is in tail position, so the"
-      "recursion does not grow the stack however long it runs."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Bool.or(Process.stopRequested(), state.watch.leaving)
-        true -> stopping(withWatch(state, stopAskedNow(state.watch, Time.unixMs())))
-        false -> turning(state)
-
 fn stopSaid(log: Log, askedMs: Int, nowMs: Int) -> Result<Log, String>
     ? "One line if the stop took longer than its budget to land (#268)."
     ! [Disk.appendText, Time.unixMs]
@@ -2092,26 +2034,6 @@ verify stopAskedNow
     stopAskedNow(freshWatch(0), 40).stopAskedMs => 40
     stopAskedNow(stopAskedNow(freshWatch(0), 40), 90).stopAskedMs => 40
 
-fn stopping(state: Following) -> Result<Unit, String>
-    ? "Asked to stop: close every Peer and return, so the claim is released"
-      "the way it is for every command that finishes."
-      "The terminal comes back first when the Screen has it, so the last"
-      "words land on a terminal that can show them."
-    ! [
-        Console.print,
-        Disk.appendText,
-        Tcp.close, Tcp.closeDial, Tcp.closeListener,
-        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
-        Time.unixMs,
-    ]
-
-    _screen = restoredFor(state.watch.view)
-    _said = saidLineIfPlain(state.watch, "stop requested; closing the pool and releasing the claim")
-    _slow = stopSaid(state.log, state.watch.stopAskedMs, Time.unixMs())
-    _board = boardClosed(state.board)
-    _closed = Infra.Peers.closeAll(state.pool)
-    Result.Ok(Unit)
-
 fn restoredFor(view: Option<View>) -> Unit
     ? "Restore the terminal when there is a Screen to take down."
     ! [Terminal.disableRawMode, Terminal.flush, Terminal.showCursor]
@@ -2119,208 +2041,19 @@ fn restoredFor(view: Option<View>) -> Unit
         Option.None -> Unit
         Option.Some(one) -> Infra.Screen.restored()
 
-fn turning(state: Following) -> Result<Unit, String>
-    ? "One ordinary turn of the loop: ask the dial what it has become, say"
-      "so, take what arrived unasked-for, start a dial if the pool is short,"
-      "then wait a tick."
-      "The dial is asked rather than waited for (#202). Tcp.dialled answers"
-      "on the spot -- the runtime's deadline, the socket's error, or None"
-      "for one still in progress -- so a Candidate that takes five seconds"
-      "takes five turns rather than five seconds of one."
-      "The wait is one tick rather than the whole idle deadline (#129): a"
-      "Message from any Peer ends it early and is handled exactly as before,"
-      "and a tick of silence hands the loop to its own clock -- the silence"
-      "rule, the Snapshot, and whichever lines have come due. The deadline"
-      "means what it meant; it is only noticed in one-second steps now."
-      "Before the tick, every Peer's Handshake Height is weighed against the"
-      "tree's best (#328) and one due claim, if the gate holds one, is acted"
-      "on instead of waiting. The tip is read from the Store rather than the"
-      "Snapshot because it is the tree's answer that a Peer's claim is"
-      "measured against, and one read a second costs nothing."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    told = firstAfterNone(dialsAsked(state)?, List.len(Infra.Peers.peerKeys(state.pool)))?
-    knownAt = saidAdvertised(told, Infra.Peers.told(told.pool, Time.unixMs())?)
-    drained = drainSpare(knownAt)
-    weighed = withGate(drained, Domain.Catchup.weighingAll(drained.gate, Infra.Peers.claimsOf(drained.pool), heightOf(Infra.Headers.tipOf(drained.store)?)))
-    match Domain.Catchup.dueNow(weighed.gate, Time.unixMs())
-        Option.Some(due) -> actingOn(weighed, due)
-        Option.None -> ticking(weighed)
-
-fn actingOn(state: Following, due: Due) -> Result<Unit, String>
-    ? "A claim the gate is holding whose Peer may be obeyed now: an"
-      "Announcement that arrived inside a cooldown (#300), a Handshake"
-      "Height above the tree's, or the ask that follows a long Catch-up"
-      "(#328). Noted, so a Catch-up nobody announced can be read back to"
-      "the claim that started it."
-      "Acted on at the top of a turn rather than only on a quiet one. A"
-      "turn is quiet when nothing arrived in its tick, and a node with"
-      "thirty Peers offering Transactions has no quiet turns, so a claim"
-      "acted on only then was a claim acted on never."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-
-    noted = Infra.Metrics.noting(state.log, "chain", "acting on a held claim: {due.why}")?
-    onMoved(withLog(state, noted), due.key, due.why)
-
-fn ticking(state: Following) -> Result<Unit, String>
-    ? "The rest of an ordinary turn: start a dial if the pool is short, read"
-      "the turn's share of the Blocks the Peers that asked have room for,"
-      "then wait a tick."
-      "The Blocks are read here rather than where the getdata was answered"
-      "because here is where this loop knows how much is still waiting on"
-      "each wire. How many of them a turn takes is servedPerTurn's to say,"
-      "so a turn stays short whatever arrived while the loop was elsewhere."
-      "The wait itself is shortened to a tenth of a second while anything is"
-      "queued (Infra.Peers.pollBudget), so a Peer being served does not wait"
-      "out a second of silence between Blocks."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-
-    topped = servingBlocks(saidSlowTurn(boarded(toppedUp(state)?, Time.unixMs())?, Time.unixMs())?)?
-    ticked = nextMessage(topped.pool, boardTick(topped.board))?
-    polled = withWatch(Following.update(topped, pool = ticked.pool), pollReturnedAt(topped.watch, Time.unixMs()))
-    tickState = firstAfterNone(polled, List.len(Infra.Peers.peerKeys(topped.pool)))?
-    onTicked(tickState, ticked.arrived)
-
-fn nextMessage(pool: Pool, waitMs: Int) -> Result<Tick, String>
-    ? "The next Message to act on: one that was kept while something else"
-      "was being waited for, or a tick of the loop."
-      "The kept ones come first, one a turn, so a Message that arrived"
-      "during a walk goes through exactly the dispatch a Message that"
-      "arrives now does. They used to be dropped when whatever had been"
-      "waiting finished, which was fair while they were only what a"
-      "catch-up had walked past; an inv announcing a Block lands there too"
-      "while a Work job is running, and this loop is the only thing that"
-      "will ever act on it."
-    ! [
-        Console.error, Console.print,
-        Process.stopRequested,
-        Random.int,
-        Tcp.close, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    queued = Infra.Peers.popSpare(pool)
-    match queued.arrived
-        Option.Some(_) -> Result.Ok(queued)
-        Option.None -> Infra.Peers.awaitTick(queued.pool, waitMs)
-
-fn saidSlowTurn(state: Following, nowMs: Int) -> Result<Following, String>
-    ? "A turn that worked longer than its budget since the last poll returned"
-      "is said, with what it was handling, before the next poll (#359)."
-    ! [Disk.appendText, Time.unixMs]
-    match Domain.Watchdog.overrun(state.watch.pollReturnedMs, nowMs, Domain.Watchdog.turnBudgetMs())
-        false -> Result.Ok(state)
-        true -> Result.Ok(withLog(state, Infra.Metrics.noting(state.log, "watchdog", Domain.Watchdog.slowTurn(state.watch.handling, nowMs - state.watch.pollReturnedMs))?))
-
-fn pollReturnedAt(watch: Watching, nowMs: Int) -> Watching
-    ? "The poll just returned: the turn's work is measured from here."
-    Watching.update(watch, pollReturnedMs = nowMs, handling = "a quiet turn")
-
-verify pollReturnedAt
-    pollReturnedAt(freshWatch(0), 900).pollReturnedMs => 900
-    pollReturnedAt(freshWatch(0), 900).handling => "a quiet turn"
-    pollReturnedAt(freshWatch(7), 900).anyHeardMs => 7
-
-fn firstAfterNone(state: Following, heldBefore: Int) -> Result<Following, String>
+fn firstAfterNone(state: Following, heldBefore: Int) -> Following
     ? "A Peer seated into an empty pool is asked to bring the chain up to"
       "date (#217), because whatever was missed while alone is what it has."
       "Nothing else re-runs the catch-up: an inv does, and a node that lost"
       "every Peer mid-walk will not hear one until a Peer is seated. Its"
       "Handshake counts as being heard from, so the silence rule does not"
       "end the run for the seconds between seating and its first Message."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+      "The claim is held for the walk with no reason to print, which is"
+      "how the walk tells it from an Announcement."
+    ! [Time.unixMs]
     match Bool.and(heldBefore == 0, List.len(Infra.Peers.peerKeys(state.pool)) > 0)
-        false -> Result.Ok(state)
-        true -> caughtUp(heardFrom(state, firstKey(state.pool), Time.unixMs()), firstKey(state.pool))
-
-fn onTicked(state: Following, arrived: Option<Spare>) -> Result<Unit, String>
-    ? "A Message to handle, or a moment to look at the clock."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match arrived
-        Option.None -> quietTurn(state, Time.unixMs())
-        Option.Some(spare) -> busyTurn(state, spare, Time.unixMs())
-
-fn busyTurn(state: Following, spare: Spare, nowMs: Int) -> Result<Unit, String>
-    ? "A Message arrived, and the loop looks at its own clock before acting"
-      "on it."
-      "Until #201 the clock was on the other arm of that match, so a loop"
-      "that never went quiet never drew a frame, never answered a key and"
-      "never wrote a record. A node short of Peers is exactly that loop: it"
-      "dials a Candidate before every tick (#202), the dial spends five"
-      "seconds reading every Peer, and a Message is therefore always waiting"
-      "when the tick comes. Measured on signet: twelve minutes of a dead"
-      "frame answering nothing, ended by the pool reaching its target and"
-      "the dialling stopping."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    looked = minding(heardFrom(state, spare.key, nowMs), nowMs)?
-    match looked.watch.leaving
-        true -> stopping(looked)
-        false -> handle(withWatch(looked, Watching.update(looked.watch, handling = "{spare.frame.command} from peer {spare.key}")), spare.key, spare.frame.command, spare.frame.body)
+        false -> state
+        true -> withGate(heardFrom(state, firstKey(state.pool), Time.unixMs()), Domain.Catchup.held(state.gate, firstKey(state.pool), ""))
 
 fn heardFrom(state: Following, key: Int, nowMs: Int) -> Following
     ? "This Peer just spoke; remember when, for it and for the pool."
@@ -2342,53 +2075,6 @@ fn sampleTended(tendedMs: Int) -> Watching
 
 verify sampleTended
     sampleTended(55).tendedMs => 55
-
-fn quietTurn(state: Following, nowMs: Int) -> Result<Unit, String>
-    ? "A tick with nothing on it: the two rules that silence itself decides,"
-      "then the same clock every other turn looks at."
-      "Only the silence rule and the empty pool belong here now. Everything"
-      "the loop owes its watcher -- a frame, a key answered, a record, a"
-      "caller admitted -- moved into minding (#201), because none of it was"
-      "ever about nothing having arrived."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    _somebody = anyoneLeft(List.len(Infra.Peers.peerKeys(state.pool)), leftToDial(state.book, Infra.Peers.dialingNow(state.pool)))?
-    _alive = stillHeard(nowMs - state.watch.anyHeardMs, List.len(Infra.Peers.peerKeys(state.pool)), leftToDial(state.book, Infra.Peers.dialingNow(state.pool)))?
-    looked = minding(state, nowMs)?
-    match looked.watch.leaving
-        true -> stopping(looked)
-        false -> ontoRebuild(looked, nowMs)
-
-fn ontoRebuild(state: Following, nowMs: Int) -> Result<Unit, String>
-    ? "A rebuild nobody has answered for too long, or another turn."
-      "A held claim used to be acted on here too, and only here -- on a"
-      "quiet turn, which a busy node never has. It is the top of every turn"
-      "now (actingOn, #328)."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match staleRebuild(state.rebuilding, nowMs)
-        Option.Some(pending) -> fellBack(state, pending.key, "peer {pending.key} did not send the compact Block for {pending.blockId} within {Int.div(rebuildDeadlineMs(), 1000)} seconds")
-        Option.None -> listen(state)
 
 fn afterAccepting(state: Following, taken: Accepted) -> Following
     ? "A caller admitted takes the next key, so the one after it is free."
@@ -2430,12 +2116,9 @@ fn minding(state: Following, nowMs: Int) -> Result<Following, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
-        Random.int,
         Tcp.accept, Tcp.close, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
-        Wait.poll,
     ]
     match Domain.Screenlines.due(state.watch.tendedMs, nowMs, tendEveryMs())
         false -> Result.Ok(state)
@@ -2448,12 +2131,9 @@ fn minded(state: Following, nowMs: Int) -> Result<Following, String>
     ! [
         Console.error, Console.print,
         Disk.appendText,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.close, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.peerAddress,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
-        Wait.poll,
     ]
     fresh = withTended(refreshed(state, nowMs), nowMs)
     kept = withLog(fresh, marking(fresh, fresh.pool, "listen", fresh.watch.snapshot.tip.height, fresh.watch.snapshot.tip.height, false)?)
@@ -2612,7 +2292,7 @@ fn saidStatsNow(state: Following, nowMs: Int) -> Following
     _said = Console.print(Domain.Screenlines.peersLine(state.watch.snapshot.company, nowMs))
     withWatch(state, Watching(snapshot = state.watch.snapshot, heard = state.watch.heard, anyHeardMs = state.watch.anyHeardMs, saidPeersMs = nowMs, tendedMs = state.watch.tendedMs, view = state.watch.view, leaving = state.watch.leaving, stopAskedMs = state.watch.stopAskedMs, pollReturnedMs = state.watch.pollReturnedMs, handling = state.watch.handling))
 
-fn handle(state: Following, key: Int, command: String, body: List<Int>) -> Result<Unit, String>
+fn handle(state: Following, key: Int, command: String, body: List<Int>) -> Result<Following, String>
     ? "The three Messages this loop acts on; every other one is ignored."
       "A ping has to be answered or the Peer eventually drops the connection,"
       "and it is answered to the Peer that sent it rather than to whichever"
@@ -2624,15 +2304,10 @@ fn handle(state: Following, key: Int, command: String, body: List<Int>) -> Resul
       "whatever it said."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Tcp.close, Tcp.writeNow,
+        Time.unixMs,
     ]
     match command
         "inv" -> onAnnouncement(state, key, body)
@@ -2645,26 +2320,15 @@ fn handle(state: Following, key: Int, command: String, body: List<Int>) -> Resul
         "addr" -> onAddresses(state, key, body)
         "getaddr" -> onAskedAddresses(state, key)
         "ping" -> onPing(state, key, body)
-        _ -> listen(state)
+        _ -> Result.Ok(state)
 
-fn onAnnouncement(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onAnnouncement(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "Blocks first, then Transactions."
       "Both are announced down the same Message. A Block moving the chain"
       "outranks anything unconfirmed -- what a Block confirms leaves the"
       "Mempool anyway -- so an Announcement carrying both is followed for the"
       "Block, and the Transactions in it will be offered again by somebody."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Disk.appendText, Infra.Kv.get, Tcp.close, Tcp.writeNow, Time.unixMs]
     announced = Domain.Inventory.blockHashesOf(body)
     match announced
         [] -> onOffered(state, key, Domain.Inventory.txHashesOf(body))
@@ -2680,27 +2344,16 @@ fn servedAddressCap() -> Int
 verify servedAddressCap
     servedAddressCap() => 250
 
-fn onAskedAddresses(state: Following, key: Int) -> Result<Unit, String>
+fn onAskedAddresses(state: Following, key: Int) -> Result<Following, String>
     ? "A Peer asking who we know, answered out of the Address Book (#210)."
       "This was in the arm that ignores everything, which made this node a"
       "dead end in the gossip graph: it asked every Peer for addresses and"
       "gave none back, so anybody who did find it learned nothing and had"
       "no reason to keep it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow, Time.unixMs]
     offered = parsedAll(List.take(Map.keys(state.book), servedAddressCap()), Domain.Network.portOf(state.pool.network), [])
     answered = Infra.Peers.tell(state.pool, key, "addr", Domain.Addr.payload(offered, Int.div(Time.unixMs(), 1000), 0)?)?
-    listen(saidOffered(withPool(state, answered), List.len(offered), key))
+    Result.Ok(saidOffered(withPool(state, answered), List.len(offered), key))
 
 fn parsedAll(addresses: List<String>, port: Int, acc: List<PeerAddress>) -> List<PeerAddress>
     ? "The Book's keys as Peer Addresses, passing over any that will not"
@@ -2738,28 +2391,17 @@ fn saidOfferedNow(state: Following, howMany: Int, key: Int) -> Following
     _said = saidLineIfPlain(state.watch, "offered {howMany} Candidate(s) to peer {key}")
     state
 
-fn onAddresses(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onAddresses(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "Peers this Peer says exist, into the Address Book."
       "Every one of them is a claim by a Peer under no obligation to be"
       "honest, which is why they go in as Candidates: nothing is believed"
       "until a Handshake completes, and who told us is recorded beside each"
       "one so that a Peer feeding us rubbish can be seen to have done it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.print]
     offered = routableOnly(Domain.Addr.addressesOf(body), [])
     grown = Domain.AddressBook.heardAll(state.book, renderedAll(offered, []), key)
     _said = heardIfPlain(state.watch, List.len(offered), key, Domain.AddressBook.sizeOf(grown))
-    listen(Following(pool = state.pool, store = state.store, blocks = state.blocks, book = grown, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate))
+    Result.Ok(Following(pool = state.pool, store = state.store, blocks = state.blocks, book = grown, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate))
 
 fn heardIfPlain(watch: Watching, offered: Int, key: Int, held: Int) -> Unit
     ? "The heard line for the plain log; the Panel shows the Book."
@@ -2813,9 +2455,10 @@ verify renderedAll
     List.len(renderedAll([Domain.Address.fromString("1.2.3.4")?], [])) => 1
     renderedAll([Domain.Address.fromString("1.2.3.4")?], []) => ["1.2.3.4:8333"]
 
-fn onMoved(state: Following, key: Int, why: String) -> Result<Unit, String>
-    ? "The chain says it has moved, so ask that Peer how far -- unless it"
-      "said the same thing a moment ago and nothing came of it (#300)."
+fn onMoved(state: Following, key: Int, why: String) -> Result<Following, String>
+    ? "The chain says it has moved, so the walk is asked to find out how"
+      "far from that Peer -- unless it said the same thing a moment ago and"
+      "nothing came of it (#300)."
       "What arrived is not trusted to be the new tip, or to be on the branch"
       "with the most work, or to be anything but a Block Id -- the Header"
       "phase settles all three, and a Peer that announced something already"
@@ -2823,75 +2466,24 @@ fn onMoved(state: Following, key: Int, why: String) -> Result<Unit, String>
       "That last sentence is why the gate is here. Moving nothing costs the"
       "Header round trip, the realignment and the walk anyway, so a Peer"
       "that can make the node do it for free can make it do it for ever."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+      "A claim allowed now is held for the walk, which takes it on its next"
+      "ask; the Catch-up runs beside the Peers rather than in place of them."
+    ! [Disk.appendText, Time.unixMs]
     nowMs = Time.unixMs()
     match Domain.Catchup.allowed(state.gate, key, nowMs)
         false -> holdingBack(state, key, why)
-        true -> movingOn(state, key, why, nowMs)
+        true -> Result.Ok(withGate(state, Domain.Catchup.held(state.gate, key, why)))
 
-fn holdingBack(state: Following, key: Int, why: String) -> Result<Unit, String>
+fn holdingBack(state: Following, key: Int, why: String) -> Result<Following, String>
     ? "This Peer wasted its last Catch-up and is inside its cooldown, so its"
       "claim is kept rather than obeyed."
       "Kept rather than dropped: a node following one Peer -- which is how"
       "this program is usually started, and how it is usually run -- would"
-      "otherwise sit a Block behind until the next one was mined. The claim"
-      "is acted on the moment the cooldown passes, at the top of the next"
-      "turn (actingOn)."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+      "otherwise sit a Block behind until the next one was mined. The walk"
+      "takes the claim the moment the cooldown passes."
+    ! [Disk.appendText, Time.unixMs]
     noted = Infra.Metrics.noting(state.log, "fault", "peer {key} says the chain moved inside its cooldown ({why}); held until it passes (#300)")?
-    listen(withGate(withLog(state, noted), Domain.Catchup.held(state.gate, key, why)))
-
-fn movingOn(state: Following, key: Int, why: String, nowMs: Int) -> Result<Unit, String>
-    ? "Run the Catch-up, and charge the Peer for it if it moved nothing."
-      "Where the node stands is read either side of the run, so the gate is"
-      "armed by waste and never by being asked. A Peer announcing real"
-      "Blocks moves the chain every time and is never quieted."
-      "The run is timed as well (#328): one that ran long discarded every"
-      "Announcement made into it, so the gate holds one more ask of the"
-      "Peer -- after the charge, because a Catch-up that moved the chain"
-      "clears what the gate holds for that Peer, and the ask has to outlive"
-      "that."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    _said = saidLineIfPlain(state.watch, "{Time.now()}  {why}")
-    stood = standingNow(state.store)?
-    moved = caughtUp(withGate(state, Domain.Catchup.taken(state.gate, key)), key)?
-    stands = standingNow(moved.store)?
-    seated = List.contains(Infra.Peers.peerKeys(moved.pool), key)
-    charged = Domain.Catchup.charging(moved.gate, key, seated, stood == stands, nowMs)
-    listen(withGate(moved, Domain.Catchup.recovering(charged, Domain.Catchup.whoToAsk(key, Infra.Peers.peerKeys(moved.pool)), nowMs, Time.unixMs())))
+    Result.Ok(withGate(withLog(state, noted), Domain.Catchup.held(state.gate, key, why)))
 
 fn standingNow(store: Store) -> Result<String, String>
     ? "Where the node stands, as one string: the tip of the branch with the"
@@ -2915,7 +2507,7 @@ verify tipIdOf
     tipIdOf(Option.None) => ""
     tipIdOf(Option.Some(Domain.HeaderTree.Placement(blockId = "aa", parentId = "bb", height = 3, work = 1))) => "aa"
 
-fn onAnnouncedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onAnnouncedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "A headers Message nobody asked for, weighed before it is obeyed."
       "This was the cheapest way to drive the node through a whole Catch-up"
       "(#300): any Peer, an inbound stranger included, could send an empty"
@@ -2928,38 +2520,16 @@ fn onAnnouncedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Uni
       "own limit, which is the part that costs the sender something: eighty"
       "bytes proving nothing are free to mint, and free is what made this"
       "worth doing."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Disk.appendText, Infra.Kv.get, Tcp.close, Time.unixMs]
     match Domain.Block.headersOf(body)
         Result.Err(why) -> losingPeer(state, key, "peer {key} sent an unasked-for headers that would not decode: {why}")
         Result.Ok(headers) -> weighingHeaders(state, key, headers)
 
-fn weighingHeaders(state: Following, key: Int, headers: List<BlockHeader>) -> Result<Unit, String>
+fn weighingHeaders(state: Following, key: Int, headers: List<BlockHeader>) -> Result<Following, String>
     ? "The first Header in the announcement the tree has not placed, if the"
       "announcement holds one. An empty headers holds none, which is the"
       "case that started this."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Disk.appendText, Infra.Kv.get, Tcp.close, Time.unixMs]
     unplaced = firstUnplaced(state.store, headers)?
     match unplaced
         Option.None -> ignoredAnnouncement(state, key, "{List.len(headers)} unasked-for Header(s)")
@@ -2979,90 +2549,46 @@ fn unplacedOrNext(store: Store, header: BlockHeader, rest: List<BlockHeader>, he
         Option.None -> Result.Ok(Option.Some(header))
         Option.Some(stored) -> firstUnplaced(store, rest)
 
-fn provenEnough(state: Following, key: Int, header: BlockHeader) -> Result<Unit, String>
+fn provenEnough(state: Following, key: Int, header: BlockHeader) -> Result<Following, String>
     ? "A Header worth a Catch-up is one somebody spent work on."
       "Measured against the Network's easiest target rather than against the"
       "bits the Header claims, because the bits are the sender's own claim"
       "about itself -- Domain.Target.provenAtLimit says why. A Header that"
       "does not clear it is not a Header any Peer mined, so the Peer loses"
       "its place rather than merely being ignored."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Disk.appendText, Tcp.close, Time.unixMs]
     match Domain.Target.provenAtLimit(state.pool.network, header)
         Option.Some(why) -> losingPeer(state, key, "peer {key} announced Header {header.blockId} unasked: {why}")
         Option.None -> onMoved(state, key, "peer {key} sent Headers unasked, naming {header.blockId}")
 
-fn ignoredAnnouncement(state: Following, key: Int, what: String) -> Result<Unit, String>
+fn ignoredAnnouncement(state: Following, key: Int, what: String) -> Result<Following, String>
     ? "An announcement naming nothing the tree has not already placed."
       "Not a fault and not a Catch-up: the Peer keeps its place and the loop"
       "carries on. It goes to the record because a Peer sending these in a"
       "loop is worth being able to see afterwards."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Disk.appendText, Time.unixMs]
     noted = Infra.Metrics.noting(state.log, "fault", "ignoring {what} from peer {key}: the tree has placed every one (#300)")?
-    listen(withLog(state, noted))
+    Result.Ok(withLog(state, noted))
 
-fn losingPeer(state: Following, key: Int, why: String) -> Result<Unit, String>
+fn losingPeer(state: Following, key: Int, why: String) -> Result<Following, String>
     ? "A Peer that broke the protocol in the listen loop: dropped, and the"
       "loop carries on with whoever is left."
       "Apart from withoutPeer, which drops a Peer that failed a Catch-up and"
       "then retries the Catch-up on somebody else. Nothing is being retried"
       "here -- what the Peer said was worthless, not unfinished."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Tcp.close]
     _said = saidErrorIfPlain(state.watch, "dropping peer {key}: {why}")
     shrunk = Infra.Peers.dropOne(state.pool, key)?
-    listen(Following(pool = shrunk, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = Domain.Catchup.forgotten(state.gate, key)))
+    Result.Ok(Following(pool = shrunk, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = Domain.Catchup.forgotten(state.gate, key)))
 
-fn onPing(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onPing(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "Reply with the same nonce, to the Peer that sent it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Tcp.close, Tcp.writeNow]
     payload = Bytes.fromList(body)?
     sent = Infra.Peers.tell(state.pool, key, "pong", payload)?
-    listen(Following(pool = sent, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate))
+    Result.Ok(Following(pool = sent, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate))
 
-fn onOffered(state: Following, key: Int, offered: List<List<Int>>) -> Result<Unit, String>
+fn onOffered(state: Following, key: Int, offered: List<List<Int>>) -> Result<Following, String>
     ? "Transactions a Peer says it holds."
       "Only the ones we have not got are asked for. That is most of the flood"
       "control at this end but not all of it: nothing here records what has"
@@ -3072,20 +2598,9 @@ fn onOffered(state: Following, key: Int, offered: List<List<Int>>) -> Result<Uni
       "-- admission answers Known before it looks anything up -- and the fix"
       "is a record of what is in flight, which is the same bookkeeping the"
       "orphan pool needs. Both are deferred by n1bor/btc-listener#28."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Tcp.close, Tcp.writeNow]
     match unheld(state.mempool, offered, [])
-        [] -> listen(state)
+        [] -> Result.Ok(state)
         [head, ..tail] -> asking(state, key, List.prepend(head, tail))
 
 fn unheld(pool: Mempool, offered: List<List<Int>>, acc: List<List<Int>>) -> List<List<Int>>
@@ -3108,114 +2623,59 @@ verify keptIfNew
     List.len(keptIfNew(Domain.Mempool.empty(1000), [1, 2], [])) => 1
     keptIfNew(Domain.Mempool.empty(1000), [1, 2], []) => [[1, 2]]
 
-fn asking(state: Following, key: Int, hashes: List<List<Int>>) -> Result<Unit, String>
+fn asking(state: Following, key: Int, hashes: List<List<Int>>) -> Result<Following, String>
     ? "Ask the Peer that offered them, with the witness type."
       "The witness type is what makes the reply SegWit-serialised, which is"
       "the serialisation the Transaction Id was not taken over and the one the"
       "Scripts need."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Tcp.close, Tcp.writeNow]
     payload = Domain.Inventory.getDataPayload(Domain.Inventory.witnessTxType(), hashes)?
     sent = Infra.Peers.tell(state.pool, key, "getdata", payload)?
-    listen(Following(pool = sent, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate))
+    Result.Ok(Following(pool = sent, store = state.store, blocks = state.blocks, book = state.book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate))
 
-fn onTransaction(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onTransaction(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "A Transaction we asked for, or one a Peer sent unasked."
       "Both go through the same admission. A Peer that sends what nobody asked"
       "for has not misbehaved -- Core does it, for a Transaction it thinks we"
       "want -- and admission is the thing that decides, not who sent it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Infra.Kv.get, Tcp.close, Tcp.writeNow, Time.unixMs]
     tipHeight = tipHeightOf(state.store)?
     landing = Infra.Mempool.admitting(state.pool.network, state.store, state.mempool, body, tipHeight)?
     landed(state, key, landing)
 
-fn landed(state: Following, key: Int, landing: Landing) -> Result<Unit, String>
+fn landed(state: Following, key: Int, landing: Landing) -> Result<Following, String>
     ? "What admission decided, and what to do about it."
       "Only an admission is relayed. A refusal is ours and not the network's:"
       "a Transaction we will not hold may be perfectly valid, and telling"
       "other Peers we have it when we do not is how a node ends up unable to"
       "answer its own Announcements."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow, Time.unixMs]
     match landing
         Landing.Admitted(after, held) -> announcing(state, key, after, held)
-        Landing.Duplicate -> listen(state)
+        Landing.Duplicate -> Result.Ok(state)
         Landing.Conflicted(txid) -> notHeld(state, "conflicts with {txid}, which got here first")
         Landing.Rejected(why) -> notHeld(state, why)
 
-fn notHeld(state: Following, why: String) -> Result<Unit, String>
+fn notHeld(state: Following, why: String) -> Result<Following, String>
     ? "Say why, and carry on."
       "One line per refusal is a lot on mainnet and the right amount on a"
       "chain being watched. n1bor/btc-listener#134 is where this becomes a"
       "counter on a Panel instead."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.print]
     _said = saidLineIfPlain(state.watch, "mempool refused a Transaction: it {why}")
-    listen(state)
+    Result.Ok(state)
 
-fn announcing(state: Following, key: Int, after: Mempool, held: Domain.Mempool.Held) -> Result<Unit, String>
+fn announcing(state: Following, key: Int, after: Mempool, held: Domain.Mempool.Held) -> Result<Following, String>
     ? "Held, and told to every other Peer."
       "Not back to the Peer that sent it: it plainly has it. Announced by"
       "identifier rather than sent whole, which is what inv is for -- a Peer"
       "that wants it asks, and most will already have it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow, Time.unixMs]
     _said = saidLineIfPlain(state.watch, "mempool admitted {held.txid}: {held.size} bytes, {held.fee} sat at {held.rate}/kB; holding {Domain.Mempool.count(after)} ({Domain.Mempool.bytes(after)} bytes)")
     payload = Domain.Inventory.getDataPayload(Domain.Inventory.txType(), [hashOf(held.txid)])?
     told = toldOthers(state.pool, Infra.Peers.peerKeys(state.pool), key, payload)?
     seen = arrivedOnRing(state, held, Time.unixMs())
-    listen(Following(pool = told, store = seen.store, blocks = seen.blocks, book = seen.book, nextKey = seen.nextKey, watch = seen.watch, mempool = after, rebuilding = seen.rebuilding, log = state.log, board = state.board, gate = state.gate))
+    Result.Ok(Following(pool = told, store = seen.store, blocks = seen.blocks, book = seen.book, nextKey = seen.nextKey, watch = seen.watch, mempool = after, rebuilding = seen.rebuilding, log = state.log, board = state.board, gate = state.gate))
 
 fn arrivedOnRing(state: Following, held: Domain.Mempool.Held, nowMs: Int) -> Following
     ? "The Transactions Panel learns about it now rather than when a Block"
@@ -3250,7 +2710,7 @@ verify hashOf
     hashOf("") => []
     Domain.Hash.reversedHex(hashOf("f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16")) => "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16"
 
-fn onAsked(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onAsked(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "A Peer asking for Transactions we announced, and for Blocks."
       "Answering is not a courtesy: a node that announces and then goes quiet"
       "wastes the round trip of every Peer that asked, and Peers drop one that"
@@ -3263,21 +2723,10 @@ fn onAsked(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
       "asks one Peer for sixteen Blocks at a time, and framing them where the"
       "Message arrived fills the eight mebibytes that Peer's queue is allowed"
       "before the sixth mainnet Block, which costs it its seat."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Tcp.close, Tcp.writeNow]
     txsOut = serving(state.pool, state.mempool, key, Domain.Inventory.requestedTxHashesOf(body))?
     blocksOut = Infra.Peers.wanting(txsOut, key, Domain.Inventory.requestedBlockHashesOf(body), servedBlockCap())
-    listen(withPool(state, blocksOut))
+    Result.Ok(withPool(state, blocksOut))
 
 fn servedBlockCap() -> Int
     ? "The most Blocks one Peer may have waiting to be served at once."
@@ -3409,7 +2858,7 @@ fn served(pool: Pool, mempool: Mempool, key: Int, held: Domain.Mempool.Held, res
     ! [Console.error, Tcp.close, Tcp.writeNow]
     serving(Infra.Peers.tell(pool, key, "tx", Bytes.fromHex(held.raw)?)?, mempool, key, rest)
 
-fn onAnnouncedBlocks(state: Following, key: Int, announced: List<List<Int>>, first: List<Int>) -> Result<Unit, String>
+fn onAnnouncedBlocks(state: Following, key: Int, announced: List<List<Int>>, first: List<Int>) -> Result<Following, String>
     ? "A Block was announced. Ask for it as a compact Block if nothing else"
       "is being rebuilt, and otherwise take the ordinary path."
       "One rebuild at a time, deliberately. Two would need a queue and a"
@@ -3417,38 +2866,16 @@ fn onAnnouncedBlocks(state: Following, key: Int, announced: List<List<Int>>, fir
       "within a second of each other -- ends with the ordinary catch-up"
       "fetching both anyway. n1bor/btc-listener#29 keeps the loop simple and"
       "lets the fallback do the work."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Disk.appendText, Infra.Kv.get, Tcp.close, Tcp.writeNow, Time.unixMs]
     fresh = unplacedIds(state.store, announced, [])?
     match fresh
         [] -> ignoredAnnouncement(state, key, "an inv naming {List.len(announced)} Block(s)")
         [head, ..tail] -> onFreshBlocks(state, key, fresh, head)
 
-fn onFreshBlocks(state: Following, key: Int, announced: List<List<Int>>, first: List<Int>) -> Result<Unit, String>
+fn onFreshBlocks(state: Following, key: Int, announced: List<List<Int>>, first: List<Int>) -> Result<Following, String>
     ? "Ask for it as a compact Block if nothing else is being rebuilt, and"
       "otherwise take the ordinary path."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Disk.appendText, Tcp.close, Tcp.writeNow, Time.unixMs]
     match state.rebuilding
         Option.Some(pending) -> onMoved(state, key, "{List.len(announced)} Block(s) announced by peer {key}")
         Option.None -> askingCompact(state, key, announced, first)
@@ -3471,26 +2898,15 @@ fn unplacedInto(store: Store, hash: List<Int>, rest: List<List<Int>>, acc: List<
         Option.None -> unplacedIds(store, rest, List.prepend(hash, acc))
         Option.Some(stored) -> unplacedIds(store, rest, acc)
 
-fn askingCompact(state: Following, key: Int, announced: List<List<Int>>, first: List<Int>) -> Result<Unit, String>
+fn askingCompact(state: Following, key: Int, announced: List<List<Int>>, first: List<Int>) -> Result<Following, String>
     ? "getdata, with the type that asks for a Block by its parts."
       "Low bandwidth mode: the Peer announced, we ask. What comes back is a"
       "Header, a nonce, six-byte names for the Transactions it expects us to"
       "hold, and whole copies of the ones it does not."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Tcp.close, Tcp.writeNow, Time.unixMs]
     payload = Domain.Inventory.getDataPayload(compactBlockType(), [first])?
     sent = Infra.Peers.tell(state.pool, key, "getdata", payload)?
-    listen(waitingFor(withPool(state, sent), key, first, Time.unixMs()))
+    Result.Ok(waitingFor(withPool(state, sent), key, first, Time.unixMs()))
 
 fn compactBlockType() -> Int
     ? "The inventory type that asks for a compact Block: MSG_CMPCT_BLOCK."
@@ -3525,37 +2941,27 @@ fn rebuildDeadlineMs() -> Int
 verify rebuildDeadlineMs
     rebuildDeadlineMs() => 10000
 
-fn onCompact(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onCompact(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "A compact Block arrived. Rebuild it from the Mempool if we can."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Tcp.close, Tcp.writeNow,
+        Time.unixMs,
     ]
     match Domain.CompactBlock.decodeCompact(body)
         Result.Err(why) -> fellBack(state, key, "a compact Block would not decode: {why}")
         Result.Ok(compact) -> filling(state, key, compact)
 
-fn filling(state: Following, key: Int, compact: Compact) -> Result<Unit, String>
+fn filling(state: Following, key: Int, compact: Compact) -> Result<Following, String>
     ? "Rename the Mempool under this Block's key, and see what is missing."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Tcp.close, Tcp.writeNow,
+        Time.unixMs,
     ]
     held = Domain.CompactBlock.holdingsFor(Domain.CompactBlock.keyOf(compact.header, compact.nonce), heldBytes(state.mempool, Domain.Mempool.txids(state.mempool), []))
     wanted = Domain.CompactBlock.wantedFrom(compact, Map.keys(held))
@@ -3581,24 +2987,13 @@ fn prependedRaw(pool: Mempool, txid: String, acc: List<List<Int>>) -> List<List<
 verify prependedRaw
     prependedRaw(Domain.Mempool.empty(1000), "aa", []) => []
 
-fn askingFor(state: Following, key: Int, compact: Compact, indexes: List<Int>) -> Result<Unit, String>
+fn askingFor(state: Following, key: Int, compact: Compact, indexes: List<Int>) -> Result<Following, String>
     ? "getblocktxn for the positions the Mempool could not fill."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Tcp.close, Tcp.writeNow]
     _said = saidAsking(state, List.len(indexes), Domain.CompactBlock.totalOf(compact))
     payload = Domain.CompactBlock.getBlockTxnPayload(hashOfRebuild(state.rebuilding), indexes)?
     sent = Infra.Peers.tell(state.pool, key, "getblocktxn", payload)?
-    listen(awaiting(withPool(state, sent), compact, indexes))
+    Result.Ok(awaiting(withPool(state, sent), compact, indexes))
 
 fn saidAsking(state: Following, missing: Int, total: Int) -> Unit
     ? "Say how much of the Block the Mempool already held, which is the whole"
@@ -3630,54 +3025,36 @@ verify heldRebuild
     heldRebuild(Option.None, Compact(header = [], nonce = 0, shortIds = [], prefilled = []), []) => Option.None
     hashOfRebuild(heldRebuild(Option.Some(Rebuilding(blockId = "", hash = [9], key = 0, askedMs = 0, compact = Option.None, asked = [])), Compact(header = [], nonce = 0, shortIds = [], prefilled = []), [3])) => [9]
 
-fn onBlockTxn(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onBlockTxn(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "The Transactions we asked for, to finish a rebuild."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     match Domain.CompactBlock.decodeBlockTxn(body)
         Result.Err(why) -> fellBack(state, key, "a blocktxn would not decode: {why}")
         Result.Ok(answer) -> withAnswer(state, key, answer)
 
-fn withAnswer(state: Following, key: Int, answer: Tuple<List<Int>, List<Int>>) -> Result<Unit, String>
+fn withAnswer(state: Following, key: Int, answer: Tuple<List<Int>, List<Int>>) -> Result<Following, String>
     ? "The Block it answers for, and the Transactions in it."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     match answer
         (named, rest) -> finishing(state, key, Domain.Block.carriedOf(Result.withDefault(Bytes.fromList(rest), Bytes.fromList([]))))
 
-fn finishing(state: Following, key: Int, carried: Result<List<Carried>, String>) -> Result<Unit, String>
+fn finishing(state: Following, key: Int, carried: Result<List<Carried>, String>) -> Result<Following, String>
     ? "Decode what arrived, keeping each Transaction's own bytes."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     match carried
         Result.Err(why) -> fellBack(state, key, "a blocktxn carried Transactions that would not decode: {why}")
@@ -3692,64 +3069,46 @@ fn bytesOf(carried: List<Carried>, acc: List<List<Int>>) -> List<List<Int>>
 verify bytesOf
     bytesOf([], []) => []
 
-fn assembling(state: Following, key: Int, supplied: List<List<Int>>) -> Result<Unit, String>
+fn assembling(state: Following, key: Int, supplied: List<List<Int>>) -> Result<Following, String>
     ? "Fill the holes with what arrived and check the whole Block."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     match state.rebuilding
         Option.None -> onMoved(state, key, "a blocktxn arrived with nothing being rebuilt")
         Option.Some(pending) -> withPending(state, key, pending, supplied)
 
-fn withPending(state: Following, key: Int, pending: Rebuilding, supplied: List<List<Int>>) -> Result<Unit, String>
+fn withPending(state: Following, key: Int, pending: Rebuilding, supplied: List<List<Int>>) -> Result<Following, String>
     ? "The compact Block we kept, now that its missing parts are here."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     match pending.compact
         Option.None -> onMoved(state, key, "a blocktxn arrived before the compact Block it belongs to")
         Option.Some(compact) -> completed(state, key, compact, Domain.CompactBlock.rebuilt(compact, Domain.CompactBlock.holdingsFor(Domain.CompactBlock.keyOf(compact.header, compact.nonce), heldBytes(state.mempool, Domain.Mempool.txids(state.mempool), [])), supplied), List.len(supplied))
 
-fn completed(state: Following, key: Int, compact: Compact, built: Result<Bytes, String>, supplied: Int) -> Result<Unit, String>
+fn completed(state: Following, key: Int, compact: Compact, built: Result<Bytes, String>, supplied: Int) -> Result<Following, String>
     ? "A rebuilt Block, or the reason it could not be rebuilt."
       "Either way the chain moves on: a failure here costs a round trip and"
       "falls back to fetching the Block whole, which is what BIP152 says to"
       "do and what the node would have done anyway."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     match built
         Result.Err(why) -> fellBack(state, key, "a compact Block would not rebuild: {why}")
         Result.Ok(payload) -> storing(state, key, compact, payload, supplied)
 
-fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplied: Int) -> Result<Unit, String>
+fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplied: Int) -> Result<Following, String>
     ? "Put the rebuilt Block where a fetched one would have gone -- once it"
       "is proved to be a Block this node is waiting for (#283). It has to"
       "be the one being rebuilt, its Header has to pass the same pipeline"
@@ -3762,16 +3121,10 @@ fn storing(state: Following, key: Int, compact: Compact, payload: Bytes, supplie
       "it is absorbed here and then looked for: absorbing is what checks"
       "it, and a Header the tree did not keep is a Header it refused."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Time.unixMs,
     ]
     blockId = Domain.Block.blockIdOf(Result.withDefault(Bytes.fromList(compact.header), Bytes.fromList([])))
     match compactStore(state.pool.network, state.store, state.rebuilding, compact.header, payload, blockId, Int.div(Time.unixMs(), 1000))
@@ -3865,7 +3218,7 @@ fn sampleRebuilding(blockId: String) -> Rebuilding
 verify sampleRebuilding
     sampleRebuilding("aa").blockId => "aa"
 
-fn putAway(state: Following, key: Int, compact: Compact, payload: Bytes, supplied: Int, blockId: String) -> Result<Unit, String>
+fn putAway(state: Following, key: Int, compact: Compact, payload: Bytes, supplied: Int, blockId: String) -> Result<Following, String>
     ? "Proved, so put where a fetched Block would have gone."
       "The Segment is made durable between the append and the Location, the"
       "same way the body phase does it (#301). One Block rather than a batch"
@@ -3873,16 +3226,10 @@ fn putAway(state: Following, key: Int, compact: Compact, payload: Bytes, supplie
       "Block arriving on its own is worth, and it happens once per Block"
       "mined rather than once per Block downloaded."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
+        Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.putAll,
+        Time.unixMs,
     ]
     appended = Infra.Blocks.append(state.blocks, payload)?
     durable = Infra.Blocks.synced(appended.store)?
@@ -3895,69 +3242,36 @@ fn saidRebuilt(watch: Watching, blockId: String, total: Int, supplied: Int, byte
     ! [Console.print]
     saidLineIfPlain(watch, "compact Block {blockId}: {total} Transaction(s), {supplied} fetched, {bytes} bytes rebuilt from the Mempool")
 
-fn fellBack(state: Following, key: Int, why: String) -> Result<Unit, String>
+fn fellBack(state: Following, key: Int, why: String) -> Result<Following, String>
     ? "A rebuild that did not work is a Block to fetch the ordinary way."
       "Never an error. Every reason a reconstruction fails -- a Peer that"
       "answered oddly, a short id collision, a Mempool that had moved on --"
       "is answered by asking for the whole Block, and the node is exactly"
       "where it would have been without compact Blocks at all."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.print, Disk.appendText, Time.unixMs]
     _said = saidLineIfPlain(state.watch, "{why}; fetching it whole instead")
     onMoved(givenUp(state), key, "falling back to a whole Block from peer {key}")
 
-fn onAskedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Unit, String>
+fn onAskedHeaders(state: Following, key: Int, body: List<Int>) -> Result<Following, String>
     ? "A Peer asking what follows the newest Block it knows."
       "This is how a node syncs from us, and the whole of what makes this a"
       "Peer worth connecting to rather than a Peer that only takes. The"
       "Locator names Block Ids newest first; the first one we hold is the"
       "newest thing we agree about, and everything above it is what they are"
       "missing."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     locator = Domain.Block.locatorIn(body)
     match Domain.Block.locatorFault(locator)
-        Option.Some(why) -> listen(withoutPeer(state, key, why)?)
+        Option.Some(why) -> losingPeer(state, key, why)
         Option.None -> answeringHeaders(state, key, locator)
 
-fn answeringHeaders(state: Following, key: Int, locator: List<List<Int>>) -> Result<Unit, String>
+fn answeringHeaders(state: Following, key: Int, locator: List<List<Int>>) -> Result<Following, String>
     ? "The Headers above the newest Id in a Locator we know, to the Peer that asked."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
+    ! [Console.error, Console.print, Infra.Kv.get, Tcp.close, Tcp.writeNow]
     from = agreedHeight(state.store, locator)?
     headers = headersFrom(state.store, from + 1, Domain.Block.headersCap(), [])?
     headersOut = sendingHeaders(state, key, headers)?
-    listen(headersOut)
+    Result.Ok(headersOut)
 
 fn sendingHeaders(state: Following, key: Int, headers: List<String>) -> Result<Following, String>
     ? "The Headers we hold above what they know, up to the cap."
@@ -4072,20 +3386,3 @@ fn headerHeld(store: Store, height: Int, left: Int, acc: List<String>, blockId: 
     match held
         Option.None -> Result.Ok(List.reverse(acc))
         Option.Some(stored) -> headersFrom(store, height + 1, left - 1, List.prepend(Domain.TreeStore.decodeHeld(blockId, stored)?.headerHex, acc))
-
-fn boardTick(board: Option<Board>) -> Int
-    ? "How long the next tick may be, given what the Board is holding."
-      "A Reader with a request still arriving or an answer still going out"
-      "is work this node owes and nothing will wake it for, the same case"
-      "Infra.Peers.pollBudget covers for a half-written frame. A tenth of"
-      "a second while any Reader is held, and the ordinary tick otherwise,"
-      "so a browser does not wait a second between operations and a node"
-      "nobody is looking at still sleeps."
-    match board
-        Option.None -> tickMs()
-        Option.Some(one) -> match List.len(one.readers) > 0
-            true -> 100
-            false -> tickMs()
-
-verify boardTick
-    boardTick(Option.None) => tickMs()

@@ -1,0 +1,104 @@
+module Catching
+    intent =
+        "The Catch-up as requests: the one Peer to ask, its Headers a batch at"
+        "a time, the Set taken back to the fork, the bodies a slice at a time,"
+        "and the Set forward a Block at a time."
+        "Each request is one step of what Infra.Follow's catchingUp did in a"
+        "single call that waited inside itself. The walk process asks them in"
+        "order and the owner answers each from the state it keeps, so the"
+        "Peers go on being read and answered by their own processes while the"
+        "walk waits for a batch of Headers, a Block, or a job."
+        "Answered by App.Owner."
+    kind = capability
+    semantics = effectful
+    exposes [Due, Batch, Aligned, Fetch, Begun, Step, Chunk, Ending, Settled, due, headers, aligned, fetched, begun, connected, ended, settled]
+
+type Due
+    From(Int)
+    Over
+
+type Batch
+    More
+    Done
+    Failed(String)
+    Over
+
+type Aligned
+    Ready
+    Stopped(String)
+    Over
+
+type Fetch
+    More
+    Done
+    Failed(String)
+    Stopped(String)
+    Over
+
+type Begun
+    At(Int)
+    Refused(String)
+    Over
+
+type Step
+    Next
+    Ended
+    Refused(String)
+    Over
+
+type Chunk
+    Built
+    AtTip
+    Refused(String)
+    Over
+
+type Ending
+    Moved
+    Faulted(String)
+    Stopped(String)
+    Over
+
+type Settled
+    Again(Int)
+    Rested
+    Over
+
+operation due() -> Due
+    ? "The Peer the next Catch-up asks, once one is due: at start-up, when a Peer says the chain moved, or when a held claim comes due."
+    oracle = generative
+    replay = recorded
+
+operation headers(key: Int) -> Batch
+    ? "One getheaders to this Peer and its answer placed. More while a batch moves the tip."
+    oracle = generative
+    replay = recorded
+
+operation aligned(key: Int) -> Aligned
+    ? "The Set taken back off any Branch the Headers abandoned, and the bodies above the fork planned."
+    oracle = generative
+    replay = recorded
+
+operation fetched(key: Int) -> Fetch
+    ? "One slice of the body download. More when the slice ran out with Blocks still to fetch."
+    oracle = generative
+    replay = recorded
+
+operation begun(final: Bool) -> Begun
+    ? "A chunk of the Set begun at the Height after where it stands. final is the Set to the tip rather than a chunk between two slices."
+    oracle = generative
+    replay = recorded
+
+operation connected(height: Int) -> Step
+    ? "The Block at this Height decoded and connected off the turn, into the chunk's window. Ended when the chunk has no Block left."
+    oracle = generative
+    replay = recorded
+
+operation ended() -> Chunk
+    ? "The chunk's window written. AtTip once the Set to the tip is done, Built while there is more of it."
+    oracle = generative
+    replay = recorded
+
+operation settled(key: Int, ending: Ending) -> Settled
+    ? "What the Catch-up came to: another Peer to ask when this one was at fault, rest when the chain is followed, Over when the node has closed."
+    oracle = generative
+    replay = recorded

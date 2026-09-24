@@ -9,12 +9,11 @@ module Maintain
     exposes [prune, txIndex, outputs, audit, reindex, utxo, assumeValid]
     depends [ Infra.Metrics,Domain.AssumeValid, Infra.ChainState, Domain.Network, Domain.Index, Domain.SpendScript, Infra.Audit, Infra.Blocks, Infra.Lock, Infra.Outputs, Infra.Prune, Infra.Reindex, Infra.Store, Infra.TxIndex, Domain.IndexKeys, Infra.Screen, Domain.Snapshot]
     effects [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -113,7 +112,7 @@ fn txIndex(rest: List<String>) -> Result<Unit, String>
     ? "Indexing is local: a directory and a range of Heights."
     ! [
         Console.print,
-        Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
     ]
     match rest
@@ -124,7 +123,7 @@ fn txIndexRange(dir: String, more: List<String>) -> Result<Unit, String>
     ? "Both Heights must be given."
     ! [
         Console.print,
-        Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
     ]
     match heights(more)
@@ -134,7 +133,7 @@ fn txIndexRange(dir: String, more: List<String>) -> Result<Unit, String>
 fn txIndexRun(dir: String, span: Span) -> Result<String, String>
     ? "Record where every Transaction in the range sits."
     ! [
-        Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
     ]
     _claimed = Infra.Lock.claim(dir, "txindex")?
@@ -143,7 +142,7 @@ fn txIndexRun(dir: String, span: Span) -> Result<String, String>
 fn txIndexDone(dir: String, span: Span) -> Result<String, String>
     ? "Record the Transactions, with the claim already taken."
     ! [
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
+        Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
     ]
     store = Infra.Store.openExisting(dir)?
@@ -155,7 +154,7 @@ fn outputs(rest: List<String>) -> Result<Unit, String>
     ? "Indexing Outputs is local: a directory and a range of Heights."
     ! [
         Console.print,
-        Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Time.now, Time.unixMs,
     ]
@@ -167,7 +166,7 @@ fn outputsRange(dir: String, more: List<String>) -> Result<Unit, String>
     ? "Both Heights must be given."
     ! [
         Console.print,
-        Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Time.now, Time.unixMs,
     ]
@@ -179,7 +178,7 @@ fn outputsRun(dir: String, span: Span) -> Result<String, String>
     ? "Record every Output in the range against the name an Input calls it by."
     ! [
         Console.print,
-        Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Time.now, Time.unixMs,
     ]
@@ -190,7 +189,7 @@ fn outputsDone(dir: String, span: Span) -> Result<String, String>
     ? "Record the Outputs, with the claim already taken."
     ! [
         Console.print,
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
+        Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open, Infra.Kv.putAll,
         Time.now, Time.unixMs,
     ]
@@ -205,7 +204,7 @@ fn audit(network: Network, rest: List<String>) -> Result<Unit, String>
       "under depend on which chain it is on, not only how high up it is."
     ! [
         Console.print,
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
+        Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open,
         Time.now, Time.unixMs,
     ]
@@ -217,7 +216,7 @@ fn auditRange(network: Network, dir: String, more: List<String>) -> Result<Unit,
     ? "Both Heights must be given."
     ! [
         Console.print,
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
+        Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open,
         Time.now, Time.unixMs,
     ]
@@ -229,7 +228,7 @@ fn auditRun(network: Network, dir: String, span: Span) -> Result<String, String>
     ? "Walk the range and report what it found."
     ! [
         Console.print,
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
+        Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open,
         Time.now, Time.unixMs,
     ]
@@ -305,12 +304,11 @@ fn utxo(network: Network, rest: List<String>) -> Result<Unit, String>
       "every Block up to one Height, so there is nothing a start Height could"
       "mean -- it resumes from whatever it last recorded."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -323,12 +321,11 @@ fn utxo(network: Network, rest: List<String>) -> Result<Unit, String>
 fn utxoHeight(network: Network, dir: String, more: List<String>) -> Result<Unit, String>
     ? "Take the Height that follows the directory."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -341,12 +338,11 @@ fn utxoHeight(network: Network, dir: String, more: List<String>) -> Result<Unit,
 fn startUtxo(network: Network, dir: String, parsed: Result<Int, String>) -> Result<Unit, String>
     ? "Build, or show the usage if the Height was not a whole number."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -359,12 +355,11 @@ fn startUtxo(network: Network, dir: String, parsed: Result<Int, String>) -> Resu
 fn utxoRun(network: Network, dir: String, to: Int) -> Result<String, String>
     ? "Connect Blocks into the UTXO Set up to the Height."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.writeBytes, Disk.writeText,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -376,12 +371,11 @@ fn utxoRun(network: Network, dir: String, to: Int) -> Result<String, String>
 fn utxoDone(network: Network, dir: String, to: Int) -> Result<String, String>
     ? "Build the Set, with the claim already taken."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,

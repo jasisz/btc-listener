@@ -11,15 +11,15 @@ module Download
         "The phase resumes. It holds nothing it has not already written down,"
         "so stopping is always safe and restarting costs at most the batch"
         "that was in flight."
-    exposes [Grown, headers, headersOn]
+    exposes [Grown, Asked, Answered, headers, headersOn, withGenesis, batchAsked, batchHeard]
     depends [Bytes, Domain.Address, Infra.Metrics, Domain.Block, Domain.HeaderTree, Domain.Index, Domain.IndexKeys, Domain.Network, Domain.Reorg, Domain.Screen, Domain.Snapshot, Infra.Headers, Infra.Pace, Infra.Peers, Infra.Screen, Infra.Store]
     effects [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
+        Disk.appendText,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -37,11 +37,11 @@ fn headers(network: Network, address: PeerAddress, store: Store) -> Result<Store
       "ideas of how a Message is read off a socket."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
+        Disk.appendText,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -68,11 +68,11 @@ fn headerSession(pool: Pool, store: Store) -> Result<Grown, String>
     ? "Ask for Headers from wherever the Index already reaches."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
+        Disk.appendText,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -91,11 +91,11 @@ fn headersOn(pool: Pool, key: Int, store: Store, have: Int, eye: Eye) -> Result<
       "minutes for the life of the process."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
+        Disk.appendText,
         Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
         Wait.poll,
@@ -146,6 +146,48 @@ verify heightsOf
 
 fn headerBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: Eye) -> Result<Grown, String>
     ? "Ask for the Headers after the ones held, store them, and go round again."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    asked = batchAsked(pool, key, store, have, pace, eye)?
+    match asked.sent
+        false -> Result.Ok(Grown(pool = asked.pool, store = store, eye = asked.eye))
+        true -> headerAnswer(asked, key, store, have, Infra.Peers.awaitFrom(asked.pool, key, "headers")?)
+
+fn headerAnswer(asked: Asked, key: Int, store: Store, have: Int, waited: Waited) -> Result<Grown, String>
+    ? "The answer placed, and another round while it moved the tip."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    answered = batchHeard(waited.pool.network, store, have, waited.frame.body, asked.eye)?
+    match answered.more
+        true -> headerBatch(waited.pool, key, answered.store, answered.have, asked.pace, answered.eye)
+        false -> Result.Ok(Grown(pool = waited.pool, store = answered.store, eye = answered.eye))
+
+record Asked
+    pool: Pool
+    pace: Pace
+    eye: Eye
+    sent: Bool
+
+fn batchAsked(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: Eye) -> Result<Asked, String>
+    ? "One round's question, without waiting for its answer."
       "Each round asks the stop flag first, so a Ctrl-C during a long"
       "catch-up ends the phase at a batch boundary with what is already"
       "stored -- and the command's claim is released the ordinary way (#112)."
@@ -153,39 +195,94 @@ fn headerBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: E
       "Headers are held and how fast they are arriving. No target and no"
       "ETA, because a Peer never says how many it has -- the phase ends when"
       "a batch stops moving the tip, and only then is the count a total."
+      "sent is false when the stop was asked for and nothing went out."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Disk.appendText,
+        Infra.Kv.get,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
-        Wait.poll,
     ]
     recorded = Infra.Metrics.marked(eye.log, "headers", have, 0, 0, 0, Infra.Peers.polledMsOf(pool), List.len(Infra.Peers.peerKeys(pool)), eye.candidates, 0, 0, false)?
     looked = Infra.Screen.glanced(Infra.Screen.logging(Infra.Screen.eyeing(eye, Domain.Snapshot.withCandidates(Domain.Snapshot.withPeers(Domain.Snapshot.headersAt(eye.snapshot, have, 0, Time.unixMs()), Infra.Peers.company(pool)), eye.candidates)), recorded), Time.unixMs())?
     match Bool.or(Process.stopRequested(), looked.stopped)
-        true -> stoppedBatch(pool, store, have, looked)
-        false -> pacedBatch(pool, key, store, have, pace, Time.unixMs(), looked)
+        true -> pausedAt(pool, have, pace, looked)
+        false -> askedNow(pool, key, store, have, pacedNow(have, pace, Time.unixMs(), looked), looked)
 
-fn pacedBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, nowMs: Int, eye: Eye) -> Result<Grown, String>
-    ? "The minute line when it is due, then the round itself."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-    ]
+fn pausedAt(pool: Pool, have: Int, pace: Pace, eye: Eye) -> Result<Asked, String>
+    ? "Asked to stop mid catch-up: keep what is stored and end the phase."
+    ! [Console.print]
+    _said = saidIfPlain(eye, "stop requested; headers pause at {have}")
+    Result.Ok(Asked(pool = pool, pace = pace, eye = eye, sent = false))
+
+fn pacedNow(have: Int, pace: Pace, nowMs: Int, eye: Eye) -> Pace
+    ? "The minute line when it is due, and the Pace the next one measures from."
+    ! [Console.print]
     match Bool.and(Infra.Pace.due(pace, nowMs, 1), plainly(eye))
-        false -> nextBatch(pool, key, store, have, pace, eye)
-        true -> saidBatch(pool, key, store, have, pace, nowMs, eye)
+        false -> pace
+        true -> saidPace(have, pace, nowMs)
+
+fn saidPace(have: Int, pace: Pace, nowMs: Int) -> Pace
+    ? "Say it, and measure the next line from now."
+    ! [Console.print]
+    _said = Console.print("{headerPaceLine(have, pace, nowMs)}")
+    Infra.Pace.advanced(pace, nowMs, have, 0)
+
+fn askedNow(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: Eye) -> Result<Asked, String>
+    ? "The Locator built from what the Index names, and the getheaders sent."
+    ! [Console.error, Infra.Kv.get, Tcp.close, Tcp.writeNow]
+    locator = locatorFor(pool.network, store, have)?
+    payload = Domain.Block.getHeadersPayload(locator)?
+    sent = Infra.Peers.tell(pool, key, "getheaders", payload)?
+    Result.Ok(Asked(pool = sent, pace = pace, eye = eye, sent = true))
+
+record Answered
+    store: Store
+    have: Int
+    eye: Eye
+    more: Bool
+
+fn batchHeard(network: Network, store: Store, have: Int, body: List<Int>, eye: Eye) -> Result<Answered, String>
+    ? "A headers answer placed. An empty batch means the Peer has nothing"
+      "after what we hold; more is true while a batch moves the tip."
+    ! [Console.print, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll, Time.unixMs]
+    decoded = Domain.Block.headersOf(body)?
+    match decoded
+        [] -> answeredDone(store, have, eye)
+        [head, ..tail] -> answeredStored(network, store, decoded, eye)
+
+fn answeredDone(store: Store, have: Int, eye: Eye) -> Result<Answered, String>
+    ? "Report where the Index now reaches and stop."
+    ! [Console.print]
+    _said = saidIfPlain(eye, "headers complete: {have} known")
+    Result.Ok(Answered(store = store, have = have, eye = eye, more = false))
+
+fn answeredStored(network: Network, store: Store, decoded: List<BlockHeader>, eye: Eye) -> Result<Answered, String>
+    ? "Write the batch in one append."
+      "One putAll rather than a put per Header: a Store hands back a copy of"
+      "itself, so a batch of two thousand costs one copy instead of two thousand."
+    ! [Console.print, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll, Time.unixMs]
+    outcome = Infra.Headers.absorbed(network, store, decoded, Int.div(Time.unixMs(), 1000))?
+    _told = announcedIfPlain(eye, outcome)
+    moved(outcome, Infra.Screen.eyeing(eye, ringsAfter(eye.snapshot, outcome, Time.unixMs())))
+
+fn moved(outcome: Settled, eye: Eye) -> Result<Answered, String>
+    ? "Ask for more only while the batch is moving the tip."
+      "The Height to carry forward used to be the old one plus however many"
+      "Headers arrived, which always went up. It is now the tip's Height,"
+      "which does not: a Peer answering with Headers we already hold, or with"
+      "a branch too light to win, leaves h: exactly as it was. The Locator is"
+      "built from h:, so asking again would send the same one and get the same"
+      "answer. Unchanged is the honest stop, and it is not the same as an"
+      "empty batch -- Headers can arrive, be placed on a losing branch, and"
+      "change nothing about which chain we follow."
+    ! [Console.print]
+    match outcome.movement
+        Movement.Unchanged -> answeredDone(outcome.store, outcome.tipHeight + 1, eye)
+        Movement.Extended(added) -> Result.Ok(Answered(store = outcome.store, have = outcome.tipHeight + 1, eye = eye, more = true))
+        Movement.Reorganised(forkHeight, displaced) -> Result.Ok(Answered(store = outcome.store, have = outcome.tipHeight + 1, eye = eye, more = true))
 
 fn plainly(eye: Eye) -> Bool
     ? "Whether this walk speaks in printed lines."
@@ -199,22 +296,6 @@ verify plainly
     plainly(Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none())) => true
     plainly(Infra.Screen.watchedBy(Option.Some(Domain.Screen.opened()), Domain.Snapshot.started(0), Infra.Metrics.none(), 0, Option.None)) => false
 
-fn saidBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, nowMs: Int, eye: Eye) -> Result<Grown, String>
-    ? "Say it, and measure the next line from now."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    _said = Console.print("{headerPaceLine(have, pace, nowMs)}")
-    nextBatch(pool, key, store, have, Infra.Pace.advanced(pace, nowMs, have, 0), eye)
-
 fn headerPaceLine(have: Int, pace: Pace, nowMs: Int) -> String
     ? "How many Headers are held and how fast they are arriving."
     "headers {have} held, {Infra.Pace.perSecond(have - pace.lastBlocks, nowMs - pace.lastMs)}/s"
@@ -222,80 +303,12 @@ fn headerPaceLine(have: Int, pace: Pace, nowMs: Int) -> String
 verify headerPaceLine
     headerPaceLine(120000, Infra.Pace.advanced(Infra.Pace.pacedFrom(0), 0, 30000, 0), 60000) => "headers 120000 held, 1500.0/s"
 
-fn stoppedBatch(pool: Pool, store: Store, have: Int, eye: Eye) -> Result<Grown, String>
-    ? "Asked to stop mid catch-up: keep what is stored and end the phase."
-    ! [Console.print]
-    _said = saidIfPlain(eye, "stop requested; headers pause at {have}")
-    Result.Ok(Grown(pool = pool, store = store, eye = eye))
-
 fn saidIfPlain(eye: Eye, line: String) -> Unit
     ? "A line for the plain log; the Screen already shows the fact."
     ! [Console.print]
     match plainly(eye)
         true -> Console.print(line)
         false -> Unit
-
-fn nextBatch(pool: Pool, key: Int, store: Store, have: Int, pace: Pace, eye: Eye) -> Result<Grown, String>
-    ? "One round: ask, wait, absorb."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    locator = locatorFor(pool.network, store, have)?
-    payload = Domain.Block.getHeadersPayload(locator)?
-    sent = Infra.Peers.tell(pool, key, "getheaders", payload)?
-    waited = Infra.Peers.awaitFrom(sent, key, "headers")?
-    decoded = Domain.Block.headersOf(waited.frame.body)?
-    absorb(waited.pool, key, store, have, decoded, pace, eye)
-
-fn absorb(pool: Pool, key: Int, store: Store, have: Int, decoded: List<BlockHeader>, pace: Pace, eye: Eye) -> Result<Grown, String>
-    ? "An empty batch means the Peer has nothing after what we hold."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match decoded
-        [] -> done(pool, store, have, eye)
-        [head, ..tail] -> stored(pool, key, store, have, decoded, pace, eye)
-
-fn done(pool: Pool, store: Store, have: Int, eye: Eye) -> Result<Grown, String>
-    ? "Report where the Index now reaches and stop."
-    ! [Console.print]
-    _said = saidIfPlain(eye, "headers complete: {have} known")
-    Result.Ok(Grown(pool = pool, store = store, eye = eye))
-
-fn stored(pool: Pool, key: Int, store: Store, have: Int, decoded: List<BlockHeader>, pace: Pace, eye: Eye) -> Result<Grown, String>
-    ? "Write the batch in one append, then ask for the next."
-      "One putAll rather than a put per Header: a Store hands back a copy of"
-      "itself, so a batch of two thousand costs one copy instead of two thousand."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    outcome = Infra.Headers.absorbed(pool.network, store, decoded, Int.div(Time.unixMs(), 1000))?
-    _told = announcedIfPlain(eye, outcome)
-    continuing(pool, key, outcome, pace, Infra.Screen.eyeing(eye, ringsAfter(eye.snapshot, outcome, Time.unixMs())))
 
 fn ringsAfter(snapshot: Snapshot, outcome: Settled, nowMs: Int) -> Snapshot
     ? "What a batch did to the tree, into the Snapshot's rings (#132): a"
@@ -327,32 +340,6 @@ fn orphansAfter(snapshot: Snapshot, count: Int, nowMs: Int) -> Snapshot
 verify orphansAfter
     orphansAfter(Domain.Snapshot.started(0), 0, 9).rings.orphans => 0
     orphansAfter(Domain.Snapshot.started(0), 2, 9).rings.orphans => 2
-
-fn continuing(pool: Pool, key: Int, outcome: Settled, pace: Pace, eye: Eye) -> Result<Grown, String>
-    ? "Ask for more only while the batch is moving the tip."
-      "The Height to carry forward used to be the old one plus however many"
-      "Headers arrived, which always went up. It is now the tip's Height,"
-      "which does not: a Peer answering with Headers we already hold, or with"
-      "a branch too light to win, leaves h: exactly as it was. The Locator is"
-      "built from h:, so asking again would send the same one and get the same"
-      "answer. Unchanged is the honest stop, and it is not the same as an"
-      "empty batch -- Headers can arrive, be placed on a losing branch, and"
-      "change nothing about which chain we follow."
-    ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size,
-        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.unixMs,
-        Wait.poll,
-    ]
-    match outcome.movement
-        Movement.Unchanged -> done(pool, outcome.store, outcome.tipHeight + 1, eye)
-        Movement.Extended(added) -> headerBatch(pool, key, outcome.store, outcome.tipHeight + 1, pace, eye)
-        Movement.Reorganised(forkHeight, displaced) -> headerBatch(pool, key, outcome.store, outcome.tipHeight + 1, pace, eye)
 
 fn announcedIfPlain(eye: Eye, outcome: Settled) -> Unit
     ? "The tip movement as a line, unless the Screen is drawing it."

@@ -1,0 +1,23 @@
+module Decoding
+    intent =
+        "The Work probe's own request: one payload decoded off the turn while"
+        "the Peer it holds goes on being read and answered. Answered by"
+        "Tools.ProbeOwner."
+    kind = capability
+    semantics = effectful
+    exposes [Decoded, decoded, finished]
+
+type Decoded
+    Transactions(Int)
+    Refused(String)
+    Cancelled
+
+operation decoded() -> Decoded
+    ? "The payload named on the command line, decoded by a job; Cancelled when a stop was asked for first."
+    oracle = generative
+    replay = recorded
+
+operation finished() -> Unit
+    ? "The probe is done with its Peer."
+    oracle = generativeOutput
+    replay = recorded

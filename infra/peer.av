@@ -13,7 +13,6 @@ module Peer
     depends [Bytes, Domain.Address, Domain.Inbox, Domain.Inventory, Domain.Network, Domain.Transaction, Infra.Peers]
     effects [
         Console.error, Console.print,
-        Infra.Kv.getAll,
         Process.stopRequested,
         Random.int,
         Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
@@ -32,7 +31,6 @@ fn run(network: Network, address: PeerAddress) -> Result<Unit, String>
     ? "Connect, complete the Handshake, then listen until the process is stopped."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
         Process.stopRequested,
         Random.int,
         Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
@@ -56,8 +54,6 @@ fn listen(pool: Pool) -> Result<Unit, String>
       "recursion does not grow the stack however long it runs."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
@@ -71,8 +67,6 @@ fn handle(pool: Pool, key: Int, frame: Frame) -> Result<Unit, String>
       "A ping must be answered, or the Peer eventually drops the connection."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
@@ -88,8 +82,6 @@ fn onAnnouncement(pool: Pool, key: Int, body: List<Int>) -> Result<Unit, String>
     ? "Ask for every Transaction the Peer just offered."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
@@ -102,8 +94,6 @@ fn request(pool: Pool, key: Int, hashes: List<List<Int>>) -> Result<Unit, String
     ? "An Announcement carrying no Transactions needs no reply."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
@@ -117,8 +107,6 @@ fn sendGetData(pool: Pool, key: Int, hashes: List<List<Int>>) -> Result<Unit, St
     ? "Send the getdata that turns identifiers into Transactions."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
@@ -132,8 +120,6 @@ fn onTransaction(pool: Pool, key: Int, body: List<Int>) -> Result<Unit, String>
     ? "Decode and print the Transaction, then go back to listening."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,
@@ -156,8 +142,6 @@ fn onPing(pool: Pool, key: Int, body: List<Int>) -> Result<Unit, String>
     ? "Reply with the same nonce the Peer sent."
     ! [
         Console.error, Console.print,
-        Infra.Kv.getAll,
-        Process.stopRequested,
         Random.int,
         Tcp.close, Tcp.readNow, Tcp.writeNow,
         Time.unixMs,

@@ -1,0 +1,52 @@
+module Wire
+    intent =
+        "What the processes of a following node ask of the one owner of its"
+        "sockets and its disk: the node opened, the next whole Message from a"
+        "Peer, that Message acted on, a second of the loop's own clock, and"
+        "the outboxes emptied as their sockets drain."
+        "Answered by App.Owner, which keeps the pool, the Store and the"
+        "Mempool in one state and changes them one request at a time: the"
+        "single writer ADR 0008 asks for. A request that cannot be answered"
+        "yet is parked on the socket it needs, or until the owner moves, and"
+        "the generated loop does the waiting that Infra.Follow used to do in"
+        "one hand-written Wait.poll."
+    kind = capability
+    semantics = effectful
+    exposes [Started, Heard, Turned, started, heard, handled, ticked, drained]
+
+type Started
+    Running
+    Failed(String)
+
+type Heard
+    Message(String, List<Int>)
+    Gone
+
+type Turned
+    Again
+    Over
+
+operation started() -> Started
+    ? "The node opened from the command line: the Store, the Book, the Peers named or found, and the port it answers on. Failed says why it could not be."
+    oracle = generative
+    replay = recorded
+
+operation heard(key: Int) -> Heard
+    ? "The next whole Message this Peer has sent, or Gone once it is no longer seated."
+    oracle = generative
+    replay = recorded
+
+operation handled(key: Int, command: String, body: List<Int>) -> Bool
+    ? "One Message acted on, and whether the Peer that sent it is still seated afterwards."
+    oracle = generativeOutput
+    replay = recorded
+
+operation ticked() -> Turned
+    ? "One second of the loop's own clock: dials, the Screen, the Board, the stats line, the silence rule. Over once the node has closed."
+    oracle = generative
+    replay = recorded
+
+operation drained() -> Turned
+    ? "Every outbox moved onto its socket as the sockets empty, and the Blocks Peers asked for read onto their wires. Answers only once the node has closed."
+    oracle = generative
+    replay = recorded

@@ -3,23 +3,32 @@ module Main
         "Bitcoin peer listener argv entrypoint."
         "Kept thin so the CLI adapter and the domain stay in their own modules,"
         "and so `aver context` has a stable root to resume from."
-    depends [App.Cli, Domain.BlockWorkJob]
+        "follow is the one command that runs as processes: one per seated"
+        "Peer, one walking the Catch-up, one keeping the loop's clock, one"
+        "emptying the outboxes, and one opening the node. Every other command"
+        "is the CLI adapter as before. The processes are here because the"
+        "generated loop seats the processes of the entry module; what they"
+        "ask for is answered by App.Owner."
+    depends [App.Cli, App.Node, App.Owner, Domain.BlockWorkJob, Infra.Catching, Infra.Wire]
     effects [
         Args.get,
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.due, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers, Infra.Catching.settled, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll, Infra.Wire.drained, Infra.Wire.handled, Infra.Wire.heard, Infra.Wire.started, Infra.Wire.ticked,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.now, Time.unixMs,
         Wait.poll,
         Work.cancel,
+        yield,
     ]
 
+process peer seated by App.Owner.peers
+
 fn main() -> Result<Unit, String>
-    ? "Starts the Bitcoin peer listener CLI."
+    ? "Starts the Bitcoin peer listener CLI; follow runs the processes below until the node closes."
     ! [
         Args.get,
         Console.error, Console.print,
@@ -27,10 +36,203 @@ fn main() -> Result<Unit, String>
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.now, Time.unixMs,
         Wait.poll,
         Work.cancel,
     ]
-    App.Cli.runCli()
+    args = Args.get()
+    claimed = App.Node.claimedFor(App.Cli.nodePlan(args))
+    match claimed
+        Option.None -> App.Cli.run(args)
+        Option.Some(taken) -> match taken
+            Result.Err(message) -> Result.Err(message)
+            Result.Ok(plan) -> App.Node.afterRun(plan, Run.all())
+
+fn stop(view: Run.View) -> Bool
+    ? "A stop request does not end the run by itself. The owner sees it on"
+      "its next second, writes what the walk holds, closes every socket and"
+      "gives the terminal back, and the run ends once nothing is left"
+      "seated. Ending the run at the request would leave all of that undone."
+    false
+
+verify stop
+    stop(Run.View(pending = {}, ready = [], askable = [], dropped = 0, stopping = true)) => false
+
+fn starter() -> Unit
+    ? "Open the node once, before any Peer is read."
+    ! [Infra.Wire.started, yield]
+    match Infra.Wire.started()
+        Infra.Wire.Started.Running -> Unit
+        Infra.Wire.Started.Failed(_) -> Unit
+
+fn peer(key: Int) -> Unit
+    ? "One seated Peer: its Messages, one at a time, acted on in the order"
+      "they arrived, for as long as it stays seated."
+    ! [Infra.Wire.handled, Infra.Wire.heard, yield]
+    heard = Infra.Wire.heard(key)
+    going = handledIf(key, heard)
+    match going
+        true -> peer(key)
+        false -> Unit
+
+fn handledIf(key: Int, heard: Infra.Wire.Heard) -> Bool
+    ? "A Message acted on, or a Peer that is gone."
+    ! [Infra.Wire.handled, yield]
+    match heard
+        Infra.Wire.Heard.Message(command, body) -> Infra.Wire.handled(key, command, body)
+        Infra.Wire.Heard.Gone -> false
+
+fn ticker() -> Unit
+    ? "The loop's own clock, once a second, until the node closes."
+    ! [Infra.Wire.ticked, yield]
+    match Infra.Wire.ticked()
+        Infra.Wire.Turned.Again -> ticker()
+        Infra.Wire.Turned.Over -> Unit
+
+fn writer() -> Unit
+    ? "The outboxes and the Blocks Peers asked for, as their sockets empty."
+    ! [Infra.Wire.drained, yield]
+    match Infra.Wire.drained()
+        Infra.Wire.Turned.Again -> writer()
+        Infra.Wire.Turned.Over -> Unit
+
+fn walk() -> Unit
+    ? "Every Catch-up, one after another, for as long as the node is open."
+    ! [
+        Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.due, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers, Infra.Catching.settled,
+        yield,
+    ]
+    due = Infra.Catching.due()
+    going = caughtUpIf(due)
+    match going
+        true -> walk()
+        false -> Unit
+
+fn caughtUpIf(due: Infra.Catching.Due) -> Bool
+    ? "A Catch-up when one is due; false once the node has closed."
+    ! [
+        Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers, Infra.Catching.settled,
+        yield,
+    ]
+    match due
+        Infra.Catching.Due.From(key) -> caughtUp(key)
+        Infra.Catching.Due.Over -> false
+
+fn caughtUp(key: Int) -> Bool
+    ? "Catch up on one Peer, and if that Peer will not do it, on another."
+      "The owner decides which: a Peer at fault is dropped and the next one"
+      "asked, a refusal that is a fact about the chain ends the run (#183)."
+    ! [
+        Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers, Infra.Catching.settled,
+        yield,
+    ]
+    ending = catchingUp(key)
+    match Infra.Catching.settled(key, ending)
+        Infra.Catching.Settled.Again(next) -> caughtUp(next)
+        Infra.Catching.Settled.Rested -> true
+        Infra.Catching.Settled.Over -> false
+
+fn catchingUp(key: Int) -> Infra.Catching.Ending
+    ? "The three phases in the one order they can go in: Headers, the Set"
+      "taken back to the fork, then the bodies and the Set forward."
+    ! [
+        Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers,
+        yield,
+    ]
+    match headersFrom(key)
+        Infra.Catching.Batch.Done -> aligning(key)
+        Infra.Catching.Batch.More -> Infra.Catching.Ending.Over
+        Infra.Catching.Batch.Failed(why) -> Infra.Catching.Ending.Faulted(why)
+        Infra.Catching.Batch.Over -> Infra.Catching.Ending.Over
+
+fn headersFrom(key: Int) -> Infra.Catching.Batch
+    ? "Batches of Headers until one stops moving the tip."
+    ! [Infra.Catching.headers, yield]
+    batch = Infra.Catching.headers(key)
+    match batch
+        Infra.Catching.Batch.More -> headersFrom(key)
+        _ -> batch
+
+fn aligning(key: Int) -> Infra.Catching.Ending
+    ? "The Set back to the fork, then the bodies."
+    ! [
+        Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, Infra.Catching.fetched,
+        yield,
+    ]
+    match Infra.Catching.aligned(key)
+        Infra.Catching.Aligned.Ready -> fetching(key)
+        Infra.Catching.Aligned.Stopped(why) -> Infra.Catching.Ending.Stopped(why)
+        Infra.Catching.Aligned.Over -> Infra.Catching.Ending.Over
+
+fn fetching(key: Int) -> Infra.Catching.Ending
+    ? "A slice of the download, then a chunk of the Set over what landed,"
+      "until the bodies are all here (#185); then the Set to the tip."
+    ! [
+        Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, Infra.Catching.fetched,
+        yield,
+    ]
+    fetch = Infra.Catching.fetched(key)
+    onward = chunkIfMore(fetch)
+    match onward
+        true -> fetching(key)
+        false -> afterFetch(fetch)
+
+fn chunkIfMore(fetch: Infra.Catching.Fetch) -> Bool
+    ? "A slice that ran out with Blocks still to fetch gives the Set a chunk,"
+      "and the download goes on unless the node closed meanwhile. A chunk"
+      "the chain refuses here is not the end: the Set to the tip meets the"
+      "same Block again and says so."
+    ! [Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, yield]
+    match fetch
+        Infra.Catching.Fetch.More -> goesOn(chunkOf(false))
+        _ -> false
+
+fn goesOn(chunk: Infra.Catching.Chunk) -> Bool
+    ? "Whether the download carries on after a chunk."
+    match chunk
+        Infra.Catching.Chunk.Over -> false
+        _ -> true
+
+verify goesOn
+    goesOn(Infra.Catching.Chunk.Built) => true
+    goesOn(Infra.Catching.Chunk.Refused("no")) => true
+    goesOn(Infra.Catching.Chunk.Over) => false
+
+fn afterFetch(fetch: Infra.Catching.Fetch) -> Infra.Catching.Ending
+    ? "The bodies are here, or the reason they are not."
+    ! [Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, yield]
+    match fetch
+        Infra.Catching.Fetch.Done -> settingUp()
+        Infra.Catching.Fetch.More -> Infra.Catching.Ending.Over
+        Infra.Catching.Fetch.Failed(why) -> Infra.Catching.Ending.Faulted(why)
+        Infra.Catching.Fetch.Stopped(why) -> Infra.Catching.Ending.Stopped(why)
+        Infra.Catching.Fetch.Over -> Infra.Catching.Ending.Over
+
+fn settingUp() -> Infra.Catching.Ending
+    ? "The Set forward to the tip, a chunk at a time."
+    ! [Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, yield]
+    chunk = chunkOf(true)
+    match chunk
+        Infra.Catching.Chunk.AtTip -> Infra.Catching.Ending.Moved
+        Infra.Catching.Chunk.Built -> settingUp()
+        Infra.Catching.Chunk.Refused(why) -> Infra.Catching.Ending.Stopped(why)
+        Infra.Catching.Chunk.Over -> Infra.Catching.Ending.Over
+
+fn chunkOf(final: Bool) -> Infra.Catching.Chunk
+    ? "One chunk of the Set, a Block at a time."
+    ! [Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.ended, yield]
+    match Infra.Catching.begun(final)
+        Infra.Catching.Begun.At(height) -> blocksFrom(height)
+        Infra.Catching.Begun.Refused(why) -> Infra.Catching.Chunk.Refused(why)
+        Infra.Catching.Begun.Over -> Infra.Catching.Chunk.Over
+
+fn blocksFrom(height: Int) -> Infra.Catching.Chunk
+    ? "This Block, then the next, until the chunk has none left."
+    ! [Infra.Catching.connected, Infra.Catching.ended, yield]
+    match Infra.Catching.connected(height)
+        Infra.Catching.Step.Next -> blocksFrom(height + 1)
+        Infra.Catching.Step.Ended -> Infra.Catching.ended()
+        Infra.Catching.Step.Refused(why) -> Infra.Catching.Chunk.Refused(why)
+        Infra.Catching.Step.Over -> Infra.Catching.Chunk.Over

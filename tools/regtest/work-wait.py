@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Production Infra.Working/BlockWorkJob acceptance; synthetic decode input, no database.
+"""A job and a Peer on one generated loop; synthetic decode input, no database.
 
 Build tools/working_probe.av with --target rust --with-replay, then pass its
-binary here. Tests fragmented pings, deferred inv, delivery and SIGINT during
-work. The repeated transaction payload is deliberately not a valid consensus
+binary here. Tests fragmented pings, an inv heard while the job runs, delivery
+and SIGINT during work. The repeated transaction payload is deliberately not a valid consensus
 block: this exercises scheduling and typed decoding, not consensus acceptance.
 """
 import argparse

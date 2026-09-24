@@ -1,0 +1,805 @@
+module Owner
+    intent =
+        "The one owner of a following node's sockets, Store and Mempool,"
+        "answering what its processes ask (Infra.Wire and Infra.Catching)."
+        "Everything a request changes is Infra.Follow's Following, and every"
+        "request is answered from the state the last one left, one at a time:"
+        "the single writer ADR 0008 asks for. What used to be the loop's own"
+        "waiting is here only as a Run.Wake: a Peer with nothing to say parks"
+        "on its socket, the walk parks on a job or until the owner moves, the"
+        "clock parks on a second. The generated loop in main.av does the"
+        "waiting, in one Wait.poll a turn, for all of them at once."
+        "The node is opened by the first request, from the same command line"
+        "main parsed, because the loop starts every answer module from"
+        "fresh() and hands it nothing."
+        "A run that ends in failure writes its reason beside the chain"
+        "(App.Node.failedWith) for main to report once the loop has returned,"
+        "because the loop answers Ok however its processes ended."
+    depends [Tcp, Wait, Work, App.Cli, App.Node, Domain.Catchup, Infra.Catching, Infra.ChainState, Infra.Follow, Infra.Peers, Infra.Wire]
+    exposes [State, fresh, peers, started, heard, handled, ticked, drained, due, headers, aligned, fetched, begun, connected, ended, settled]
+    effects [
+        Args.get,
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    answers [Infra.Wire, Infra.Catching]
+
+record State
+    node: Option<Following>
+    catching: Option<Catching>
+    over: Bool
+    first: Bool
+    dir: String
+
+fn fresh() -> State
+    ? "No node opened yet, no Catch-up under way, the first Catch-up still owed."
+    State(node = Option.None, catching = Option.None, over = false, first = true, dir = "")
+
+verify fresh
+    fresh().over => false
+
+fn peers(state: State) -> List<Int>
+    ? "The keys the loop seats one peer process for: every Peer with a"
+      "socket, greeted or still greeting. None once the node has closed, so"
+      "every peer process is let go."
+    match state.over
+        true -> []
+        false -> match state.node
+            Option.None -> []
+            Option.Some(node) -> Infra.Follow.seatedKeys(node)
+
+verify peers
+    peers(fresh()) => []
+
+fn withNode(state: State, node: Following) -> State
+    ? "The state, with the node moved on."
+    State.update(state, node = Option.Some(node))
+
+fn fromWalked(state: State, walked: Walked) -> State
+    ? "The node and the Catch-up, both moved on by one step of the walk."
+    State.update(state, node = Option.Some(walked.state), catching = Option.Some(walked.catching))
+
+fn closing(state: State, node: Following, outcome: Result<Unit, String>) -> State
+    ? "The node shut down, and the reason written where main will read it"
+      "when the run ended in failure."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    closedNode = Infra.Follow.closed(node, state.catching, outcome)
+    _noted = failureNoted(state.dir, outcome)
+    State.update(state, node = Option.Some(closedNode), catching = Option.None, over = true)
+
+fn failureNoted(dir: String, outcome: Result<Unit, String>) -> Unit
+    ? "A failure, written beside the chain for main."
+    ! [Disk.writeText]
+    match outcome
+        Result.Ok(_) -> Unit
+        Result.Err(why) -> App.Node.failedWith(dir, why)
+
+fn started(state: State) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
+    ? "The node opened from the command line, once."
+    ! [
+        Args.get,
+        Console.error, Console.print,
+        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes, Disk.writeText,
+        Infra.Kv.get, Infra.Kv.open,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match state.node
+        Option.Some(_) -> (state, Result.Ok(Infra.Wire.Started.Running))
+        Option.None -> match state.over
+            true -> (state, Result.Ok(Infra.Wire.Started.Failed("the node has closed")))
+            false -> planning(state, App.Cli.nodePlan(Args.get()))
+
+fn planning(state: State, planned: Option<Result<Plan, String>>) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
+    ? "The Plan main already accepted, read again from the same arguments."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes, Disk.writeText,
+        Infra.Kv.get, Infra.Kv.open,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor,
+        Time.unixMs,
+        Wait.poll,
+    ]
+    match planned
+        Option.None -> failedStart(state, "these arguments do not ask for follow")
+        Option.Some(parsed) -> match parsed
+            Result.Err(why) -> failedStart(state, why)
+            Result.Ok(plan) -> openedWith(State.update(state, dir = plan.dir), App.Node.openedFor(plan))
+
+fn openedWith(state: State, opened: Result<Following, String>) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
+    ? "The node running, or the reason it could not start."
+    ! [Disk.writeText]
+    match opened
+        Result.Err(why) -> failedStart(state, why)
+        Result.Ok(node) -> (withNode(state, node), Result.Ok(Infra.Wire.Started.Running))
+
+fn failedStart(state: State, why: String) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
+    ? "A node that could not start is over before it began."
+    ! [Disk.writeText]
+    _noted = failureNoted(state.dir, Result.Err(why))
+    (State.update(state, over = true), Result.Ok(Infra.Wire.Started.Failed(why)))
+
+fn heard(state: State, key: Int) -> Tuple<State, Result<Infra.Wire.Heard, Run.Wake>>
+    ? "This Peer's next whole Message, or a park on its socket until it says"
+      "something, or until its greeting has run out of time."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.readNow, Tcp.writeNow,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Wire.Heard.Gone))
+        false -> match state.node
+            Option.None -> (state, Result.Err(Run.Wake.Settled(Option.None)))
+            Option.Some(node) -> hearing(state, node, Time.unixMs(), Infra.Peers.hearing(node.pool, key, Time.unixMs()))
+
+fn hearing(state: State, node: Following, nowMs: Int, outcome: Result<Hearing, String>) -> Tuple<State, Result<Infra.Wire.Heard, Run.Wake>>
+    ? "A Message, a Peer gone, or a park."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match outcome
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Wire.Heard.Gone))
+        Result.Ok(one) -> match one
+            Hearing.Said(pool, frame) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Ok(Infra.Wire.Heard.Message(frame.command, frame.body)))
+            Hearing.Went(pool) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Ok(Infra.Wire.Heard.Gone))
+            Hearing.Quiet(pool, connection, dueMs) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Err(quietWake(connection, dueMs, nowMs)))
+
+fn quietWake(connection: Tcp.Connection, dueMs: Int, nowMs: Int) -> Run.Wake
+    ? "The Peer's socket, and the greeting's deadline when there is one."
+    Run.Wake.Until([Wait.Item.Socket(Tcp.Socket.Connected(connection))], quietDeadline(dueMs, nowMs))
+
+fn quietDeadline(dueMs: Int, nowMs: Int) -> Option<Int>
+    ? "What is left of a deadline, or none when the reading carries none."
+    match dueMs <= 0
+        true -> Option.None
+        false -> Option.Some(Int.max(0, dueMs - nowMs))
+
+verify quietDeadline
+    quietDeadline(0, 50) => Option.None
+    quietDeadline(80, 50) => Option.Some(30)
+    quietDeadline(40, 50) => Option.Some(0)
+
+fn handled(state: State, key: Int, command: String, body: List<Int>) -> Tuple<State, Result<Bool, Run.Wake>>
+    ? "One Message acted on. The answer the walk is waiting for goes to the"
+      "walk, a Block goes to the download while one is flying, and every"
+      "other Message is Infra.Follow's dispatch, as it always was."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.writeNow,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(false))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(false))
+            Option.Some(node) -> routed(state, node, key, command, body)
+
+fn routed(state: State, node: Following, key: Int, command: String, body: List<Int>) -> Tuple<State, Result<Bool, Run.Wake>>
+    ? "Which of the three a Message is."
+    ! [
+        Console.error, Console.print,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.writeNow,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match Infra.Follow.wantsHeaders(state.catching, key, command)
+        true -> (State.update(state, catching = answeredWith(state.catching, body)), Result.Ok(true))
+        false -> match state.catching
+            Option.Some(one) -> match Bool.and(command == "block", Infra.Follow.flying(one))
+                true -> blockFiled(state, key, Infra.Follow.blockLanded(node, one, body))
+                false -> dispatched(state, node, key, Infra.Follow.handled(node, key, command, body, Time.unixMs()))
+            Option.None -> dispatched(state, node, key, Infra.Follow.handled(node, key, command, body, Time.unixMs()))
+
+fn answeredWith(catching: Option<Catching>, body: List<Int>) -> Option<Catching>
+    ? "The answer kept for the walk's next ask."
+    match catching
+        Option.None -> Option.None
+        Option.Some(one) -> Option.Some(Catching.update(one, reply = Option.Some(body)))
+
+verify answeredWith
+    answeredWith(Option.None, [1]) => Option.None
+
+fn blockFiled(state: State, key: Int, walked: Walked) -> Tuple<State, Result<Bool, Run.Wake>>
+    ? "The download moved on by one Block."
+    (fromWalked(state, walked), Result.Ok(stillSeated(walked.state, key)))
+
+fn dispatched(state: State, node: Following, key: Int, outcome: Result<Following, String>) -> Tuple<State, Result<Bool, Run.Wake>>
+    ? "The dispatch's node, or the run ended by its Err."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match outcome
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(false))
+        Result.Ok(after) -> (withNode(state, after), Result.Ok(stillSeated(after, key)))
+
+fn stillSeated(node: Following, key: Int) -> Bool
+    ? "Whether this Peer still has a socket after what was done."
+    List.contains(Infra.Follow.seatedKeys(node), key)
+
+fn ticked(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "The loop's own clock. It is never answered while the node is open:"
+      "each ask does the second's work and parks until the next second, or"
+      "until the dial or a Board Reader is ready. A stop asked for, or the"
+      "Screen's q answered with y, closes the node here."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Wire.Turned.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Err(Run.Wake.Settled(Option.None)))
+            Option.Some(node) -> tickedWith(state, node, Time.unixMs())
+
+fn tickedWith(state: State, node: Following, nowMs: Int) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "Closed on a stop, or one second's work."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.disableRawMode, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match Bool.or(Process.stopRequested(), node.watch.leaving)
+        true -> (closing(state, Infra.Follow.stopAsked(node, nowMs), Result.Ok(Unit)), Result.Ok(Infra.Wire.Turned.Over))
+        false -> turnedWith(state, node, Infra.Follow.turned(node, nowMs))
+
+fn turnedWith(state: State, node: Following, turned: Result<Following, String>) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "The second's node and the park until the next one, or the run ended by an Err."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match turned
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Wire.Turned.Over))
+        Result.Ok(after) -> (withNode(state, after), Result.Err(Run.Wake.Until(socketItems(Infra.Follow.tickSockets(after), []), Option.Some(Infra.Follow.tickFor(after)))))
+
+fn socketItems(sockets: List<Tcp.Socket>, acc: List<Wait.Item>) -> List<Wait.Item>
+    ? "Sockets as wait items."
+    match sockets
+        [] -> List.reverse(acc)
+        [one, ..rest] -> socketItems(rest, List.prepend(Wait.Item.Socket(one), acc))
+
+verify socketItems
+    socketItems([], []) => []
+
+fn drained(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "The outboxes moved onto their sockets and the Blocks Peers asked for"
+      "read onto the wires with room, then a park: on the sockets still owed"
+      "bytes, on the next turn while Blocks are owed with room for them, or"
+      "until the owner moves, which is how a getdata reaches this. Answered"
+      "only once the node has closed."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.writeNow,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Wire.Turned.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Err(Run.Wake.Settled(Option.None)))
+            Option.Some(node) -> drainedWith(state, node, Infra.Follow.drained(node))
+
+fn drainedWith(state: State, node: Following, outcome: Result<Following, String>) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "Parked for what is still owed, or the run ended by an Err."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match outcome
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Wire.Turned.Over))
+        Result.Ok(after) -> (withNode(state, after), Result.Err(writerWake(Infra.Peers.writesOwed(after.pool), Infra.Follow.servingOwed(after))))
+
+fn writerWake(owed: List<Tcp.Connection>, serving: Bool) -> Run.Wake
+    ? "What the writer waits for next."
+    match owed
+        [] -> match serving
+            true -> Run.Wake.Until([], Option.Some(0))
+            false -> Run.Wake.Settled(Option.None)
+        [first, ..rest] -> Run.Wake.Until(sendingItems(List.prepend(first, rest), []), Option.None)
+
+verify writerWake
+    writerWake([], false) => Run.Wake.Settled(Option.None)
+    writerWake([], true) => Run.Wake.Until([], Option.Some(0))
+
+fn sendingItems(owed: List<Tcp.Connection>, acc: List<Wait.Item>) -> List<Wait.Item>
+    ? "Each Connection owed bytes, as a write interest."
+    match owed
+        [] -> List.reverse(acc)
+        [one, ..rest] -> sendingItems(rest, List.prepend(Wait.Item.Socket(Tcp.Socket.Sending(one)), acc))
+
+verify sendingItems
+    sendingItems([], []) => []
+
+fn due(state: State) -> Tuple<State, Result<Infra.Catching.Due, Run.Wake>>
+    ? "The next Catch-up's Peer, once one is due; until then a park that"
+      "comes back when the owner moves or a second has passed, because a"
+      "held claim falls due on the clock."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Due.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Err(Run.Wake.Settled(Option.None)))
+            Option.Some(node) -> match state.catching
+                Option.Some(one) -> (state, Result.Ok(Infra.Catching.Due.From(one.key)))
+                Option.None -> dueWith(state, node, Infra.Follow.dueFor(node, state.first, Time.unixMs()))
+
+fn dueWith(state: State, node: Following, claim: Option<Domain.Catchup.Due>) -> Tuple<State, Result<Infra.Catching.Due, Run.Wake>>
+    ? "A claim taken, or nothing yet."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.now, Time.unixMs,
+        Work.cancel,
+    ]
+    match claim
+        Option.None -> (state, Result.Err(Run.Wake.Settled(Option.Some(1000))))
+        Option.Some(one) -> takenWith(State.update(state, first = false), node, Infra.Follow.catchingOn(node, one, Time.unixMs()))
+
+fn takenWith(state: State, node: Following, taken: Result<Walked, String>) -> Tuple<State, Result<Infra.Catching.Due, Run.Wake>>
+    ? "The Catch-up under way, or the run ended because the Store would not answer."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match taken
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Catching.Due.Over))
+        Result.Ok(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Due.From(walked.catching.key)))
+
+fn headers(state: State, key: Int) -> Tuple<State, Result<Infra.Catching.Batch, Run.Wake>>
+    ? "One batch of Headers: the getheaders sent, then a park until the"
+      "Peer's own process hands its answer over, it goes, or its deadline"
+      "passes, then the answer placed."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Batch.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Batch.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Batch.Over))
+                Option.Some(one) -> headersFor(state, node, one, Time.unixMs())
+
+fn headersFor(state: State, node: Following, catching: Catching, nowMs: Int) -> Tuple<State, Result<Infra.Catching.Batch, Run.Wake>>
+    ? "Ask, or look at what came back."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    match catching.askedMs == 0
+        true -> askingWith(state, Infra.Follow.askedHeaders(node, catching, nowMs))
+        false -> match catching.reply
+            Option.Some(body) -> heardWith(state, Infra.Follow.headersHeard(node, catching, body))
+            Option.None -> awaitingHeaders(state, node, catching, nowMs)
+
+fn askingWith(state: State, asked: Result<Asking, String>) -> Tuple<State, Result<Infra.Catching.Batch, Run.Wake>>
+    ? "Sent and parked on the answer, paused by a stop, or the Peer's fault."
+    match asked
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Batch.Failed(why)))
+        Result.Ok(one) -> match one
+            Asking.Sent(walked) -> (fromWalked(state, walked), Result.Err(Run.Wake.Settled(Option.Some(Infra.Peers.answerDeadlineMs()))))
+            Asking.Paused(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Batch.Done))
+
+verify askingWith
+    askingWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Batch.Failed("no")))
+
+fn heardWith(state: State, outcome: Result<Batched, String>) -> Tuple<State, Result<Infra.Catching.Batch, Run.Wake>>
+    ? "Another batch, the last one, or an answer that would not place."
+    match outcome
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Batch.Failed(why)))
+        Result.Ok(batched) -> (fromWalked(state, batched.walked), Result.Ok(moreOr(batched.more)))
+
+verify heardWith
+    heardWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Batch.Failed("no")))
+
+fn moreOr(more: Bool) -> Infra.Catching.Batch
+    ? "More while the batch moved the tip."
+    match more
+        true -> Infra.Catching.Batch.More
+        false -> Infra.Catching.Batch.Done
+
+verify moreOr
+    moreOr(true) => Infra.Catching.Batch.More
+    moreOr(false) => Infra.Catching.Batch.Done
+
+fn awaitingHeaders(state: State, node: Following, catching: Catching, nowMs: Int) -> Tuple<State, Result<Infra.Catching.Batch, Run.Wake>>
+    ? "No answer yet: a Peer that went, or that ran out its deadline, is at"
+      "fault; otherwise park again for what is left of the deadline."
+    match List.contains(Infra.Peers.peerKeys(node.pool), catching.key)
+        false -> (state, Result.Ok(Infra.Catching.Batch.Failed("peer {catching.key} closed the connection before answering")))
+        true -> match nowMs - catching.askedMs > Infra.Peers.answerDeadlineMs()
+            true -> (state, Result.Ok(Infra.Catching.Batch.Failed("Peer {catching.key} did not answer before its deadline")))
+            false -> (state, Result.Err(Run.Wake.Settled(Option.Some(catching.askedMs + Infra.Peers.answerDeadlineMs() - nowMs))))
+
+verify awaitingHeaders
+    awaitingHeaders(fresh(), Infra.Follow.sampleFollowing(), Infra.Follow.sampleCatching(), 10) => (fresh(), Result.Ok(Infra.Catching.Batch.Failed("peer 1 closed the connection before answering")))
+
+fn aligned(state: State, key: Int) -> Tuple<State, Result<Infra.Catching.Aligned, Run.Wake>>
+    ? "The Set back to the fork and the bodies planned, or the chain's refusal."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.Kv.applyAll, Infra.Kv.get,
+        Time.unixMs,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Aligned.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Aligned.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Aligned.Over))
+                Option.Some(one) -> alignedWith(state, Infra.Follow.alignedFor(node, one))
+
+fn alignedWith(state: State, outcome: Result<Aligning, String>) -> Tuple<State, Result<Infra.Catching.Aligned, Run.Wake>>
+    ? "Ready, or stopped on this node's own side."
+    match outcome
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Aligned.Stopped(why)))
+        Result.Ok(one) -> match one
+            Aligning.Ready(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Aligned.Ready))
+            Aligning.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Aligned.Stopped(why)))
+
+verify alignedWith
+    alignedWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Aligned.Stopped("no")))
+
+fn fetched(state: State, key: Int) -> Tuple<State, Result<Infra.Catching.Fetch, Run.Wake>>
+    ? "One turn of the download, then a park until a Block lands or a tick"
+      "passes; answered when the slice runs out or the bodies are all here."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync,
+        Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.unixMs,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Fetch.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Fetch.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Fetch.Over))
+                Option.Some(one) -> flownWith(state, Infra.Follow.flownOnce(node, one, Time.unixMs()))
+
+fn flownWith(state: State, flown: Result<Flown, String>) -> Tuple<State, Result<Infra.Catching.Fetch, Run.Wake>>
+    ? "Parked, sliced, landed, or ended by a fault on either side."
+    match flown
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Fetch.Failed(why)))
+        Result.Ok(one) -> match one
+            Flown.Going(walked, ms) -> (fromWalked(state, walked), Result.Err(Run.Wake.Settled(Option.Some(ms))))
+            Flown.Sliced(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.More))
+            Flown.Landed(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.Done))
+            Flown.Faulted(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.Stopped(why)))
+
+verify flownWith
+    flownWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Fetch.Failed("no")))
+
+fn begun(state: State, final: Bool) -> Tuple<State, Result<Infra.Catching.Begun, Run.Wake>>
+    ? "A chunk of the Set begun at the Height after the fork."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.Kv.applyAll, Infra.Kv.get,
+        Time.unixMs,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Begun.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Begun.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Begun.Over))
+                Option.Some(one) -> begunWith(state, Infra.Follow.chunkBegun(node, one, final, Time.unixMs()))
+
+fn begunWith(state: State, outcome: Result<Chunking, String>) -> Tuple<State, Result<Infra.Catching.Begun, Run.Wake>>
+    ? "Under way, or refused."
+    match outcome
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Begun.Refused(why)))
+        Result.Ok(one) -> match one
+            Chunking.Begun(walked, height) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Begun.At(height)))
+            Chunking.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Begun.Refused(why)))
+
+verify begunWith
+    begunWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Begun.Refused("no")))
+
+fn connected(state: State, height: Int) -> Tuple<State, Result<Infra.Catching.Step, Run.Wake>>
+    ? "The Block at this Height through its decode and connection jobs:"
+      "each job is begun here and the request parks on it, and the next ask"
+      "takes it. The decode of the next Height runs beside this one's"
+      "connection."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Step.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Step.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Step.Over))
+                Option.Some(one) -> connectedAt(state, node, one, height)
+
+fn connectedAt(state: State, node: Following, catching: Catching, height: Int) -> Tuple<State, Result<Infra.Catching.Step, Run.Wake>>
+    ? "The walk and the chunk agree on the Height, or the chunk is refused."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+        Work.cancel,
+    ]
+    match settingHeight(catching.setting) == height
+        false -> (state, Result.Ok(Infra.Catching.Step.Refused("the walk asked for Height {height} and the chunk is at {settingHeight(catching.setting)}")))
+        true -> steppingWith(state, Infra.Follow.chunkStepped(node, catching))
+
+fn settingHeight(setting: Option<Setting>) -> Int
+    ? "The Height the chunk connects next, or minus one with no chunk under way."
+    match setting
+        Option.None -> 0 - 1
+        Option.Some(one) -> one.height
+
+verify settingHeight
+    settingHeight(Option.None) => 0 - 1
+
+fn steppingWith(state: State, stepped: Result<Stepping, String>) -> Tuple<State, Result<Infra.Catching.Step, Run.Wake>>
+    ? "Parked on a job, a Block connected, the chunk ended, or refused."
+    match stepped
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Step.Refused(why)))
+        Result.Ok(one) -> match one
+            Stepping.Parked(walked, job) -> (fromWalked(state, walked), Result.Err(Run.Wake.Until([Wait.Item.Job(job)], Option.None)))
+            Stepping.Next(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Next))
+            Stepping.Ended(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Ended))
+            Stepping.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Refused(why)))
+
+verify steppingWith
+    steppingWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Step.Refused("no")))
+
+fn ended(state: State) -> Tuple<State, Result<Infra.Catching.Chunk, Run.Wake>>
+    ? "The chunk's window written; Built says whether the Set is at the tip."
+    ! [
+        Console.print,
+        Disk.appendText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Chunk.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Chunk.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Chunk.Over))
+                Option.Some(one) -> endedWith(state, Infra.Follow.chunkEnded(node, one, Time.unixMs()))
+
+fn endedWith(state: State, outcome: Result<Chunked, String>) -> Tuple<State, Result<Infra.Catching.Chunk, Run.Wake>>
+    ? "Built, or refused."
+    match outcome
+        Result.Err(why) -> (state, Result.Ok(Infra.Catching.Chunk.Refused(why)))
+        Result.Ok(one) -> match one
+            Chunked.Built(walked, atTip) -> (fromWalked(state, walked), Result.Ok(chunkOf(atTip)))
+            Chunked.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Chunk.Refused(why)))
+
+verify endedWith
+    endedWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Chunk.Refused("no")))
+
+fn settled(state: State, key: Int, ending: Infra.Catching.Ending) -> Tuple<State, Result<Infra.Catching.Settled, Run.Wake>>
+    ? "What the Catch-up came to. Moved: the lines said and the gate told."
+      "Faulted: the Peer dropped and the next one asked, or nobody left."
+      "Stopped: the chain cannot be followed past here, and the run ends"
+      "with every Peer still connected (#183)."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match state.over
+        true -> (state, Result.Ok(Infra.Catching.Settled.Over))
+        false -> match state.node
+            Option.None -> (state, Result.Ok(Infra.Catching.Settled.Over))
+            Option.Some(node) -> match state.catching
+                Option.None -> (state, Result.Ok(Infra.Catching.Settled.Rested))
+                Option.Some(one) -> settledWith(state, node, one, ending)
+
+fn settledWith(state: State, node: Following, catching: Catching, ending: Infra.Catching.Ending) -> Tuple<State, Result<Infra.Catching.Settled, Run.Wake>>
+    ? "Each ending in its own way."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Random.int,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match ending
+        Infra.Catching.Ending.Moved -> movedWith(state, node, Infra.Follow.caughtMoved(node, catching, Time.unixMs()))
+        Infra.Catching.Ending.Faulted(why) -> faultedWith(state, node, Infra.Follow.faultedOn(node, catching, why))
+        Infra.Catching.Ending.Stopped(why) -> (closing(state, node, unitOf(Infra.Follow.chainStopped(node, why))), Result.Ok(Infra.Catching.Settled.Over))
+        Infra.Catching.Ending.Over -> (state, Result.Ok(Infra.Catching.Settled.Over))
+
+fn chunkOf(atTip: Bool) -> Infra.Catching.Chunk
+    ? "At the tip, or more of the Set to build."
+    match atTip
+        true -> Infra.Catching.Chunk.AtTip
+        false -> Infra.Catching.Chunk.Built
+
+verify chunkOf
+    chunkOf(true) => Infra.Catching.Chunk.AtTip
+    chunkOf(false) => Infra.Catching.Chunk.Built
+
+fn unitOf(outcome: Result<Following, String>) -> Result<Unit, String>
+    ? "The outcome without the node it carried."
+    match outcome
+        Result.Err(why) -> Result.Err(why)
+        Result.Ok(_) -> Result.Ok(Unit)
+
+verify unitOf
+    unitOf(Result.Err("no")) => Result.Err("no")
+    unitOf(Result.Ok(Infra.Follow.sampleFollowing())) => Result.Ok(Unit)
+
+fn movedWith(state: State, node: Following, moved: Result<Following, String>) -> Tuple<State, Result<Infra.Catching.Settled, Run.Wake>>
+    ? "Rested, or the run ended because the Set's line could not be written."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match moved
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Catching.Settled.Over))
+        Result.Ok(after) -> (State.update(state, node = Option.Some(after), catching = Option.None), Result.Ok(Infra.Catching.Settled.Rested))
+
+fn faultedWith(state: State, node: Following, onward: Result<Onward, String>) -> Tuple<State, Result<Infra.Catching.Settled, Run.Wake>>
+    ? "The next Peer to ask, rest with nobody left but somebody to dial, or"
+      "the run ended because nobody is left and nobody can be found."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Tcp.close, Tcp.closeDial, Tcp.closeListener,
+        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    match onward
+        Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Catching.Settled.Over))
+        Result.Ok(one) -> match one
+            Onward.Next(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Settled.Again(walked.catching.key)))
+            Onward.Rest(after) -> (State.update(state, node = Option.Some(after), catching = Option.None), Result.Ok(Infra.Catching.Settled.Rested))

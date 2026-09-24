@@ -23,15 +23,14 @@ module ChainState
         "Each step reads the next Block beside resolving this one (#233) and"
         "holds what recent Blocks made and spent in a window that is written"
         "through in batches (#247); the shape of both is in overlapped."
-    exposes [Built, build, buildFrom]
-    depends [Work, Infra.Working, Infra.BlockJobs, Domain.BlockWorkJob, Bytes, Domain.AssumeValid, Infra.Metrics, Domain.Connect, Domain.Transaction, Domain.Screen, Infra.Screen, Domain.Block, Domain.Disconnect, Domain.Index, Domain.Network, Domain.Snapshot, Domain.UtxoStore, Infra.Blocks, Infra.Chain, Infra.Pace, Infra.Rewind, Infra.Store, Infra.Utxo, Domain.IndexKeys]
+    exposes [Built, Setting, Stepped, build, buildFrom, begunChunk, stepOnce, endedChunk, eyeOfSetting, reachedOf, withSettingEye, sampleBuilt, sampleSetting]
+    depends [Work, Wait, Infra.BlockJobs, Domain.BlockWorkJob, Bytes, Domain.AssumeValid, Infra.Metrics, Domain.Connect, Domain.Transaction, Domain.Screen, Infra.Screen, Domain.Block, Domain.Disconnect, Domain.Index, Domain.Network, Domain.Snapshot, Domain.UtxoStore, Infra.Blocks, Infra.Chain, Infra.Pace, Infra.Rewind, Infra.Store, Infra.Utxo, Domain.IndexKeys]
     effects [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.readBytesAt,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -64,12 +63,11 @@ fn build(network: Network, store: Store, blocks: BlockStore, to: Int, target: In
       "leaves the Set holding Outputs of Blocks the chain has left, and those"
       "have to come off before anything goes on."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.readBytesAt,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
@@ -85,24 +83,282 @@ fn buildFrom(network: Network, store: Store, blocks: BlockStore, to: Int, target
       "Blocks dropped realigning, the views and the unconfirmed -- is the"
       "starting point here, and the Store and the Eye are the caller's."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText, Disk.readBytesAt,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
         Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
         Wait.poll,
         Work.cancel,
     ]
+    begun = begunChunk(network, store, blocks, to, target, eye, sofar)?
+    endedChunk(walked(begun)?)
+
+record Setting
+    network: Network
+    walk: Walk
+    window: Window
+    height: Int
+    to: Int
+    reading: Option<Reading>
+    ahead: Option<Ahead>
+    connecting: Option<Work.Job>
+    next: Option<Reading>
+
+type Stepped
+    Waiting(Setting, Work.Job)
+    Connected(Setting)
+    Finished(Setting)
+
+fn begunChunk(network: Network, store: Store, blocks: BlockStore, to: Int, target: Int, eye: Eye, sofar: Option<Built>) -> Result<Setting, String>
+    ? "A chunk of the walk set up and nothing read yet: the Set taken back"
+      "to the fork first, then the counts continued from sofar, with an"
+      "empty window. Every Block after this is one stepOnce at a time, so"
+      "whoever drives the walk decides what to do while a job runs."
+    ! [Console.print, Disk.readBytesAt, Infra.Kv.applyAll, Infra.Kv.get, Time.unixMs]
     aligned = Infra.Rewind.realigned(store, blocks, eye)?
     _said = saidRangeIfPlain(eye, aligned.from, to, target)
-    done = walk(network, Walk(blocks = blocks, counted = continuing(sofar, aligned.store, aligned.from - 1, aligned.dropped, eye, aligned.unconfirmed), pace = Infra.Pace.pacedFrom(Time.unixMs()), eye = eye, target = target), aligned.from, to, Map.fromList([]), Map.fromList([]), [], 0, Option.None)?
-    walked = done.walk
-    swept = Infra.Utxo.prunedUndo(Infra.Utxo.flushed(walked.counted.store, done.window)?, walked.counted.reached)?
-    _told = toldIfPlain(walked.counted.eye, swept, walked.counted.reached)?
-    Result.Ok(counting(walked.counted, swept))
+    Result.Ok(Setting(network = network, walk = Walk(blocks = blocks, counted = continuing(sofar, aligned.store, aligned.from - 1, aligned.dropped, eye, aligned.unconfirmed), pace = Infra.Pace.pacedFrom(Time.unixMs()), eye = eye, target = target), window = Infra.Utxo.emptyWindow(), height = aligned.from, to = to, reading = Option.None, ahead = Option.None, connecting = Option.None, next = Option.None))
+
+fn walked(setting: Setting) -> Result<Setting, String>
+    ? "The chunk walked to its end by a caller with nothing else to do"
+      "while a job runs: one wait on the job alone, then the next step."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    match stepOnce(setting)?
+        Stepped.Waiting(waiting, job) -> walkedAfter(waiting, Wait.poll({0 => Wait.Item.Job(job)}, 100))
+        Stepped.Connected(next) -> walked(next)
+        Stepped.Finished(done) -> Result.Ok(done)
+
+fn walkedAfter(setting: Setting, polled: Result<List<Int>, String>) -> Result<Setting, String>
+    ? "The job reported, or a tenth of a second passed; either way, ask it again."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+        Wait.poll,
+        Work.cancel,
+    ]
+    _ready = polled?
+    walked(setting)
+
+fn stepOnce(setting: Setting) -> Result<Stepped, String>
+    ? "One step of the walk that does not wait: a job asked whether it has"
+      "finished, or begun. Waiting names the job the caller should wait on"
+      "before asking again; Connected is one Block into the window; Finished"
+      "is a chunk with nothing left in it -- the end of the range, a Height"
+      "whose body is not held, or a stop asked for."
+      "Each step reads the next Block beside resolving this one (#233): the"
+      "connect job for Height h and the decode job for h + 1 run at once."
+    ! [
+        Console.print,
+        Disk.appendText, Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+        Work.cancel,
+    ]
+    match setting.connecting
+        Option.Some(job) -> connectTaken(setting, job, Infra.BlockJobs.take(job))
+        Option.None -> aheadOr(setting)
+
+fn aheadOr(setting: Setting) -> Result<Stepped, String>
+    ? "A Block decoded and not yet connected is connected next."
+    ! [
+        Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Work.cancel,
+    ]
+    match setting.ahead
+        Option.Some(this) -> connectingFrom(setting, this)
+        Option.None -> readingOr(setting)
+
+fn readingOr(setting: Setting) -> Result<Stepped, String>
+    ? "A decode already begun is asked about; otherwise the next Block is read."
+    ! [
+        Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Work.cancel,
+    ]
+    match setting.reading
+        Option.Some(reading) -> decodeTaken(setting, reading, Infra.BlockJobs.take(reading.job))
+        Option.None -> readingNow(setting)
+
+fn readingNow(setting: Setting) -> Result<Stepped, String>
+    ? "The stop flag and the Screen's q, asked before every Block, then the"
+      "Block read off the disk and its decode begun. Nothing fetched ends"
+      "the chunk: a Height the Index does not name, or a body not held."
+    ! [Disk.readBytesAt, Infra.BlockJobs.begin, Infra.Kv.get, Process.stopRequested]
+    match Bool.or(setting.height > setting.to, Bool.or(Process.stopRequested(), setting.walk.eye.stopped))
+        true -> Result.Ok(Stepped.Finished(setting))
+        false -> match fetched(setting.walk.counted.store, setting.walk.blocks, setting.height)?
+            Option.None -> Result.Ok(Stepped.Finished(setting))
+            Option.Some(one) -> Result.Ok(Stepped.Waiting(Setting.update(setting, reading = Option.Some(one)), one.job))
+
+fn decodeTaken(setting: Setting, reading: Reading, taken: Result<Option<Infra.BlockJobs.Reply>, String>) -> Result<Stepped, String>
+    ? "A decode not finished yet is waited on again; a finished one is connected."
+    ! [
+        Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Work.cancel,
+    ]
+    match taken?
+        Option.None -> Result.Ok(Stepped.Waiting(setting, reading.job))
+        Option.Some(reply) -> decodedInto(setting, decodedAhead(reading.height, reading.blockId, reading.location, decodedTransactions(reply))?)
+
+fn decodedInto(setting: Setting, ahead: Option<Ahead>) -> Result<Stepped, String>
+    ? "The decoded Block, connected next."
+    ! [
+        Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Work.cancel,
+    ]
+    match ahead
+        Option.None -> Result.Ok(Stepped.Finished(Setting.update(setting, reading = Option.None)))
+        Option.Some(this) -> connectingFrom(Setting.update(setting, reading = Option.None, ahead = Option.Some(this)), this)
+
+fn connectingFrom(setting: Setting, this: Ahead) -> Result<Stepped, String>
+    ? "The stop flag again, then this Block's inputs split between the"
+      "window and the Store."
+    ! [
+        Disk.readBytesAt,
+        Infra.BlockJobs.begin, Infra.Kv.get, Infra.Kv.getAll,
+        Process.stopRequested,
+        Work.cancel,
+    ]
+    match Bool.or(this.height > setting.to, Bool.or(Process.stopRequested(), setting.walk.eye.stopped))
+        true -> Result.Ok(Stepped.Finished(setting))
+        false -> connectBegun(setting, this, Infra.Utxo.partitioned(this.transactions, setting.window.created, setting.window.spent)?)
+
+fn connectBegun(setting: Setting, this: Ahead, split: Infra.Utxo.Split) -> Result<Stepped, String>
+    ? "This Block's inputs resolved against the Store, the next Block's"
+      "decode begun, and this Block's connection begun beside it."
+    ! [Disk.readBytesAt, Infra.BlockJobs.begin, Infra.Kv.get, Infra.Kv.getAll, Work.cancel]
+    inputs = Infra.Utxo.resolvedFor(setting.walk.counted.store, split)?
+    next = readNext(setting.walk.counted.store, setting.walk.blocks, this.height + 1, setting.to)?
+    connectJobFor(setting, next, Infra.BlockJobs.begin(Domain.BlockWorkJob.connectionTask(setting.network, this.height, this.transactions, inputs)))
+
+fn connectJobFor(setting: Setting, next: Option<Reading>, begun: Result<Work.Job, String>) -> Result<Stepped, String>
+    ? "A connection that would not begin lets the lookahead go with it."
+    ! [Work.cancel]
+    match begun
+        Result.Err(why) -> failedAfter(next, why)
+        Result.Ok(job) -> Result.Ok(Stepped.Waiting(Setting.update(setting, connecting = Option.Some(job), next = next), job))
+
+fn failedAfter(next: Option<Reading>, why: String) -> Result<Stepped, String>
+    ? "The lookahead cancelled, then the reason handed on."
+    ! [Work.cancel]
+    _cancelled = cancelReading(next)
+    Result.Err(why)
+
+fn connectTaken(setting: Setting, job: Work.Job, taken: Result<Option<Infra.BlockJobs.Reply>, String>) -> Result<Stepped, String>
+    ? "A connection not finished yet is waited on again; a finished one goes"
+      "into the window."
+    ! [
+        Console.print,
+        Disk.appendText,
+        Infra.Kv.applyAll,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+    ]
+    match taken?
+        Option.None -> Result.Ok(Stepped.Waiting(setting, job))
+        Option.Some(answer) -> absorbedFrom(setting, answer)
+
+fn absorbedFrom(setting: Setting, answer: Infra.BlockJobs.Reply) -> Result<Stepped, String>
+    ? "The Block the connection was for, into the window and counted."
+    ! [
+        Console.print,
+        Disk.appendText,
+        Infra.Kv.applyAll,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+    ]
+    match setting.ahead
+        Option.None -> Result.Err("a connection landed with no Block waiting for it")
+        Option.Some(this) -> absorbedInto(setting, this, Infra.Utxo.absorbed(setting.window.created, setting.window.spent, setting.window.undos, setting.window.held, this.height, this.blockId, Domain.BlockWorkJob.connection(answer))?)
+
+fn absorbedInto(setting: Setting, this: Ahead, parts: Tuple<Map<Bytes, Unspent>, Map<Bytes, Bool>, List<Entry>, Int, Option<Reached>, Absorbed>) -> Result<Stepped, String>
+    ? "The window moved on and the Block counted, which is also where the"
+      "Screen and the metrics log hear about it."
+    ! [
+        Console.print,
+        Disk.appendText,
+        Infra.Kv.applyAll,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
+        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Time.now, Time.unixMs,
+    ]
+    match parts
+        (createdNow, spentNow, undosNow, heldNow, standing, counts) -> advanced(setting, recorded(setting.network, setting.walk, this.height, this.blockId, counts.added, counts.removed, counts.fees, counts.confirmed, BlockView(height = this.height, blockId = this.blockId, transactions = List.len(this.transactions), bytes = this.location.length, atMs = Time.unixMs()))?, Window(created = createdNow, spent = spentNow, undos = undosNow, held = heldNow, standing = standing))
+
+fn advanced(setting: Setting, walk: Walk, window: Window) -> Result<Stepped, String>
+    ? "The window written through when it has grown past its bound (#247);"
+      "the lookahead becomes the next Block's read."
+    ! [Infra.Kv.applyAll]
+    match Infra.Utxo.flushDue(window.held)
+        false -> Result.Ok(Stepped.Connected(Setting.update(setting, walk = walk, window = window, height = setting.height + 1, reading = setting.next, ahead = Option.None, connecting = Option.None, next = Option.None)))
+        true -> Result.Ok(Stepped.Connected(Setting.update(setting, walk = withStore(walk, Infra.Utxo.flushed(walk.counted.store, window)?), window = Infra.Utxo.emptyWindow(), height = setting.height + 1, reading = setting.next, ahead = Option.None, connecting = Option.None, next = Option.None)))
+
+fn endedChunk(setting: Setting) -> Result<Built, String>
+    ? "The chunk over: any job still running cancelled, the window written,"
+      "Undo Data below the window pruned, and the claim line said."
+    ! [
+        Console.print,
+        Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
+        Process.stopRequested,
+        Time.unixMs,
+        Work.cancel,
+    ]
+    _cancelled = cancelledAll(setting)
+    counted = Built.update(setting.walk.counted, eye = stopNoted(setting.walk.counted.eye, Process.stopRequested(), Time.unixMs()))
+    swept = Infra.Utxo.prunedUndo(Infra.Utxo.flushed(counted.store, setting.window)?, counted.reached)?
+    _told = toldIfPlain(counted.eye, swept, counted.reached)?
+    Result.Ok(counting(counted, swept))
+
+fn cancelledAll(setting: Setting) -> Unit
+    ? "Every job the chunk still holds, let go."
+    ! [Work.cancel]
+    _reading = cancelReading(setting.reading)
+    _next = cancelReading(setting.next)
+    match setting.connecting
+        Option.None -> Unit
+        Option.Some(job) -> Work.cancel(job)
+
+fn eyeOfSetting(setting: Setting) -> Eye
+    ? "The Eye the chunk is drawing and logging with."
+    setting.walk.counted.eye
+
+fn reachedOf(setting: Setting) -> Int
+    ? "The last Height the chunk connected."
+    setting.walk.counted.reached
+
+fn withSettingEye(setting: Setting, eye: Eye) -> Setting
+    ? "The chunk, carrying an Eye the node has moved on since the last step."
+    Setting.update(setting, walk = Walk.update(setting.walk, eye = eye, counted = Built.update(setting.walk.counted, eye = eye)))
 
 fn saidRangeIfPlain(eye: Eye, from: Int, to: Int, target: Int) -> Unit
     ? "The range line for the plain log; the Screen draws the walk instead."
@@ -166,55 +422,6 @@ record Reading
     location: Location
     job: Work.Job
 
-record Prepared
-    eye: Eye
-    next: Option<Ahead>
-    answer: Option<Infra.BlockJobs.Reply>
-
-record Retrieved
-    eye: Eye
-    ahead: Option<Ahead>
-
-record Walked
-    walk: Walk
-    window: Window
-
-fn walk(network: Network, state: Walk, height: Int, to: Int, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "Each Height in turn, stopping at the first one the chain cannot supply."
-      "It asks the stop flag as well as the Screen's own (#206). It used to"
-      "ask only eye.stopped, which is q on the Screen -- so a plain-log run"
-      "had nothing to stop it, and Ctrl-C did not end a catch-up for the hours"
-      "the Set phase takes. The operator was left with kill -9, which is the"
-      "ending that tears a Segment and the one a cooperative stop exists to"
-      "avoid."
-      "The first Block is fetched on its own; from then on each step has the"
-      "next Block being decoded while this one connects (#233)."
-      "The window's parts ride as parameters (#247): a Map set on a field"
-      "of a record the caller still holds is copied whole, and a window of"
-      "a hundred thousand Outputs copied every Block made the walk twenty"
-      "times slower. Assembled into a Window only for a flush."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Bool.or(height > to, Bool.or(Process.stopRequested(), state.eye.stopped))
-        true -> ended(state, created, spent, undos, held, standing)
-        false -> fetching(network, state, height, to, created, spent, undos, held, standing)
-
-fn ended(state: Walk, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "The walk as it stands and the window it still holds, for the caller"
-      "to flush."
-    ! [Infra.BlockJobs.begin, Infra.BlockJobs.take, Process.stopRequested, Time.unixMs, Work.cancel]
-    Result.Ok(Walked(walk = Walk(blocks = state.blocks, counted = state.counted, pace = state.pace, eye = stopNoted(state.eye, Process.stopRequested(), Time.unixMs()), target = state.target), window = Window(created = created, spent = spent, undos = undos, held = held, standing = standing)))
-
 fn stopNoted(eye: Eye, asked: Bool, nowMs: Int) -> Eye
     ? "If the walk is ending because a stop was asked for, the Eye keeps"
       "when (#268)."
@@ -225,120 +432,6 @@ fn stopNoted(eye: Eye, asked: Bool, nowMs: Int) -> Eye
 verify stopNoted
     stopNoted(Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), false, 5).stopAskedMs => 0
     stopNoted(Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), true, 5).stopAskedMs => 5
-
-fn stepping(network: Network, state: Walk, to: Int, ahead: Option<Ahead>, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "Nothing fetched ends the walk: a Height the Index does not name, or a"
-      "Block whose body is not held."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match ahead
-        Option.None -> ended(state, created, spent, undos, held, standing)
-        Option.Some(this) -> unlessStopped(network, state, to, this, created, spent, undos, held, standing)
-
-fn unlessStopped(network: Network, state: Walk, to: Int, this: Ahead, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "The stop flag and the Screen's q, asked before every Block."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Bool.or(this.height > to, Bool.or(Process.stopRequested(), state.eye.stopped))
-        true -> ended(state, created, spent, undos, held, standing)
-        false -> overlapped(network, state, to, this, created, spent, undos, held, standing)
-
-fn overlapped(network: Network, state: Walk, to: Int, this: Ahead, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "The next Block read and decoded while this one is resolved and"
-      "worked out; then this one goes into the window (#233, #247)."
-      "What overlaps is two jobs rather than an independent product. The"
-      "next Block's decode is begun before this Block's inputs are looked"
-      "up, and the connecting of this Block is a job of its own, so the"
-      "loop is serving its Peers through both of them."
-      "The reading stays here: readNext reads the h: and b: keys and a"
-      "Segment, preparing reads u: and the window, and every write stays"
-      "on this one thread, at a flush. A job could not touch either even"
-      "if it wanted to, because Infra.BlockJobs is a capability and what"
-      "crosses that boundary is data."
-      "A stop asked for while a job is running is seen before the next"
-      "Block, so the Set is always left at a whole one."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    split = Infra.Utxo.partitioned(this.transactions, created, spent)?
-    done = prepared(network, state, to, this, split)?
-    served = Walk.update(state, eye = done.eye)
-    match done.answer
-        Option.None -> ended(served, created, spent, undos, held, standing)
-        Option.Some(answer) -> absorbing(network, served, to, this, done.next, Domain.BlockWorkJob.connection(answer), created, spent, undos, held)
-
-fn absorbing(network: Network, state: Walk, to: Int, this: Ahead, next: Option<Ahead>, connection: Connecting, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int) -> Result<Walked, String>
-    ? "The Block into the window, counted, and the walk carried on."
-      "The window's Maps have exactly one use here, the call that absorbs"
-      "the Block, so they are moved into it and nothing else owns them when"
-      "it sets them; and the parts come back through a tuple bound by the"
-      "match, so each is moved on again. Evaluated as an argument of the"
-      "caller's tail call instead, the caller's frame still held them and"
-      "every Block copied the whole window once."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Infra.Utxo.absorbed(created, spent, undos, held, this.height, this.blockId, connection)
-        Result.Err(why) -> Result.Err(why)
-        Result.Ok(parts) -> match parts
-            (createdNow, spentNow, undosNow, heldNow, standing, counts) -> continued(network, recorded(network, state, this.height, this.blockId, counts.added, counts.removed, counts.fees, counts.confirmed, BlockView(height = this.height, blockId = this.blockId, transactions = List.len(this.transactions), bytes = this.location.length, atMs = Time.unixMs()))?, to, next, createdNow, spentNow, undosNow, heldNow, standing)
-
-fn continued(network: Network, state: Walk, to: Int, next: Option<Ahead>, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "The window written through when it has grown past its bound (#247);"
-      "otherwise the walk goes on holding it."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match Infra.Utxo.flushDue(held)
-        false -> stepping(network, state, to, next, created, spent, undos, held, standing)
-        true -> stepping(network, withStore(state, Infra.Utxo.flushed(state.counted.store, Window(created = created, spent = spent, undos = undos, held = held, standing = standing))?), to, next, Map.fromList([]), Map.fromList([]), [], 0, Option.None)
 
 fn withStore(state: Walk, store: Store) -> Walk
     ? "The walk, its Store moved on by a flush."
@@ -382,7 +475,7 @@ fn fetchedLocated(blocks: BlockStore, height: Int, blockId: String, state: BodyS
       "names the Height, so the chain goes on past here and the walk cannot,"
       "and reporting the target reached would be a lie about a Set that"
       "stopped short."
-    ! [Disk.readBytesAt, Infra.BlockJobs.begin, Infra.Kv.get]
+    ! [Disk.readBytesAt, Infra.BlockJobs.begin]
 
     match state
         BodyState.Missing -> Result.Ok(Option.None)
@@ -397,7 +490,7 @@ fn fetchedAt(blocks: BlockStore, height: Int, blockId: String, location: Locatio
       "that offset. Before this the wrong Block's Transactions would have"
       "been connected under the right Id. Either failure names the Height,"
       "because it is the chain directory that is wrong and no Peer."
-    ! [Disk.readBytesAt, Infra.BlockJobs.begin, Infra.Kv.get]
+    ! [Disk.readBytesAt, Infra.BlockJobs.begin]
 
     payload = Infra.Blocks.read(blocks, location)?
     match Domain.Block.idOfWholeBlock(payload) == blockId
@@ -422,14 +515,11 @@ fn recorded(network: Network, state: Walk, height: Int, blockId: String, added: 
       "means. The Block Id goes down beside the Height because a Height alone"
       "would stop being true the next time h: is re-pointed."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
-        Wait.poll,
     ]
     watched = Infra.Screen.blockWatched(state.eye, view)?
     setRecord = Infra.Metrics.marked(watched.log, "set", height, state.target, state.counted.blocks, 0, 0, 0, watched.candidates, state.counted.added, state.counted.removed, false)?
@@ -552,51 +642,6 @@ fn broken(height: Int, why: String) -> Unit
     ! [Console.print]
     Console.print("ASSUME-VALID BROKEN at Height {height}: {why}. The skipped Blocks are not the Blocks there now; re-run audit over that range or clear the claim")
 
-fn fetching(network: Network, state: Walk, height: Int, to: Int, created: Map<Bytes, Unspent>, spent: Map<Bytes, Bool>, undos: List<Entry>, held: Int, standing: Option<Reached>) -> Result<Walked, String>
-    ? "The first Block of the walk: begun, waited for while the Peers are"
-      "served, and handed on with whatever the waiting left on the Eye."
-      "Only the first. Every Height after it is fetched by prepared, one"
-      "Block ahead of where the walk has got to."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-
-    got = collected(state.eye, fetched(state.counted.store, state.blocks, height)?)?
-    stepping(network, Walk.update(state, eye = got.eye), to, got.ahead, created, spent, undos, held, standing)
-
-fn prepared(network: Network, state: Walk, to: Int, this: Ahead, split: Infra.Utxo.Split) -> Result<Prepared, String>
-    ? "One Block ahead begun, this Block resolved and connected, and"
-      "nothing left running on either way out."
-      "The lookahead is begun first so that it is decoding while this"
-      "Block's inputs are being read off the Store, which is the whole"
-      "point of #233. cancelReading runs on every path out, so a failure"
-      "part way through does not leave a job nobody will collect."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    reading = readNext(state.counted.store, state.blocks, this.height + 1, to)?
-    result = preparing(network, state, this, split, reading)
-    cancelReading(reading)
-    result
-
 fn readNext(store: Store, blocks: BlockStore, height: Int, to: Int) -> Result<Option<Reading>, String>
     ? "The Block one Height further on, unless that is past what the caller"
       "asked to reach."
@@ -608,96 +653,6 @@ fn readNext(store: Store, blocks: BlockStore, height: Int, to: Int) -> Result<Op
         true -> Result.Ok(Option.None)
         false -> fetched(store, blocks, height)
 
-fn preparing(network: Network, state: Walk, this: Ahead, split: Infra.Utxo.Split, reading: Option<Reading>) -> Result<Prepared, String>
-    ? "This Block's inputs resolved against the Store and the window, then"
-      "its connecting handed to a job."
-      "The lookahead is decoding throughout, which is the overlap. Nothing"
-      "here cleans up after itself: everything returns through prepared,"
-      "which is the one place the lookahead is cancelled."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    inputs = Infra.Utxo.resolvedFor(state.counted.store, split)?
-    done = Infra.Working.run(state.eye, Domain.BlockWorkJob.connectionTask(network, this.height, this.transactions, inputs))?
-    match done.answer
-        Option.None -> Result.Ok(Prepared(eye = done.eye, next = Option.None, answer = Option.None))
-        Option.Some(answer) -> preparedNext(done.eye, answer, reading)
-
-fn preparedNext(eye: Eye, answer: Infra.BlockJobs.Reply, reading: Option<Reading>) -> Result<Prepared, String>
-    ? "Both jobs settled before anything is committed."
-      "The lookahead is collected here rather than at the top of the next"
-      "step, so the walk never carries a job across the call that writes."
-      "A stop noticed while collecting it throws this Block's answer away"
-      "too: the window is flushed as far as the last Block that finished,"
-      "and this Height is walked again on the next run."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    got = collected(eye, reading)?
-    match Bool.or(got.eye.stopped, Process.stopRequested())
-        true -> Result.Ok(Prepared(eye = got.eye, next = Option.None, answer = Option.None))
-        false -> Result.Ok(Prepared(eye = got.eye, next = got.ahead, answer = Option.Some(answer)))
-
-fn collected(eye: Eye, reading: Option<Reading>) -> Result<Retrieved, String>
-    ? "The lookahead's answer, if there was a lookahead to wait for."
-      "Nothing to wait for is a Height the Index does not name or a body"
-      "we do not hold, which is the end of the chain we have rather than a"
-      "fault; the walk stops there and says where it stopped."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    match reading
-        Option.None -> Result.Ok(Retrieved(eye = eye, ahead = Option.None))
-        Option.Some(one) -> collectedOne(eye, one)
-
-fn collectedOne(eye: Eye, reading: Reading) -> Result<Retrieved, String>
-    ? "Wait for the decode, with the Peers served while it runs."
-      "The Eye that comes back out of the waiting is the one that carries"
-      "on. Putting the older one back would put a Peer that went in the"
-      "meantime back among the pool, and the next poll would end the node"
-      "with no Peer at fault, which is exactly the fault #304 was."
-    ! [
-        Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.putAll,
-        Process.stopRequested,
-        Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
-        Time.now, Time.unixMs,
-        Wait.poll,
-        Work.cancel,
-    ]
-    done = Infra.Working.join(eye, reading.job)?
-    decodedResult(reading.height, reading.blockId, reading.location, done.eye, done.answer)
-
 fn cancelReading(reading: Option<Reading>) -> Unit
     ? "The lookahead let go, whichever way this step is leaving."
       "Cancelling a job whose answer has already been taken does nothing,"
@@ -706,21 +661,6 @@ fn cancelReading(reading: Option<Reading>) -> Unit
     match reading
         Option.None -> Unit
         Option.Some(one) -> Work.cancel(one.job)
-
-fn decodedResult(height: Int, blockId: String, location: Location, eye: Eye, answer: Option<Infra.BlockJobs.Reply>) -> Result<Retrieved, String>
-    ? "The decoded Transactions filed under the Height and Block Id that"
-      "asked for them."
-      "The Height and the Id are the ones kept when the job was begun and"
-      "are never read back out of the answer, so no reply can be credited"
-      "to a Block that did not ask for it. No answer at all is a stop, and"
-      "a stop has nothing to carry forward."
-    match answer
-        Option.None -> Result.Ok(Retrieved(eye = eye, ahead = Option.None))
-        Option.Some(reply) -> Result.Ok(Retrieved(eye = eye, ahead = decodedAhead(height, blockId, location, decodedTransactions(reply))?))
-
-verify decodedResult
-    decodedResult(5, "aa", Location(segment = 0, offset = 0, length = 0), Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), Option.None)?.ahead => Option.None
-    decodedResult(5, "aa", Location(segment = 0, offset = 0, length = 0), Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), Option.Some(Infra.BlockJobs.Reply.Decoded([])))?.ahead => Option.Some(Ahead(height = 5, blockId = "aa", location = Location(segment = 0, offset = 0, length = 0), transactions = []))
 
 fn decodedTransactions(reply: Infra.BlockJobs.Reply) -> Result<List<Domain.Transaction.Transaction>, String>
     ? "The reply read back as Transactions, or the reason the job refused"
@@ -736,3 +676,18 @@ fn decodedTransactions(reply: Infra.BlockJobs.Reply) -> Result<List<Domain.Trans
 verify decodedTransactions
     decodedTransactions(Infra.BlockJobs.Reply.Refused("bad body")) => Result.Err("bad body")
     decodedTransactions(Infra.BlockJobs.Reply.Decoded([])) => Result.Ok([])
+
+fn sampleBuilt(reached: Int) -> Built
+    ? "A chunk that connected nothing and stands at this Height, for the cases elsewhere."
+    Built(store = Infra.Store.fixture([]), blocks = 0, added = 0, removed = 0, fees = 0, reached = reached, dropped = 0, views = [], eye = Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), unconfirmed = [])
+
+verify sampleBuilt
+    sampleBuilt(7).reached => 7
+
+fn sampleSetting(height: Int) -> Setting
+    ? "A chunk about to read this Height, holding no job, for the cases elsewhere."
+    Setting(network = Network.Regtest, walk = Walk(blocks = Infra.Blocks.fixture("d"), counted = sampleBuilt(height - 1), pace = Infra.Pace.pacedFrom(0), eye = Infra.Screen.unwatched(Domain.Snapshot.started(0), Infra.Metrics.none()), target = height), window = Infra.Utxo.emptyWindow(), height = height, to = height, reading = Option.None, ahead = Option.None, connecting = Option.None, next = Option.None)
+
+verify sampleSetting
+    sampleSetting(5).height => 5
+    reachedOf(sampleSetting(5)) => 4

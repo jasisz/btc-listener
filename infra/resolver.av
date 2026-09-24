@@ -348,13 +348,7 @@ fn exchange(connection: Tcp.Connection, name: String, deadlineMs: Int) -> Result
       "part of the question carries its offset into the next turn, and an"
       "answer arriving in pieces is kept until the two bytes in front of"
       "it say it is whole."
-    ! [
-        Process.stopRequested,
-        Random.int,
-        Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
+    ! [Process.stopRequested, Random.int, Tcp.readNow, Tcp.writeNow, Time.unixMs, Wait.poll]
     question = Domain.Dns.question(name, Random.int(0, 65535))?
     framed = Bytes.fromList(List.concat(lengthPrefix(Bytes.len(question)), Bytes.octets(question)))?
     _sent = writing(connection, framed, 0, deadlineMs)?
@@ -365,12 +359,7 @@ fn writing(connection: Tcp.Connection, bytes: Bytes, offset: Int, deadlineMs: In
       "Tcp.writeNow takes what the socket will accept and says how much,"
       "so a question the socket will not swallow whole is several turns"
       "rather than one blocking call."
-    ! [
-        Process.stopRequested,
-        Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
+    ! [Process.stopRequested, Tcp.writeNow, Time.unixMs, Wait.poll]
     _active = active(deadlineMs)?
     match offset >= Bytes.len(bytes)
         true -> Result.Ok(Unit)
@@ -380,24 +369,14 @@ fn writtenSome(connection: Tcp.Connection, bytes: Bytes, offset: Int, deadlineMs
     ? "Wait for the socket to take more, then carry on from the offset the"
       "last write reached. A count of zero is a full socket buffer rather"
       "than a fault, and goes round again behind the same deadline."
-    ! [
-        Process.stopRequested,
-        Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
+    ! [Process.stopRequested, Tcp.writeNow, Time.unixMs, Wait.poll]
     _ready = Wait.poll({0 => Wait.Item.Socket(Tcp.Socket.Sending(connection))}, 100)?
     writing(connection, bytes, offset + count, deadlineMs)
 
 fn answerBytes(connection: Tcp.Connection, bytes: Bytes, deadlineMs: Int) -> Result<List<List<Int>>, String>
     ? "The addresses, once the whole answer has arrived; another read while"
       "it has not."
-    ! [
-        Process.stopRequested,
-        Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
+    ! [Process.stopRequested, Tcp.readNow, Time.unixMs, Wait.poll]
     _active = active(deadlineMs)?
     match completeAnswer(bytes)
         Option.Some(body) -> Result.Ok(Domain.Dns.addressesOf(Bytes.octets(body)))
@@ -436,12 +415,7 @@ fn readingAnswer(connection: Tcp.Connection, bytes: Bytes, deadlineMs: Int) -> R
       "that succeeds with no bytes in it is the resolver having closed,"
       "and that is a failure here rather than an ending: the prefix said"
       "how long the answer would be, and this is not that long."
-    ! [
-        Process.stopRequested,
-        Tcp.beginConnect, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Time.unixMs,
-        Wait.poll,
-    ]
+    ! [Process.stopRequested, Tcp.readNow, Time.unixMs, Wait.poll]
     _ready = Wait.poll({0 => Wait.Item.Socket(Tcp.Socket.Connected(connection))}, 100)?
     match Tcp.readNow(connection, 65537 - Bytes.len(bytes))
         Result.Err(why) -> Result.Err(why)
