@@ -821,10 +821,9 @@ fn steppedWith(state: Following, catching: Catching, stepped: Result<Stepped, St
       "the chain's refusal, not an error, and leaves no Setting behind."
     match stepped
         Result.Err(why) -> Result.Ok(Stepping.Refused(Walked(state = state, catching = catching), why))
-        Result.Ok(one) -> match one
-            Stepped.Waiting(setting, job) -> Result.Ok(Stepping.Parked(withSetting(state, catching, setting), job))
-            Stepped.Connected(setting) -> Result.Ok(Stepping.Next(withSetting(state, catching, setting)))
-            Stepped.Finished(setting) -> Result.Ok(Stepping.Ended(withSetting(state, catching, setting)))
+        Result.Ok(Stepped.Waiting(setting, job)) -> Result.Ok(Stepping.Parked(withSetting(state, catching, setting), job))
+        Result.Ok(Stepped.Connected(setting)) -> Result.Ok(Stepping.Next(withSetting(state, catching, setting)))
+        Result.Ok(Stepped.Finished(setting)) -> Result.Ok(Stepping.Ended(withSetting(state, catching, setting)))
 
 verify steppedWith
     steppedWith(sampleFollowing(), sampleCatching(), Result.Err("no")) => Result.Ok(Stepping.Refused(Walked(state = sampleFollowing(), catching = sampleCatching()), "no"))

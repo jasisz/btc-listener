@@ -321,8 +321,7 @@ fn absorbedInto(setting: Setting, this: Ahead, absorbed: Result<Tuple<Map<Bytes,
     ]
     match absorbed
         Result.Err(why) -> Result.Err(why)
-        Result.Ok(parts) -> match parts
-            (createdNow, spentNow, undosNow, heldNow, standing, counts) -> advanced(setting, recorded(setting.network, setting.walk, this.height, this.blockId, counts.added, counts.removed, counts.fees, counts.confirmed, BlockView(height = this.height, blockId = this.blockId, transactions = List.len(this.transactions), bytes = this.location.length, atMs = Time.unixMs()))?, Window(created = createdNow, spent = spentNow, undos = undosNow, held = heldNow, standing = standing))
+        Result.Ok((createdNow, spentNow, undosNow, heldNow, standing, counts)) -> advanced(setting, recorded(setting.network, setting.walk, this.height, this.blockId, counts.added, counts.removed, counts.fees, counts.confirmed, BlockView(height = this.height, blockId = this.blockId, transactions = List.len(this.transactions), bytes = this.location.length, atMs = Time.unixMs()))?, Window(created = createdNow, spent = spentNow, undos = undosNow, held = heldNow, standing = standing))
 
 fn advanced(setting: Setting, walk: Walk, window: Window) -> Result<Stepped, String>
     ? "The window written through when it has grown past its bound (#247);"

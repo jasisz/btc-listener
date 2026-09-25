@@ -47,9 +47,8 @@ fn main() -> Result<Unit, String>
     claimed = App.Node.claimedFor(App.Cli.nodePlan(args))
     match claimed
         Option.None -> App.Cli.run(args)
-        Option.Some(taken) -> match taken
-            Result.Err(message) -> Result.Err(message)
-            Result.Ok(plan) -> App.Node.afterRun(plan, Run.all())
+        Option.Some(Result.Err(message)) -> Result.Err(message)
+        Option.Some(Result.Ok(plan)) -> App.Node.afterRun(plan, Run.all())
 
 fn stop(view: Run.View) -> Bool
     ? "A stop request does not end the run by itself. The owner sees it on"

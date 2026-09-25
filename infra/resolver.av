@@ -310,9 +310,8 @@ fn connected(dial: Tcp.Dial, deadlineMs: Int) -> Result<Tcp.Connection, String>
     _active = active(deadlineMs)?
     match Tcp.dialled(dial)
         Result.Err(why) -> Result.Err(why)
-        Result.Ok(found) -> match found
-            Option.Some(connection) -> Result.Ok(connection)
-            Option.None -> connectLater(dial, deadlineMs)
+        Result.Ok(Option.Some(connection)) -> Result.Ok(connection)
+        Result.Ok(Option.None) -> connectLater(dial, deadlineMs)
 
 fn connectLater(dial: Tcp.Dial, deadlineMs: Int) -> Result<Tcp.Connection, String>
     ? "Not yet: wait on the dial itself for at most a tenth of a second"
@@ -419,11 +418,10 @@ fn readingAnswer(connection: Tcp.Connection, bytes: Bytes, deadlineMs: Int) -> R
     _ready = Wait.poll({0 => Wait.Item.Socket(Tcp.Socket.Connected(connection))}, 100)?
     match Tcp.readNow(connection, 65537 - Bytes.len(bytes))
         Result.Err(why) -> Result.Err(why)
-        Result.Ok(found) -> match found
-            Option.None -> answerBytes(connection, bytes, deadlineMs)
-            Option.Some(arrived) -> match Bytes.len(arrived) == 0
-                true -> Result.Err("DNS connection closed before its complete answer")
-                false -> answerBytes(connection, Bytes.concat(bytes, arrived), deadlineMs)
+        Result.Ok(Option.None) -> answerBytes(connection, bytes, deadlineMs)
+        Result.Ok(Option.Some(arrived)) -> match Bytes.len(arrived) == 0
+            true -> Result.Err("DNS connection closed before its complete answer")
+            false -> answerBytes(connection, Bytes.concat(bytes, arrived), deadlineMs)
 
 fn lengthPrefix(size: Int) -> List<Int>
     ? "DNS over TCP puts the message size in two big-endian bytes."

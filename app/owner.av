@@ -128,9 +128,8 @@ fn planning(state: State, planned: Option<Result<Plan, String>>) -> Tuple<State,
     ]
     match planned
         Option.None -> failedStart(state, "these arguments do not ask for follow")
-        Option.Some(parsed) -> match parsed
-            Result.Err(why) -> failedStart(state, why)
-            Result.Ok(plan) -> openedWith(state, App.Node.openedFor(plan))
+        Option.Some(Result.Err(why)) -> failedStart(state, why)
+        Option.Some(Result.Ok(plan)) -> openedWith(state, App.Node.openedFor(plan))
 
 fn openedWith(state: State, opened: Result<Following, String>) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
     ? "The node running, or the reason it could not start."
@@ -181,10 +180,9 @@ fn hearing(state: State, node: Following, nowMs: Int, outcome: Result<Hearing, S
     ]
     match outcome
         Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Wire.Heard.Gone))
-        Result.Ok(one) -> match one
-            Hearing.Said(pool, frame) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Ok(Infra.Wire.Heard.Message(frame.command, frame.body)))
-            Hearing.Went(pool) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Ok(Infra.Wire.Heard.Gone))
-            Hearing.Quiet(pool, connection, dueMs) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Err(quietWake(connection, dueMs, nowMs)))
+        Result.Ok(Hearing.Said(pool, frame)) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Ok(Infra.Wire.Heard.Message(frame.command, frame.body)))
+        Result.Ok(Hearing.Went(pool)) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Ok(Infra.Wire.Heard.Gone))
+        Result.Ok(Hearing.Quiet(pool, connection, dueMs)) -> (withNode(state, Infra.Follow.withPool(node, pool)), Result.Err(quietWake(connection, dueMs, nowMs)))
 
 fn quietWake(connection: Tcp.Connection, dueMs: Int, nowMs: Int) -> Run.Wake
     ? "The Peer's socket, and the greeting's deadline when there is one."
@@ -558,9 +556,8 @@ fn askingWith(state: State, asked: Result<Asking, String>) -> Tuple<State, Resul
     ? "Sent and parked on the answer, paused by a stop, or the Peer's fault."
     match asked
         Result.Err(why) -> (state, Result.Ok(Infra.Catching.Batch.Failed(why)))
-        Result.Ok(one) -> match one
-            Asking.Sent(walked) -> (fromWalked(state, walked), Result.Err(Run.Wake.Settled(Option.Some(Infra.Peers.answerDeadlineMs()))))
-            Asking.Paused(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Batch.Done))
+        Result.Ok(Asking.Sent(walked)) -> (fromWalked(state, walked), Result.Err(Run.Wake.Settled(Option.Some(Infra.Peers.answerDeadlineMs()))))
+        Result.Ok(Asking.Paused(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Batch.Done))
 
 verify askingWith
     askingWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Batch.Failed("no")))
@@ -616,9 +613,8 @@ fn alignedWith(state: State, outcome: Result<Aligning, String>) -> Tuple<State, 
     ? "Ready, or stopped on this node's own side."
     match outcome
         Result.Err(why) -> (state, Result.Ok(Infra.Catching.Aligned.Stopped(why)))
-        Result.Ok(one) -> match one
-            Aligning.Ready(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Aligned.Ready))
-            Aligning.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Aligned.Stopped(why)))
+        Result.Ok(Aligning.Ready(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Aligned.Ready))
+        Result.Ok(Aligning.Refused(walked, why)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Aligned.Stopped(why)))
 
 verify alignedWith
     alignedWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Aligned.Stopped("no")))
@@ -647,11 +643,10 @@ fn flownWith(state: State, flown: Result<Flown, String>) -> Tuple<State, Result<
     ? "Parked, sliced, landed, or ended by a fault on either side."
     match flown
         Result.Err(why) -> (state, Result.Ok(Infra.Catching.Fetch.Failed(why)))
-        Result.Ok(one) -> match one
-            Flown.Going(walked, ms) -> (fromWalked(state, walked), Result.Err(Run.Wake.Settled(Option.Some(ms))))
-            Flown.Sliced(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.More))
-            Flown.Landed(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.Done))
-            Flown.Faulted(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.Stopped(why)))
+        Result.Ok(Flown.Going(walked, ms)) -> (fromWalked(state, walked), Result.Err(Run.Wake.Settled(Option.Some(ms))))
+        Result.Ok(Flown.Sliced(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.More))
+        Result.Ok(Flown.Landed(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.Done))
+        Result.Ok(Flown.Faulted(walked, why)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Fetch.Stopped(why)))
 
 verify flownWith
     flownWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Fetch.Failed("no")))
@@ -676,9 +671,8 @@ fn begunWith(state: State, outcome: Result<Chunking, String>) -> Tuple<State, Re
     ? "Under way, or refused."
     match outcome
         Result.Err(why) -> (state, Result.Ok(Infra.Catching.Begun.Refused(why)))
-        Result.Ok(one) -> match one
-            Chunking.Begun(walked, height) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Begun.At(height)))
-            Chunking.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Begun.Refused(why)))
+        Result.Ok(Chunking.Begun(walked, height)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Begun.At(height)))
+        Result.Ok(Chunking.Refused(walked, why)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Begun.Refused(why)))
 
 verify begunWith
     begunWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Begun.Refused("no")))
@@ -738,11 +732,10 @@ fn steppingWith(state: State, stepped: Result<Stepping, String>) -> Tuple<State,
     ? "Parked on a job, a Block connected, the chunk ended, or refused."
     match stepped
         Result.Err(why) -> (state, Result.Ok(Infra.Catching.Step.Refused(why)))
-        Result.Ok(one) -> match one
-            Stepping.Parked(walked, job) -> (fromWalked(state, walked), Result.Err(Run.Wake.Until([Wait.Item.Job(job)], Option.None)))
-            Stepping.Next(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Next))
-            Stepping.Ended(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Ended))
-            Stepping.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Refused(why)))
+        Result.Ok(Stepping.Parked(walked, job)) -> (fromWalked(state, walked), Result.Err(Run.Wake.Until([Wait.Item.Job(job)], Option.None)))
+        Result.Ok(Stepping.Next(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Next))
+        Result.Ok(Stepping.Ended(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Ended))
+        Result.Ok(Stepping.Refused(walked, why)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Step.Refused(why)))
 
 verify steppingWith
     steppingWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Step.Refused("no")))
@@ -769,9 +762,8 @@ fn endedWith(state: State, outcome: Result<Chunked, String>) -> Tuple<State, Res
     ? "Built, or refused."
     match outcome
         Result.Err(why) -> (state, Result.Ok(Infra.Catching.Chunk.Refused(why)))
-        Result.Ok(one) -> match one
-            Chunked.Built(walked, atTip) -> (fromWalked(state, walked), Result.Ok(chunkOf(atTip)))
-            Chunked.Refused(walked, why) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Chunk.Refused(why)))
+        Result.Ok(Chunked.Built(walked, atTip)) -> (fromWalked(state, walked), Result.Ok(chunkOf(atTip)))
+        Result.Ok(Chunked.Refused(walked, why)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Chunk.Refused(why)))
 
 verify endedWith
     endedWith(fresh(), Result.Err("no")) => (fresh(), Result.Ok(Infra.Catching.Chunk.Refused("no")))
@@ -876,6 +868,5 @@ fn faultedWith(state: State, node: Following, onward: Result<Onward, String>) ->
     ]
     match onward
         Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Catching.Settled.Over))
-        Result.Ok(one) -> match one
-            Onward.Next(walked) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Settled.Again(walked.catching.key)))
-            Onward.Rest(after) -> (State.update(state, node = Option.Some(after), catching = Option.None), Result.Ok(Infra.Catching.Settled.Rested))
+        Result.Ok(Onward.Next(walked)) -> (fromWalked(state, walked), Result.Ok(Infra.Catching.Settled.Again(walked.catching.key)))
+        Result.Ok(Onward.Rest(after)) -> (State.update(state, node = Option.Some(after), catching = Option.None), Result.Ok(Infra.Catching.Settled.Rested))

@@ -30,9 +30,8 @@ fn main() -> Result<Unit, String>
       "command line; the processes below do the rest."
     ! [Args.get]
     match Args.get()
-        [address, ..rest] -> match rest
-            [path, .._] -> Run.all()
-            [] -> Result.Err("missing payload path")
+        [address, path, .._] -> Run.all()
+        [address] -> Result.Err("missing payload path")
         _ -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
 
 fn stop(view: Run.View) -> Bool

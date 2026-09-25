@@ -97,10 +97,9 @@ fn hearing(state: State, outcome: Result<Hearing, String>) -> Tuple<State, Resul
     ? "A Message, the Peer gone, or a park on its socket."
     match outcome
         Result.Err(why) -> (State.update(state, over = true), Result.Ok(Infra.Wire.Heard.Gone))
-        Result.Ok(one) -> match one
-            Hearing.Said(pool, frame) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Heard.Message(frame.command, frame.body)))
-            Hearing.Went(pool) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Heard.Gone))
-            Hearing.Quiet(pool, connection, dueMs) -> (State.update(state, pool = Option.Some(pool)), Result.Err(Run.Wake.Until([Wait.Item.Socket(Tcp.Socket.Connected(connection))], Option.None)))
+        Result.Ok(Hearing.Said(pool, frame)) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Heard.Message(frame.command, frame.body)))
+        Result.Ok(Hearing.Went(pool)) -> (State.update(state, pool = Option.Some(pool)), Result.Ok(Infra.Wire.Heard.Gone))
+        Result.Ok(Hearing.Quiet(pool, connection, dueMs)) -> (State.update(state, pool = Option.Some(pool)), Result.Err(Run.Wake.Until([Wait.Item.Socket(Tcp.Socket.Connected(connection))], Option.None)))
 
 verify hearing
     hearing(fresh(), Result.Err("no")) => (State.update(fresh(), over = true), Result.Ok(Infra.Wire.Heard.Gone))
@@ -181,9 +180,8 @@ fn payloadFrom(args: List<String>) -> Result<Bytes, String>
     ! [Disk.readBytes]
     match args
         [] -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
-        [peer, ..rest] -> match rest
-            [] -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
-            [path, ..more] -> Disk.readBytes(path)
+        [peer] -> Result.Err("usage: working-probe HOST:PORT PAYLOAD")
+        [peer, path, ..more] -> Disk.readBytes(path)
 
 fn begun(state: State, payload: Result<Bytes, String>) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
     ? "Say the work is starting, begin it, and park on it."
@@ -224,9 +222,8 @@ fn takenFrom(state: State, job: Work.Job, taken: Result<Option<Infra.BlockJobs.R
     ? "Still running parks again on the same job; a finished one answers."
     match taken
         Result.Err(why) -> (State.update(state, job = Option.None), Result.Ok(Tools.Decoding.Decoded.Refused(why)))
-        Result.Ok(found) -> match found
-            Option.None -> (state, Result.Err(Run.Wake.Until([Wait.Item.Job(job)], Option.Some(100))))
-            Option.Some(reply) -> (State.update(state, job = Option.None), Result.Ok(decodedOf(reply)))
+        Result.Ok(Option.None) -> (state, Result.Err(Run.Wake.Until([Wait.Item.Job(job)], Option.Some(100))))
+        Result.Ok(Option.Some(reply)) -> (State.update(state, job = Option.None), Result.Ok(decodedOf(reply)))
 
 fn decodedOf(reply: Infra.BlockJobs.Reply) -> Tools.Decoding.Decoded
     ? "How many Transactions the payload decoded to."

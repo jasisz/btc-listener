@@ -36,9 +36,8 @@ fn main() -> Result<Unit, String>
         Wait.poll,
     ]
     match Args.get()
-        [host, ..rest] -> match rest
-            [port, ..names] -> asking(host, port, wanted(names))
-            [] -> Result.Err("usage: dns-probe HOST PORT [NAME]")
+        [host, port, ..names] -> asking(host, port, wanted(names))
+        [host] -> Result.Err("usage: dns-probe HOST PORT [NAME]")
         _ -> Result.Err("usage: dns-probe HOST PORT [NAME]")
 
 fn asking(host: String, portText: String, name: String) -> Result<Unit, String>

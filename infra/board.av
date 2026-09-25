@@ -120,9 +120,8 @@ fn accepting(board: Board, nowMs: Int, left: Int) -> Board
         true -> board
         false -> match Tcp.accept(board.listener)
             Result.Err(why) -> board
-            Result.Ok(found) -> match found
-                Option.None -> board
-                Option.Some(connection) -> accepting(Board.update(board, readers = List.concat(board.readers, [Reader(connection = connection, request = Bytes.empty(), response = Option.None, offset = 0, deadlineMs = nowMs + patienceMs())])), nowMs, left - 1)
+            Result.Ok(Option.None) -> board
+            Result.Ok(Option.Some(connection)) -> accepting(Board.update(board, readers = List.concat(board.readers, [Reader(connection = connection, request = Bytes.empty(), response = Option.None, offset = 0, deadlineMs = nowMs + patienceMs())])), nowMs, left - 1)
 
 fn stepped(readers: List<Reader>, snapshot: Snapshot, nowMs: Int, acc: List<Reader>) -> List<Reader>
     ? "One operation each, in the order the Readers were accepted; the"
@@ -177,11 +176,10 @@ fn receiving(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
     ! [Tcp.close, Tcp.readNow]
     match Tcp.readNow(reader.connection, requestBytes() - Bytes.len(reader.request))
         Result.Err(why) -> dropped(reader)
-        Result.Ok(found) -> match found
-            Option.None -> Option.Some(reader)
-            Option.Some(bytes) -> match Bytes.len(bytes) == 0
-                true -> dropped(reader)
-                false -> received(Reader.update(reader, request = Bytes.concat(reader.request, bytes)), snapshot, nowMs)
+        Result.Ok(Option.None) -> Option.Some(reader)
+        Result.Ok(Option.Some(bytes)) -> match Bytes.len(bytes) == 0
+            true -> dropped(reader)
+            false -> received(Reader.update(reader, request = Bytes.concat(reader.request, bytes)), snapshot, nowMs)
 
 fn received(reader: Reader, snapshot: Snapshot, nowMs: Int) -> Option<Reader>
     ? "A request is whole when its headers are, which is the blank line a"
