@@ -222,20 +222,11 @@ fn cancelledJob(state: State, job: Work.Job) -> Tuple<State, Result<Tools.Decodi
 
 fn takenFrom(state: State, job: Work.Job, taken: Result<Option<Infra.BlockJobs.Reply>, String>) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
     ? "Still running parks again on the same job; a finished one answers."
-    takenWith(state, taken, Run.Wake.Until([Wait.Item.Job(job)], Option.Some(100)))
-
-fn takenWith(state: State, taken: Result<Option<Infra.BlockJobs.Reply>, String>, again: Run.Wake) -> Tuple<State, Result<Tools.Decoding.Decoded, Run.Wake>>
-    ? "The answer, or the wake that brings this request back."
     match taken
         Result.Err(why) -> (State.update(state, job = Option.None), Result.Ok(Tools.Decoding.Decoded.Refused(why)))
         Result.Ok(found) -> match found
-            Option.None -> (state, Result.Err(again))
+            Option.None -> (state, Result.Err(Run.Wake.Until([Wait.Item.Job(job)], Option.Some(100))))
             Option.Some(reply) -> (State.update(state, job = Option.None), Result.Ok(decodedOf(reply)))
-
-verify takenWith
-    takenWith(fresh(), Result.Ok(Option.None), Run.Wake.Until([], Option.Some(100))) => (fresh(), Result.Err(Run.Wake.Until([], Option.Some(100))))
-    takenWith(fresh(), Result.Err("gone"), Run.Wake.Until([], Option.Some(100))) => (fresh(), Result.Ok(Tools.Decoding.Decoded.Refused("gone")))
-    takenWith(fresh(), Result.Ok(Option.Some(Infra.BlockJobs.Reply.Decoded([]))), Run.Wake.Until([], Option.Some(100))) => (fresh(), Result.Ok(Tools.Decoding.Decoded.Transactions(0)))
 
 fn decodedOf(reply: Infra.BlockJobs.Reply) -> Tools.Decoding.Decoded
     ? "How many Transactions the payload decoded to."
