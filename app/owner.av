@@ -382,19 +382,15 @@ fn admittedWith(state: State, node: Following, listener: Tcp.Socket, outcome: Re
     ]
     match outcome
         Result.Err(why) -> (closing(state, node, Result.Err(why)), Result.Ok(Infra.Wire.Turned.Over))
-        Result.Ok(one) -> (withNode(state, one.state), Result.Err(listenerWake([Wait.Item.Socket(listener)], one.failed)))
+        Result.Ok(one) -> (withNode(state, one.state), Result.Err(listenerWake(listener, one.failed)))
 
-fn listenerWake(listener: List<Wait.Item>, failed: Bool) -> Run.Wake
+fn listenerWake(listener: Tcp.Socket, failed: Bool) -> Run.Wake
     ? "The listener and the second, or only the second when the listener"
       "would not give a caller: it stays ready while its caller is queued,"
       "and parking on it would ask again every turn."
     match failed
         true -> Run.Wake.Until([], Option.Some(Infra.Follow.tickMs()))
-        false -> Run.Wake.Until(listener, Option.Some(Infra.Follow.tickMs()))
-
-verify listenerWake
-    listenerWake([], true) => Run.Wake.Until([], Option.Some(Infra.Follow.tickMs()))
-    listenerWake([], false) => Run.Wake.Until([], Option.Some(Infra.Follow.tickMs()))
+        false -> Run.Wake.Until([Wait.Item.Socket(listener)], Option.Some(Infra.Follow.tickMs()))
 
 fn drained(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
     ? "The outboxes moved onto their sockets and the Blocks Peers asked for"
