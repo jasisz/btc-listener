@@ -26,8 +26,8 @@ Differences a reader of the logs will see: every Message is dispatched as it
 arrives, including during a Catch-up, where the old loop kept all but pings
 and addresses for later; an Announcement made during a Catch-up is held by the
 gate and taken as the next one. The run ends when the owner has closed the
-node; a failure is written to `.failed` in the chain directory for `main` to
-report, because the loop itself answers `Ok` however its processes ended.
+node; a failure ends the run with `Run.fail`, and `main` reports the reason
+`Run.all()` answers.
 Startup (`Infra.Peers.joined`, the DNS seeds, `firstSeated`) and a reseed
 still wait inside one answer, before or instead of anything else happening.
 

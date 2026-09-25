@@ -6,7 +6,7 @@ module Node
         "dispatches everything else because it is the half that grows with the"
         "full-node plan -- one Peer at first, a pool of them since Stage 5,"
         "inbound ones since Stage 8 -- and the adapter should not grow with it."
-    exposes [Plan, follow, planned, claimedFor, openedFor, failedWith, afterRun]
+    exposes [Plan, follow, planned, claimedFor, openedFor, afterRun]
     depends [Infra.Peers, App.Usage, Domain.Address, Domain.Network, Infra.Blocks, Infra.Follow, Infra.Lock, Infra.Screen, Infra.Store]
     effects [
         Console.error, Console.print,
@@ -110,16 +110,11 @@ fn claimingFor(plan: Plan, claimed: Result<Unit, String>) -> Result<Plan, String
         Result.Ok(_) -> armed(plan, Process.stopRequested(), Infra.Peers.inboundCapFrom(plan.inbound))
 
 fn armed(plan: Plan, stopArmed: Bool, cap: Result<Int, String>) -> Result<Plan, String>
-    ? "A cap that will not parse gives the claim back and says why; a good"
-      "one clears whatever a failed run before this one left behind."
+    ? "A cap that will not parse gives the claim back and says why."
     ! [Disk.delete]
     match cap
         Result.Err(why) -> releasedWith(plan.dir, "error: {why}")
-        Result.Ok(_) -> clearedFor(plan, Disk.delete(failurePath(plan.dir)))
-
-fn clearedFor(plan: Plan, cleared: Result<Unit, String>) -> Result<Plan, String>
-    ? "A stale failure note is gone, or there was none."
-    Result.Ok(plan)
+        Result.Ok(_) -> Result.Ok(plan)
 
 fn releasedWith(dir: String, why: String) -> Result<Plan, String>
     ? "The claim given back, and the reason handed on."
@@ -145,36 +140,14 @@ fn openedFor(plan: Plan) -> Result<Following, String>
     cap = Infra.Peers.inboundCapFrom(plan.inbound)?
     Infra.Follow.opened(plan.network, plan.addresses, store, blocks, plan.screened, plan.answering, plan.logging, notePath(plan.logging, plan.dir), plan.boarding, cap)
 
-fn failurePath(dir: String) -> String
-    ? "Where a follow that failed leaves its reason for the process that ran"
-      "it. The loop that runs the node answers Ok however its processes"
-      "ended, so the reason crosses from the owner to main through the"
-      "directory both of them already hold."
-    "{dir}/.failed"
-
-verify failurePath
-    failurePath("chain") => "chain/.failed"
-
-fn failedWith(dir: String, why: String) -> Unit
-    ? "The reason a run failed, written for main; a write that fails leaves"
-      "a run that ends Ok, which is the one thing the reason was for."
-    ! [Disk.writeText]
-    _written = Disk.writeText(failurePath(dir), why)
-    Unit
-
 fn afterRun(plan: Plan, ran: Result<Unit, String>) -> Result<Unit, String>
     ? "The loop has returned: the claim given back, the terminal restored"
       "if the Screen had it, and the run reported the way every command"
       "reports -- stopped following, or the reason it could not go on."
-    ! [
-        Console.print,
-        Disk.delete, Disk.exists, Disk.readText,
-        Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
-    ]
-    failed = failureOf(plan.dir)
+    ! [Console.print, Disk.delete, Terminal.disableRawMode, Terminal.flush, Terminal.showCursor]
     _released = Infra.Lock.release(plan.dir)
     _given = restoredIf(plan.screened)
-    said(outcomeOf(ran, failed))
+    said(outcomeOf(ran))
 
 fn restoredIf(screened: Bool) -> Unit
     ? "Give the terminal back if the Screen ever had it; restoring twice is harmless."
@@ -183,33 +156,15 @@ fn restoredIf(screened: Bool) -> Unit
         true -> Infra.Screen.restored()
         false -> Unit
 
-fn failureOf(dir: String) -> Option<String>
-    ? "The reason a failed run left, read and removed."
-    ! [Disk.delete, Disk.exists, Disk.readText]
-    match Disk.exists(failurePath(dir))
-        false -> Option.None
-        true -> failureRead(dir, Disk.readText(failurePath(dir)))
-
-fn failureRead(dir: String, read: Result<String, String>) -> Option<String>
-    ? "What the note says, and the note gone."
-    ! [Disk.delete]
-    _removed = Disk.delete(failurePath(dir))
-    match read
-        Result.Err(why) -> Option.Some("the run failed and its reason could not be read: {why}")
-        Result.Ok(text) -> Option.Some(text)
-
-fn outcomeOf(ran: Result<Unit, String>, failed: Option<String>) -> Result<String, String>
-    ? "The loop's own failure, the node's, or a clean stop."
+fn outcomeOf(ran: Result<Unit, String>) -> Result<String, String>
+    ? "The reason the run failed, or a clean stop."
     match ran
         Result.Err(why) -> Result.Err(why)
-        Result.Ok(_) -> match failed
-            Option.None -> Result.Ok("stopped following")
-            Option.Some(why) -> Result.Err(why)
+        Result.Ok(_) -> Result.Ok("stopped following")
 
 verify outcomeOf
-    outcomeOf(Result.Ok(Unit), Option.None) => Result.Ok("stopped following")
-    outcomeOf(Result.Ok(Unit), Option.Some("no")) => Result.Err("no")
-    outcomeOf(Result.Err("wait"), Option.None) => Result.Err("wait")
+    outcomeOf(Result.Ok(Unit)) => Result.Ok("stopped following")
+    outcomeOf(Result.Err("no")) => Result.Err("no")
 
 fn keywordOnly(more: List<String>) -> Bool
     ? "Whether what follows the first argument is only words, which is how"

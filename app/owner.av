@@ -12,18 +12,18 @@ module Owner
         "The node is opened by the first request, from the same command line"
         "main parsed, because the loop starts every answer module from"
         "fresh() and hands it nothing."
-        "A run that ends in failure writes its reason beside the chain"
-        "(App.Node.failedWith) for main to report once the loop has returned,"
-        "because the loop answers Ok however its processes ended."
+        "A run that ends in failure says why with Run.fail, which is what"
+        "Run.all() answers main once the loop has returned."
     depends [Tcp, Wait, Work, App.Cli, App.Node, Domain.Catchup, Infra.Catching, Infra.ChainState, Infra.Follow, Infra.Peers, Infra.Wire]
     exposes [State, fresh, peers, started, heard, handled, ticked, accepted, drained, due, headers, aligned, fetched, begun, connected, ended, settled]
     effects [
         Args.get,
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.sync, Disk.writeBytes,
         Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.listen, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.disableRawMode, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.now, Time.unixMs,
@@ -37,11 +37,10 @@ record State
     catching: Option<Catching>
     over: Bool
     first: Bool
-    dir: String
 
 fn fresh() -> State
     ? "No node opened yet, no Catch-up under way, the first Catch-up still owed."
-    State(node = Option.None, catching = Option.None, over = false, first = true, dir = "")
+    State(node = Option.None, catching = Option.None, over = false, first = true)
 
 verify fresh
     fresh().over => false
@@ -68,38 +67,40 @@ fn fromWalked(state: State, walked: Walked) -> State
     State.update(state, node = Option.Some(walked.state), catching = Option.Some(walked.catching))
 
 fn closing(state: State, node: Following, outcome: Result<Unit, String>) -> State
-    ? "The node shut down, and the reason written where main will read it"
-      "when the run ended in failure."
+    ? "The node shut down, and the run failed with the reason when there"
+      "is one."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
         Work.cancel,
     ]
     closedNode = Infra.Follow.closed(node, state.catching, outcome)
-    _noted = failureNoted(state.dir, outcome)
+    _failed = failedIf(outcome)
     State.update(state, node = Option.Some(closedNode), catching = Option.None, over = true)
 
-fn failureNoted(dir: String, outcome: Result<Unit, String>) -> Unit
-    ? "A failure, written beside the chain for main."
-    ! [Disk.writeText]
+fn failedIf(outcome: Result<Unit, String>) -> Unit
+    ? "A failure ends the run, and Run.all() answers main with its reason."
+    ! [Run.fail]
     match outcome
         Result.Ok(_) -> Unit
-        Result.Err(why) -> App.Node.failedWith(dir, why)
+        Result.Err(why) -> Run.fail(why)
 
 fn started(state: State) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
     ? "The node opened from the command line, once."
     ! [
         Args.get,
         Console.error, Console.print,
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor,
         Time.unixMs,
@@ -115,10 +116,11 @@ fn planning(state: State, planned: Option<Result<Plan, String>>) -> Tuple<State,
     ? "The Plan main already accepted, read again from the same arguments."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes, Disk.writeText,
+        Disk.appendText, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.size, Disk.writeBytes,
         Infra.Kv.get, Infra.Kv.open,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.listen, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.enableRawMode, Terminal.flush, Terminal.hideCursor,
         Time.unixMs,
@@ -128,19 +130,19 @@ fn planning(state: State, planned: Option<Result<Plan, String>>) -> Tuple<State,
         Option.None -> failedStart(state, "these arguments do not ask for follow")
         Option.Some(parsed) -> match parsed
             Result.Err(why) -> failedStart(state, why)
-            Result.Ok(plan) -> openedWith(State.update(state, dir = plan.dir), App.Node.openedFor(plan))
+            Result.Ok(plan) -> openedWith(state, App.Node.openedFor(plan))
 
 fn openedWith(state: State, opened: Result<Following, String>) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
     ? "The node running, or the reason it could not start."
-    ! [Disk.writeText]
+    ! [Run.fail]
     match opened
         Result.Err(why) -> failedStart(state, why)
         Result.Ok(node) -> (withNode(state, node), Result.Ok(Infra.Wire.Started.Running))
 
 fn failedStart(state: State, why: String) -> Tuple<State, Result<Infra.Wire.Started, Run.Wake>>
     ? "A node that could not start is over before it began."
-    ! [Disk.writeText]
-    _noted = failureNoted(state.dir, Result.Err(why))
+    ! [Run.fail]
+    _failed = Run.fail(why)
     (State.update(state, over = true), Result.Ok(Infra.Wire.Started.Failed(why)))
 
 fn heard(state: State, key: Int) -> Tuple<State, Result<Infra.Wire.Heard, Run.Wake>>
@@ -148,10 +150,11 @@ fn heard(state: State, key: Int) -> Tuple<State, Result<Infra.Wire.Heard, Run.Wa
       "something, or until its greeting has run out of time."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.readNow, Tcp.writeNow,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -167,9 +170,10 @@ fn hearing(state: State, node: Following, nowMs: Int, outcome: Result<Hearing, S
     ? "A Message, a Peer gone, or a park."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -203,9 +207,10 @@ fn handled(state: State, key: Int, command: String, body: List<Int>) -> Tuple<St
       "other Message is Infra.Follow's dispatch, as it always was."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.writeNow,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -221,9 +226,10 @@ fn routed(state: State, node: Following, key: Int, command: String, body: List<I
     ? "Which of the three a Message is."
     ! [
         Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.writeNow,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -254,9 +260,10 @@ fn dispatched(state: State, node: Following, key: Int, outcome: Result<Following
     ? "The dispatch's node, or the run ended by its Err."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -277,10 +284,11 @@ fn ticked(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
       "Screen's q answered with y, closes the node here."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.disableRawMode, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.unixMs,
@@ -296,10 +304,11 @@ fn tickedWith(state: State, node: Following, nowMs: Int) -> Tuple<State, Result<
     ? "Closed on a stop, or one second's work."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.disableRawMode, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey, Terminal.showCursor,
         Time.unixMs,
@@ -313,9 +322,10 @@ fn turnedWith(state: State, node: Following, turned: Result<Following, String>) 
     ? "The second's node and the park until the next one, or the run ended by an Err."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -342,9 +352,10 @@ fn accepted(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
       "seen. Over once the node has closed, or when it has no listener."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.accept, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.peerAddress,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -362,9 +373,10 @@ fn admittedWith(state: State, node: Following, listener: Tcp.Socket, outcome: Re
     ? "Parked for the next caller, or the run ended by an Err."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -394,9 +406,10 @@ fn drained(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
       "only once the node has closed."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.readBytesAt, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.writeNow,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -412,9 +425,10 @@ fn drainedWith(state: State, node: Following, outcome: Result<Following, String>
     ? "Parked for what is still owed, or the run ended by an Err."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -451,9 +465,10 @@ fn due(state: State) -> Tuple<State, Result<Infra.Catching.Due, Run.Wake>>
       "held claim falls due on the clock."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.now, Time.unixMs,
@@ -471,9 +486,10 @@ fn dueWith(state: State, node: Following, claim: Option<Domain.Catchup.Due>) -> 
     ? "A claim taken, or nothing yet."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.now, Time.unixMs,
@@ -487,9 +503,10 @@ fn takenWith(state: State, node: Following, taken: Result<Walked, String>) -> Tu
     ? "The Catch-up under way, or the run ended because the Store would not answer."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -766,10 +783,11 @@ fn settled(state: State, key: Int, ending: Infra.Catching.Ending) -> Tuple<State
       "with every Peer still connected (#183)."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -788,10 +806,11 @@ fn settledWith(state: State, node: Following, catching: Catching, ending: Infra.
     ? "Each ending in its own way."
     ! [
         Console.error, Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
         Random.int,
+        Run.fail,
         Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -828,9 +847,10 @@ fn movedWith(state: State, node: Following, moved: Result<Following, String>) ->
     ? "Rested, or the run ended because the Set's line could not be written."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
@@ -845,9 +865,10 @@ fn faultedWith(state: State, node: Following, onward: Result<Onward, String>) ->
       "the run ended because nobody is left and nobody can be found."
     ! [
         Console.print,
-        Disk.appendText, Disk.size, Disk.sync, Disk.writeText,
+        Disk.appendText, Disk.size, Disk.sync,
         Infra.Kv.applyAll, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.putAll,
         Process.stopRequested,
+        Run.fail,
         Tcp.close, Tcp.closeDial, Tcp.closeListener,
         Terminal.disableRawMode, Terminal.flush, Terminal.showCursor,
         Time.unixMs,
