@@ -52,11 +52,11 @@ record Standing
     height: Int
 
 record Popped
-    standing: Map<Int, Standing>
+    held: Standing
     frame: Frame
 
 record PoppedAt
-    standing: Map<Int, Standing>
+    held: Standing
     key: Int
     frame: Frame
 
@@ -241,37 +241,40 @@ verify absorbedInto
     standingBuffer(absorbedInto(absorbedInto(oneSeated(), 0, Bytes.fromList([1])), 0, Bytes.fromList([2])), 0) => [1, 2]
 
 fn popped(network: Network, standing: Map<Int, Standing>, key: Int) -> Result<Option<Popped>, String>
-    ? "Take the oldest whole Message one Peer has sent and not had read."
+    ? "Take the oldest whole Message one Peer has sent and not had read,"
+      "with what that Peer's standing becomes. The map is only read here:"
+      "the caller sets the standing back into the map it holds, so the map"
+      "has one holder when it is set."
     match Map.get(standing, key)
         Option.None -> Result.Ok(Option.None)
-        Option.Some(held) -> poppedFrom(standing, key, held, firstOf(network, held.buffer))
+        Option.Some(held) -> poppedFrom(held, firstOf(network, held.buffer))
 
 verify popped
     popped(Network.Signet, noStanding(), 0) => Result.Ok(Option.None)
     popped(Network.Signet, oneSeated(), 0) => Result.Ok(Option.None)
-    popped(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(oneMessage())?), 0) => Result.Ok(Option.Some(Popped(standing = oneRead(), frame = Frame(command = "verack", body = []))))
+    popped(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(oneMessage())?), 0) => Result.Ok(Option.Some(Popped(held = readOnce(), frame = Frame(command = "verack", body = []))))
     popped(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(overLong())?), 0) => Result.Err("a Message announced 4000001 payload bytes, which is more than the 4000000 the protocol allows")
     popped(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(corrupted())?), 0) => Result.Err("a Message did not match the checksum its own header carries")
 
-fn poppedFrom(standing: Map<Int, Standing>, key: Int, held: Standing, found: Result<Option<TakenOne>, String>) -> Result<Option<Popped>, String>
+fn poppedFrom(held: Standing, found: Result<Option<TakenOne>, String>) -> Result<Option<Popped>, String>
     ? "A buffer with no whole Message in it is a Peer mid-sentence."
     match found
         Result.Err(why) -> Result.Err(why)
-        Result.Ok(one) -> poppedOne(standing, key, held, one)
+        Result.Ok(one) -> poppedOne(held, one)
 
 verify poppedFrom
-    poppedFrom(oneSeated(), 0, emptyStanding(), Result.Ok(Option.None)) => Result.Ok(Option.None)
-    poppedFrom(oneSeated(), 0, emptyStanding(), Result.Err("no")) => Result.Err("no")
+    poppedFrom(emptyStanding(), Result.Ok(Option.None)) => Result.Ok(Option.None)
+    poppedFrom(emptyStanding(), Result.Err("no")) => Result.Err("no")
 
-fn poppedOne(standing: Map<Int, Standing>, key: Int, held: Standing, one: Option<TakenOne>) -> Result<Option<Popped>, String>
+fn poppedOne(held: Standing, one: Option<TakenOne>) -> Result<Option<Popped>, String>
     ? "The Message off the front, and the buffer shortened by exactly it."
     match one
         Option.None -> Result.Ok(Option.None)
-        Option.Some(taken) -> Result.Ok(Option.Some(Popped(standing = Map.set(standing, key, Standing(address = held.address, buffer = taken.rest, version = held.version, agent = held.agent, sent = held.sent, received = held.received, inbound = held.inbound, height = held.height)), frame = taken.frame)))
+        Option.Some(taken) -> Result.Ok(Option.Some(Popped(held = Standing.update(held, buffer = taken.rest), frame = taken.frame)))
 
 verify poppedOne
-    poppedOne(oneSeated(), 0, emptyStanding(), Option.None) => Result.Ok(Option.None)
-    poppedOne(oneSeated(), 0, emptyStanding(), Option.Some(TakenOne(frame = sampleFrame(), rest = Bytes.empty()))) => Result.Ok(Option.Some(Popped(standing = oneSeated(), frame = sampleFrame())))
+    poppedOne(emptyStanding(), Option.None) => Result.Ok(Option.None)
+    poppedOne(emptyStanding(), Option.Some(TakenOne(frame = sampleFrame(), rest = Bytes.empty()))) => Result.Ok(Option.Some(Popped(held = emptyStanding(), frame = sampleFrame())))
 
 fn poppedAny(network: Network, standing: Map<Int, Standing>) -> Result<Option<PoppedAt>, String>
     ? "The next Message any Peer has sent and not had read, and which Peer."
@@ -287,8 +290,8 @@ fn poppedAny(network: Network, standing: Map<Int, Standing>) -> Result<Option<Po
 verify poppedAny
     poppedAny(Network.Signet, noStanding()) => Result.Ok(Option.None)
     poppedAny(Network.Signet, oneSeated()) => Result.Ok(Option.None)
-    poppedAny(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(oneMessage())?)) => Result.Ok(Option.Some(PoppedAt(standing = oneRead(), key = 0, frame = Frame(command = "verack", body = []))))
-    poppedAny(Network.Signet, absorbedInto(seated(oneSeated(), 1, "192.0.2.2:8333", false), 1, Bytes.fromList(oneMessage())?)) => Result.Ok(Option.Some(PoppedAt(standing = Map.set(seated(oneSeated(), 1, "192.0.2.2:8333", false), 1, Standing(address = "192.0.2.2:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 24, inbound = false, height = 0)), key = 1, frame = Frame(command = "verack", body = []))))
+    poppedAny(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(oneMessage())?)) => Result.Ok(Option.Some(PoppedAt(held = readOnce(), key = 0, frame = Frame(command = "verack", body = []))))
+    poppedAny(Network.Signet, absorbedInto(seated(oneSeated(), 1, "192.0.2.2:8333", false), 1, Bytes.fromList(oneMessage())?)) => Result.Ok(Option.Some(PoppedAt(held = Standing(address = "192.0.2.2:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 24, inbound = false, height = 0), key = 1, frame = Frame(command = "verack", body = []))))
 
 fn firstWith(network: Network, standing: Map<Int, Standing>, keys: List<Int>) -> Result<Option<PoppedAt>, String>
     ? "The first Peer, in identifier order, with a whole Message waiting."
@@ -298,7 +301,7 @@ fn firstWith(network: Network, standing: Map<Int, Standing>, keys: List<Int>) ->
 
 verify firstWith
     firstWith(Network.Signet, oneSeated(), []) => Result.Ok(Option.None)
-    firstWith(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(oneMessage())?), [0]) => Result.Ok(Option.Some(PoppedAt(standing = oneRead(), key = 0, frame = Frame(command = "verack", body = []))))
+    firstWith(Network.Signet, absorbedInto(oneSeated(), 0, Bytes.fromList(oneMessage())?), [0]) => Result.Ok(Option.Some(PoppedAt(held = readOnce(), key = 0, frame = Frame(command = "verack", body = []))))
 
 fn orNext(network: Network, standing: Map<Int, Standing>, key: Int, rest: List<Int>, found: Result<Option<Popped>, String>) -> Result<Option<PoppedAt>, String>
     ? "This Peer had something, or the next one is asked."
@@ -313,12 +316,12 @@ verify orNext
 fn orNextOk(network: Network, standing: Map<Int, Standing>, key: Int, rest: List<Int>, one: Option<Popped>) -> Result<Option<PoppedAt>, String>
     ? "Name the Peer beside the Message, or carry on down the list."
     match one
-        Option.Some(found) -> Result.Ok(Option.Some(PoppedAt(standing = found.standing, key = key, frame = found.frame)))
+        Option.Some(found) -> Result.Ok(Option.Some(PoppedAt(held = found.held, key = key, frame = found.frame)))
         Option.None -> firstWith(network, standing, rest)
 
 verify orNextOk
     orNextOk(Network.Signet, oneSeated(), 0, [], Option.None) => Result.Ok(Option.None)
-    orNextOk(Network.Signet, oneSeated(), 0, [], Option.Some(Popped(standing = oneSeated(), frame = sampleFrame()))) => Result.Ok(Option.Some(PoppedAt(standing = oneSeated(), key = 0, frame = sampleFrame())))
+    orNextOk(Network.Signet, oneSeated(), 0, [], Option.Some(Popped(held = emptyStanding(), frame = sampleFrame()))) => Result.Ok(Option.Some(PoppedAt(held = emptyStanding(), key = 0, frame = sampleFrame())))
 
 fn faultyIn(network: Network, standing: Map<Int, Standing>) -> Option<Int>
     ? "Which Peer has said something this program will not read on from."
@@ -435,16 +438,9 @@ fn emptyStanding() -> Standing
     ? "A Peer just seated, for the cases here."
     Standing(address = "192.0.2.1:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = 0, inbound = false, height = 0)
 
-fn oneRead() -> Map<Int, Standing>
-    ? "One Peer that has been read once: 24 bytes counted, buffer empty."
-    saidNothing(oneSeated(), 24)
-
-fn saidNothing(standing: Map<Int, Standing>, received: Int) -> Map<Int, Standing>
-    ? "The seated Peer with a received count, for the cases here."
-    Map.set(standing, 0, Standing(address = "192.0.2.1:8333", buffer = Bytes.empty(), version = 0, agent = "", sent = 0, received = received, inbound = false, height = 0))
-
-verify saidNothing
-    Map.len(saidNothing(oneSeated(), 24)) => 1
+fn readOnce() -> Standing
+    ? "The seated Peer once it has been read once: 24 bytes counted, buffer empty."
+    Standing.update(emptyStanding(), received = 24)
 
 fn oneSeated() -> Map<Int, Standing>
     ? "One Peer held under identifier zero, for the cases here."

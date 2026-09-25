@@ -1276,21 +1276,18 @@ fn toppedUp(state: Following) -> Result<Following, String>
       "The deciding and the dialling moved to Infra.Peers with #199, so that"
       "a body walk can do the same thing for the hours it holds the pool."
       "This is now the loop saying who it is: the pool, the Book and the"
-      "next key, handed over and taken back."
+      "next key, handed over and taken back. The pool and the Book are"
+      "bound by a match and handed on, so the loop holds neither while a"
+      "Candidate is marked in the Book."
     ! [Random.int, Tcp.beginConnect, Time.unixMs]
-    toppedInto(state, Infra.Peers.toppedUp(state.pool, state.book, state.nextKey)?)
-
-fn toppedInto(state: Following, done: Infra.Peers.Topped) -> Result<Following, String>
-    ? "What the top-up did, folded back into the loop's state."
-    Result.Ok(withNextKey(withBook(withPool(state, done.pool), done.book), done.nextKey))
+    match (state.pool, state.book)
+        (pool, book) -> match Infra.Peers.toppedUp(pool, book, state.nextKey)
+            Result.Err(why) -> Result.Err(why)
+            Result.Ok(done) -> Result.Ok(Following.update(state, pool = done.pool, book = done.book, nextKey = done.nextKey))
 
 fn withBook(state: Following, book: Map<String, Candidate>) -> Following
     ? "The state, with the Address Book moved on."
     Following(pool = state.pool, store = state.store, blocks = state.blocks, book = book, nextKey = state.nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate)
-
-fn withNextKey(state: Following, nextKey: Int) -> Following
-    ? "The state, with the next identifier a Peer will take."
-    Following(pool = state.pool, store = state.store, blocks = state.blocks, book = state.book, nextKey = nextKey, watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate)
 
 fn dialsAsked(state: Following) -> Result<Following, String>
     ? "Ask the dial what it became, and say so."

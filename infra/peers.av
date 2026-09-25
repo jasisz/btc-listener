@@ -490,7 +490,8 @@ verify countedIfRoutable
 
 fn tallied(pool: Pool, address: String) -> Pool
     ? "The pool, with one more Peer having named that address."
-    Pool.update(pool, seenAs = Map.set(pool.seenAs, address, timesSeen(pool, address) + 1))
+    seen = timesSeen(pool, address)
+    Pool.update(pool, seenAs = Map.set(pool.seenAs, address, seen + 1))
 
 verify tallied
     timesSeen(tallied(opened(Network.Regtest), "1.2.3.4:8333"), "1.2.3.4:8333") => 1
@@ -1070,18 +1071,16 @@ fn opened(network: Network) -> Pool
     ? "A pool with nothing in it."
     Pool(network = network, sockets = Map.fromList([]), standing = Domain.Inbox.noStanding(), spare = [], serves = 0, height = 0, heardMs = Map.fromList([]), anyHeardMs = 0, polledMs = 0, plain = true, dialing = Option.None, settled = [], port = 0, seenAs = Map.fromList([]), toldMs = 0, inboundCap = inboundDefault(), greetings = {}, outboxes = {}, pending = {})
 
-fn withStanding(pool: Pool, standing: Map<Int, Standing>) -> Pool
-    ? "The pool, with what is known about the Peers moved on."
-      "The sockets and the standing are kept in step by only ever changing"
-      "one of them here: the pure half is Domain.Inbox's and this is the one"
-      "place it is folded back in."
-      "A Peer still greeting is hidden from most of Domain.Inbox's work,"
-      "so a standing map worked out from what was visible has a hole where"
-      "that Peer was. restoredPending puts it back, and only where the new"
-      "map does not name it: the buffers of a Peer part way through its"
-      "Handshake would otherwise be dropped by whichever caller happened"
-      "to pop a Message from somebody else."
-    Pool.update(pool, standing = restoredPending(pool, standing, Map.keys(pool.greetings)))
+fn withHeld(pool: Pool, key: Int, held: Standing) -> Pool
+    ? "The pool, with what is known about one Peer moved on."
+      "Domain.Inbox only reads the standing map when it pops a Message and"
+      "hands back what that Peer's standing becomes, and this is the one"
+      "place it is set back in. The map is set with the pool it came from"
+      "let go, so the map has one holder and is not copied whole."
+      "A Peer still greeting is hidden from Domain.Inbox.poppedAny, but"
+      "only the Peer a Message came from is set, so a Peer part way through"
+      "its Handshake keeps its buffer whoever was popped."
+    Pool.update(pool, standing = Map.set(pool.standing, key, held))
 
 fn spareLimit() -> Int
     ? "How many unasked-for Messages to keep for the caller."
@@ -1721,7 +1720,7 @@ fn handshakingOn(pool: Pool, key: Int, seenVersion: Int, seenAgent: String, seen
         Wait.poll,
     ]
     match Domain.Handshake.stepOf(frame.command, seenVersion > 0, kept)
-        Step.Done -> Result.Ok(Joined(pool = withStanding(pool, Domain.Inbox.greeted(pool.standing, key, seenVersion, seenAgent, seenHeight)), seated = true, why = ""))
+        Step.Done -> Result.Ok(Joined(pool = Pool.update(pool, standing = Domain.Inbox.greeted(pool.standing, key, seenVersion, seenAgent, seenHeight)), seated = true, why = ""))
         Step.Version -> acknowledged(pool, key, frame.body, inbound, deadlineMs, kept)
         Step.Ping -> pongThen(pool, key, seenVersion, seenAgent, seenHeight, frame, inbound, deadlineMs, kept)
         Step.Spared -> greeting(sparing(pool, key, frame), key, seenVersion, seenAgent, seenHeight, inbound, deadlineMs, kept + 1)
@@ -2328,7 +2327,7 @@ fn orPump(pool: Pool, key: Int, deadlineMs: Int, found: Option<Popped>) -> Resul
         Wait.poll,
     ]
     match found
-        Option.Some(one) -> Result.Ok(heardOne(withStanding(pool, one.standing), one.frame))
+        Option.Some(one) -> Result.Ok(heardOne(withHeld(pool, key, one.held), one.frame))
         Option.None -> pumpedFor(pool, key, deadlineMs)
 
 fn pumpedFor(pool: Pool, key: Int, deadlineMs: Int) -> Result<Heard, String>
@@ -2441,7 +2440,7 @@ fn orPumpAny(pool: Pool, found: Option<PoppedAt>) -> Result<WaitedFrom, String>
         Wait.poll,
     ]
     match found
-        Option.Some(one) -> Result.Ok(WaitedFrom(pool = withStanding(pool, one.standing), key = one.key, frame = one.frame))
+        Option.Some(one) -> Result.Ok(WaitedFrom(pool = withHeld(pool, one.key, one.held), key = one.key, frame = one.frame))
         Option.None -> pumpedAny(pool)
 
 fn pumpedAny(pool: Pool) -> Result<WaitedFrom, String>
@@ -2535,7 +2534,7 @@ fn orPumpTick(pool: Pool, tickMs: Int, found: Option<PoppedAt>) -> Result<Tick, 
         Wait.poll,
     ]
     match found
-        Option.Some(one) -> Result.Ok(Tick(pool = withStanding(pool, one.standing), arrived = Option.Some(Spare(key = one.key, frame = one.frame))))
+        Option.Some(one) -> Result.Ok(Tick(pool = withHeld(pool, one.key, one.held), arrived = Option.Some(Spare(key = one.key, frame = one.frame))))
         Option.None -> pumpedTick(pool, tickMs)
 
 fn pumpedTick(pool: Pool, tickMs: Int) -> Result<Tick, String>
@@ -2578,7 +2577,7 @@ fn tickFrom(pool: Pool, found: Option<PoppedAt>) -> Tick
       "produced only part of one."
     match found
         Option.None -> Tick(pool = pool, arrived = Option.None)
-        Option.Some(one) -> Tick(pool = withStanding(pool, one.standing), arrived = Option.Some(Spare(key = one.key, frame = one.frame)))
+        Option.Some(one) -> Tick(pool = withHeld(pool, one.key, one.held), arrived = Option.Some(Spare(key = one.key, frame = one.frame)))
 
 verify tickFrom
     tickFrom(opened(Network.Regtest), Option.None).arrived => Option.None
@@ -2917,8 +2916,8 @@ fn withoutPending(standing: Map<Int, Standing>, keys: List<Int>) -> Map<Int, Sta
     ? "The standing of the Peers that have greeted."
       "Hidden rather than marked, so that every existing caller of"
       "Domain.Inbox.poppedAny goes on being written as though a Peer that"
-      "is still greeting were not there at all. The buffers are untouched"
-      "and come back through restoredPending."
+      "is still greeting were not there at all. The buffers are untouched,"
+      "because withHeld sets back only the Peer a Message came from."
     match keys
         [] -> standing
         [key, ..rest] -> withoutPending(Map.remove(standing, key), rest)
@@ -2926,28 +2925,6 @@ fn withoutPending(standing: Map<Int, Standing>, keys: List<Int>) -> Map<Int, Sta
 verify withoutPending
     Map.len(withoutPending(Domain.Inbox.seated({}, 1, "pending", true), [1])) => 0
     Map.len(withoutPending(Domain.Inbox.seated({}, 1, "ready", false), [])) => 1
-
-fn restoredPending(pool: Pool, standing: Map<Int, Standing>, keys: List<Int>) -> Map<Int, Standing>
-    ? "The greeting Peers put back into a standing map that was worked out"
-      "without them."
-      "Only where the new map does not name the key. greetingRead pops a"
-      "Message from a Peer that is greeting and hands the new standing"
-      "through withStanding like everything else, so the new map is"
-      "sometimes the authority on that Peer and sometimes silent about it."
-      "Taking the older entry when the newer one exists would put the"
-      "bytes that Message was cut out of back in the buffer, and the"
-      "greeting would read it twice."
-    match keys
-        [] -> standing
-        [key, ..rest] -> match Map.has(standing, key)
-            true -> restoredPending(pool, standing, rest)
-            false -> match Map.get(pool.standing, key)
-                Option.None -> restoredPending(pool, standing, rest)
-                Option.Some(one) -> restoredPending(pool, Map.set(standing, key, one), rest)
-
-verify restoredPending
-    Map.len(restoredPending(Pool.update(opened(Network.Regtest), standing = Domain.Inbox.seated({}, 1, "pending", true)), {}, [1])) => 1
-    addressTextOf(Map.get(restoredPending(Pool.update(opened(Network.Regtest), standing = Domain.Inbox.seated({}, 1, "old", true)), Domain.Inbox.seated({}, 1, "new", true), [1]), 1)) => "new"
 
 fn withoutPeerSpare(spare: List<Spare>, key: Int) -> List<Spare>
     ? "The kept Messages of one Peer dropped, and everything else left in"
@@ -3012,7 +2989,7 @@ fn flushed(pool: Pool, key: Int, queue: Queued, count: Int) -> Result<Pool, Stri
       "not the Peer being gone. The queue is left where it was and the"
       "write interest keeps it in the next poll."
     remaining = Domain.Outbox.consumed(queue, count)
-    marked = withStanding(pool, Domain.Inbox.saidBytes(pool.standing, key, count))
+    marked = Pool.update(pool, standing = Domain.Inbox.saidBytes(pool.standing, key, count))
     match remaining.bytes == 0
         true -> Result.Ok(Pool.update(marked, outboxes = Map.remove(marked.outboxes, key)))
         false -> Result.Ok(Pool.update(marked, outboxes = Map.set(marked.outboxes, key, remaining)))
@@ -3106,7 +3083,7 @@ fn greetingRead(pool: Pool, key: Int, pending: Greeting, nowMs: Int, budget: Int
         Result.Err(why) -> greetingFailed(pool, key, why)
         Result.Ok(found) -> match found
             Option.None -> Result.Ok(pool)
-            Option.Some(one) -> greetingNext(withStanding(pool, one.standing), key, pending, one.frame, nowMs, budget)
+            Option.Some(one) -> greetingNext(withHeld(pool, key, one.held), key, pending, one.frame, nowMs, budget)
 
 fn greetingNext(pool: Pool, key: Int, pending: Greeting, frame: Frame, nowMs: Int, budget: Int) -> Result<Pool, String>
     ? "One frame acted on, then the next, and the pool that comes out is"
@@ -3282,7 +3259,7 @@ fn greetingPopped(pool: Pool, key: Int, connection: Tcp.Connection, pending: Gre
         Result.Err(why) -> wentAfter(greetingFailed(pool, key, why))
         Result.Ok(one) -> match one
             Option.None -> readThen(pool, key, connection, nowMs, reads, pending.deadlineMs)
-            Option.Some(popped) -> greetingStepped(withStanding(pool, popped.standing), key, pending, popped.frame, nowMs, reads)
+            Option.Some(popped) -> greetingStepped(withHeld(pool, key, popped.held), key, pending, popped.frame, nowMs, reads)
 
 fn greetingStepped(pool: Pool, key: Int, pending: Greeting, frame: Frame, nowMs: Int, reads: Int) -> Result<Hearing, String>
     ? "One frame of the Handshake, then another look: at the greeting if it"
@@ -3340,7 +3317,7 @@ fn poppedFor(pool: Pool, key: Int, connection: Tcp.Connection, nowMs: Int, reads
     match found
         Result.Err(why) -> droppedFor(pool, key, why)
         Result.Ok(one) -> match one
-            Option.Some(popped) -> Result.Ok(Hearing.Said(withStanding(pool, popped.standing), popped.frame))
+            Option.Some(popped) -> Result.Ok(Hearing.Said(withHeld(pool, key, popped.held), popped.frame))
             Option.None -> readThen(pool, key, connection, nowMs, reads, 0)
 
 fn droppedFor(pool: Pool, key: Int, why: String) -> Result<Hearing, String>

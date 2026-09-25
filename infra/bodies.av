@@ -356,7 +356,9 @@ fn tended(flight: Flight, to: Int) -> Result<Flight, String>
       "since passed. The top-up is what starts the next one. The rate is"
       "still one dial at a time, which Infra.Peers.dialingNow decides, so a"
       "turn that comes round every few milliseconds does not become a rush"
-      "of Handshakes."
+      "of Handshakes. The Outcomes stay on the pool rather than being said"
+      "here: the walk does not own the plain log or the Panel, and"
+      "Infra.Peers.reported keeps them for the loop to say when the walk ends."
     ! [
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
@@ -368,26 +370,24 @@ fn tended(flight: Flight, to: Int) -> Result<Flight, String>
         Time.unixMs,
         Wait.poll,
     ]
-    polled = withPool2(flight, Infra.Peers.advanced(flight.progress.pool)?)
-    dialStarted(polled, Infra.Peers.toppedUp(polled.progress.pool, polled.progress.book, polled.progress.nextKey)?, to)
+    progress = flight.progress
+    turning(Flight(progress = dialledOn(progress)?, plan = flight.plan, heardMs = flight.heardMs, deadlineMs = flight.deadlineMs), to)
 
-fn dialStarted(flight: Flight, done: Infra.Peers.Topped, to: Int) -> Result<Flight, String>
-    ? "What the top-up did, folded back, and on with the turn."
-      "The Outcomes stay on the pool rather than being said here: the walk"
-      "does not own the plain log or the Panel, and Infra.Peers.reported"
-      "keeps them precisely so the loop can say them when the walk ends."
+fn dialledOn(progress: Fetched) -> Result<Fetched, String>
+    ? "The dial asked what it became, then another begun when the pool is"
+      "short, with the pool, the Book and the next key handed over and"
+      "taken back. The pool and the Book are bound by a match and handed"
+      "on, so the walk holds neither while a Candidate is marked in the Book."
     ! [
-        Console.error, Console.print,
-        Disk.appendBytes, Disk.appendText, Disk.size, Disk.sync,
-        Infra.Kv.get, Infra.Kv.putAll,
-        Process.stopRequested,
+        Console.error,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
-        Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
+        Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.writeNow,
         Time.unixMs,
-        Wait.poll,
     ]
-    turning(withBook(flight, done.pool, done.book, done.nextKey), to)
+    match (progress.pool, progress.book)
+        (pool, book) -> match Infra.Peers.toppedUp(Infra.Peers.advanced(pool)?, book, progress.nextKey)
+            Result.Err(why) -> Result.Err(why)
+            Result.Ok(done) -> Result.Ok(Fetched.update(progress, pool = done.pool, book = done.book, nextKey = done.nextKey))
 
 fn withBook(flight: Flight, pool: Pool, book: Map<String, Candidate>, nextKey: Int) -> Flight
     ? "The flight, carrying what a turn at dialling left behind."
@@ -720,7 +720,8 @@ fn filedAt(flight: Flight, appended: Appended, blockId: String, size: Int) -> Re
     ! [Disk.size, Disk.sync, Infra.Kv.putAll, Time.unixMs]
     held = Fetched(pool = flight.progress.pool, store = flight.progress.store, blocks = appended.store, pending = List.prepend(Entry(key = Domain.IndexKeys.blockKey(blockId)?, value = Domain.Index.encodeLocation(appended.location)), flight.progress.pending), waiting = flight.progress.waiting + 1, count = flight.progress.count + 1, bytes = flight.progress.bytes + size, pace = flight.progress.pace, eye = flight.progress.eye, reached = flight.progress.reached, book = flight.progress.book, nextKey = flight.progress.nextKey, fault = flight.progress.fault)
     written = maybeWrite(held)?
-    Result.Ok(groundedIf(Flight(progress = written, plan = Plan(wanted = flight.plan.wanted, owed = Map.remove(flight.plan.owed, blockId)), heardMs = Time.unixMs(), deadlineMs = flight.deadlineMs)))
+    plan = flight.plan
+    Result.Ok(groundedIf(Flight.update(flight, progress = written, plan = Plan.update(plan, owed = Map.remove(plan.owed, blockId)), heardMs = Time.unixMs())))
 
 fn groundedIf(flight: Flight) -> Flight
     ? "Grounded if a batch just written found the walk at fault."
