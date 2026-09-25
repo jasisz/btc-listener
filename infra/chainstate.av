@@ -305,16 +305,7 @@ fn absorbedFrom(setting: Setting, answer: Infra.BlockJobs.Reply) -> Result<Stepp
     match setting.ahead
         Option.None -> Result.Err("a connection landed with no Block waiting for it")
         Option.Some(this) -> match (setting.window.created, setting.window.spent, setting.window.undos, setting.window.held)
-            (created, spent, undos, held) -> absorbedInto(withoutWindow(setting), this, Infra.Utxo.absorbed(created, spent, undos, held, this.height, this.blockId, Domain.BlockWorkJob.connection(answer)))
-
-fn withoutWindow(setting: Setting) -> Setting
-    ? "The Setting with an empty window. A function of its own so the"
-      "window it held is let go when this returns, before the Block is"
-      "absorbed, and not when the caller does."
-    Setting.update(setting, window = Infra.Utxo.emptyWindow())
-
-verify withoutWindow
-    withoutWindow(sampleSetting(5)).window.held => 0
+            (created, spent, undos, held) -> absorbedInto(Setting.update(setting, window = Infra.Utxo.emptyWindow()), this, Infra.Utxo.absorbed(created, spent, undos, held, this.height, this.blockId, Domain.BlockWorkJob.connection(answer)))
 
 fn absorbedInto(setting: Setting, this: Ahead, absorbed: Result<Tuple<Map<Bytes, Unspent>, Map<Bytes, Bool>, List<Entry>, Int, Option<Reached>, Absorbed>, String>) -> Result<Stepped, String>
     ? "The window moved on and the Block counted, which is also where the"

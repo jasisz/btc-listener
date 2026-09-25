@@ -813,16 +813,7 @@ fn chunkStepped(state: Following, catching: Catching) -> Result<Stepping, String
     eye = eyeNow(state, catching)
     match catching.setting
         Option.None -> Result.Ok(Stepping.Ended(Walked(state = state, catching = catching)))
-        Option.Some(setting) -> steppedWith(state, withoutSetting(catching), Infra.ChainState.stepOnce(Infra.ChainState.withSettingEye(setting, eye)))
-
-fn withoutSetting(catching: Catching) -> Catching
-    ? "The Catch-up without its chunk. A function of its own so the"
-      "Setting it held is let go when this returns, before the step, and"
-      "not when the caller does."
-    Catching.update(catching, setting = Option.None)
-
-verify withoutSetting
-    withoutSetting(sampleCatching()) => sampleCatching()
+        Option.Some(setting) -> steppedWith(state, Catching.update(catching, setting = Option.None), Infra.ChainState.stepOnce(Infra.ChainState.withSettingEye(setting, eye)))
 
 fn steppedWith(state: Following, catching: Catching, stepped: Result<Stepped, String>) -> Result<Stepping, String>
     ? "What the step came to, with its Store and Eye back into the loop and"

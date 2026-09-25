@@ -689,16 +689,7 @@ fn connected(state: State, height: Int) -> Tuple<State, Result<Infra.Catching.St
             Option.None -> (state, Result.Ok(Infra.Catching.Step.Over))
             Option.Some(node) -> match state.catching
                 Option.None -> (state, Result.Ok(Infra.Catching.Step.Over))
-                Option.Some(one) -> connectedAt(withoutCatching(state), node, one, height)
-
-fn withoutCatching(state: State) -> State
-    ? "The state without its Catch-up. A function of its own so the"
-      "Catch-up it held is let go when this returns, before the step, and"
-      "not when the caller does."
-    State.update(state, catching = Option.None)
-
-verify withoutCatching
-    withoutCatching(fresh()) => fresh()
+                Option.Some(one) -> connectedAt(State.update(state, catching = Option.None), node, one, height)
 
 fn connectedAt(state: State, node: Following, catching: Catching, height: Int) -> Tuple<State, Result<Infra.Catching.Step, Run.Wake>>
     ? "The walk and the chunk agree on the Height, or the chunk is refused."
