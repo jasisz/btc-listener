@@ -5,7 +5,8 @@ module Main
         "and so `aver context` has a stable root to resume from."
         "follow is the one command that runs as processes: one per seated"
         "Peer, one walking the Catch-up, one keeping the loop's clock, one"
-        "emptying the outboxes, and one opening the node. Every other command"
+        "taking callers off the listener, one emptying the outboxes, and one"
+        "opening the node. Every other command"
         "is the CLI adapter as before. The processes are here because the"
         "generated loop seats the processes of the entry module; what they"
         "ask for is answered by App.Owner."
@@ -14,7 +15,7 @@ module Main
         Args.get,
         Console.error, Console.print,
         Disk.appendBytes, Disk.appendText, Disk.delete, Disk.exists, Disk.listDir, Disk.makeDir, Disk.readBytesAt, Disk.readText, Disk.size, Disk.sync, Disk.writeBytes, Disk.writeText,
-        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.due, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers, Infra.Catching.settled, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll, Infra.Wire.drained, Infra.Wire.handled, Infra.Wire.heard, Infra.Wire.started, Infra.Wire.ticked,
+        Infra.BlockJobs.begin, Infra.BlockJobs.take, Infra.Catching.aligned, Infra.Catching.begun, Infra.Catching.connected, Infra.Catching.due, Infra.Catching.ended, Infra.Catching.fetched, Infra.Catching.headers, Infra.Catching.settled, Infra.Kv.applyAll, Infra.Kv.count, Infra.Kv.deleteAll, Infra.Kv.get, Infra.Kv.getAll, Infra.Kv.open, Infra.Kv.putAll, Infra.Wire.accepted, Infra.Wire.drained, Infra.Wire.handled, Infra.Wire.heard, Infra.Wire.started, Infra.Wire.ticked,
         Process.stopRequested,
         Random.int,
         Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.closeListener, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
@@ -89,6 +90,13 @@ fn ticker() -> Unit
     ! [Infra.Wire.ticked, yield]
     match Infra.Wire.ticked()
         Infra.Wire.Turned.Again -> ticker()
+        Infra.Wire.Turned.Over -> Unit
+
+fn acceptor() -> Unit
+    ? "Callers on the listener, each taken as it arrives, until the node closes."
+    ! [Infra.Wire.accepted, yield]
+    match Infra.Wire.accepted()
+        Infra.Wire.Turned.Again -> acceptor()
         Infra.Wire.Turned.Over -> Unit
 
 fn writer() -> Unit

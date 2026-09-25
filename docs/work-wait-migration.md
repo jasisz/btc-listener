@@ -1,16 +1,17 @@
 # Work/Wait migration
 
 `follow` runs as processes on Aver's generated loop. [`main.av`](../main.av)
-holds five of them: `starter` opens the node, `peer` runs once per seated Peer
+holds six of them: `starter` opens the node, `peer` runs once per seated Peer
 (`process peer seated by App.Owner.peers`), `walk` runs every Catch-up,
-`ticker` is the loop's own clock and `writer` empties the outboxes and serves
-the Blocks Peers asked for. Each asks for one step at a time through
+`ticker` is the loop's own clock, `acceptor` takes callers off the listener as
+they arrive and `writer` empties the outboxes and serves the Blocks Peers
+asked for. Each asks for one step at a time through
 [`Infra.Wire`](../infra/wire.av) and [`Infra.Catching`](../infra/catching.av),
 and [`App.Owner`](../app/owner.av) answers from the one `Infra.Follow.Following`
 it keeps, so there is still a single writer (ADR 0008). An answer that cannot
 be given yet is a `Run.Wake`: a Peer parks on its socket, the walk parks on a
 decode or connect job it began or until the owner moves, the ticker parks on a
-second and the dial. The loop waits for all of them in one `Wait.poll` a turn.
+second and the dial, the acceptor on the listener. The loop waits for all of them in one `Wait.poll` a turn.
 `main` calls `Run.all()` for `follow` only, so the CLI is still one binary.
 
 What changed is who waits, not the protocol. The dispatch, the Pool, the

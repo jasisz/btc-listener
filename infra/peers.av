@@ -29,7 +29,7 @@ module Peers
         "Per ADR 0008 this module is the only thing here that touches a"
         "Peer's socket, and it hands values back rather than writing"
         "anything down."
-    exposes [watchSockets, popSpare, Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, Wanted, opened, listening, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, wanting, blockServed, nextBlockWanted, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers, claimsOf, Hearing, hearing, seatedKeys, writesOwed, flushedAll, dialOf, greetingFailed]
+    exposes [watchSockets, popSpare, Pool, Spare, Tick, Waited, WaitedFrom, Heard, Accepted, Joined, Wanted, opened, listening, listenerOf, accepting, inboundLimit, inboundDefault, inboundCapFrom, withInboundCap, peerIdleDeadlineMs, quietInbound, listenerKey, peerKeys, awaitTick, idleDeadlineMs, joined, joinedOnly, awaitFrom, awaitAny, awaitAnyPeer, send, tell, wanting, blockServed, nextBlockWanted, closeAll, dropOne, pumped, answerDeadlineMs, spareOf, withoutSpare, company, spared, polledMsOf, drawnElsewhere, Dialing, Outcome, dialingNow, dialling, advanced, settledOf, withoutSettled, selfAddress, servingPort, told, Advertised, Topped, toppedUp, targetPeers, claimsOf, Hearing, hearing, seatedKeys, writesOwed, flushedAll, dialOf, greetingFailed]
     depends [Domain.Outbox, Infra.Readiness, Bytes, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Handshake, Domain.Inbox, Domain.Message, Domain.Network, Domain.Snapshot, Domain.Version]
     effects [
         Console.error, Console.print,
@@ -629,17 +629,19 @@ verify claimedInto
 record Accepted
     pool: Pool
     seated: Option<Int>
+    failed: Bool
 
 fn accepting(pool: Pool, key: Int) -> Result<Accepted, String>
     ? "Take one caller off the listener, if one is queued and there is room."
       "Non-blocking by construction (jasisz/aver#1138): None is a legal answer"
-      "meaning an empty backlog, so this can be asked on every quiet turn"
-      "without a wait of its own. One per turn, deliberately -- a burst of"
-      "callers is admitted at the tick rate rather than all at once, which"
-      "costs a caller a second and costs a flood its whole point."
+      "meaning an empty backlog. One per ask, and the acceptor asks again"
+      "while the listener has callers queued, so a caller is admitted as it"
+      "arrives; a flood still meets the inbound limit, and is refused by"
+      "hanging up. failed says the listener would not give a caller at all,"
+      "which the acceptor waits out rather than asking again at once."
     ! [Console.error, Console.print, Tcp.accept, Tcp.close, Tcp.peerAddress, Time.unixMs]
     match Map.get(pool.sockets, listenerKey())
-        Option.None -> Result.Ok(Accepted(pool = pool, seated = Option.None))
+        Option.None -> Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
         Option.Some(socket) -> acceptingOn(pool, key, socket)
 
 fn acceptingOn(pool: Pool, key: Int, socket: Tcp.Socket) -> Result<Accepted, String>
@@ -648,9 +650,9 @@ fn acceptingOn(pool: Pool, key: Int, socket: Tcp.Socket) -> Result<Accepted, Str
     ! [Console.error, Console.print, Tcp.accept, Tcp.close, Tcp.peerAddress, Time.unixMs]
     match socket
         Tcp.Socket.Listening(listener) -> acceptedOrNot(pool, key, Tcp.accept(listener))
-        Tcp.Socket.Connected(connection) -> Result.Ok(Accepted(pool = pool, seated = Option.None))
-        Tcp.Socket.Sending(connection) -> Result.Ok(Accepted(pool = pool, seated = Option.None))
-        Tcp.Socket.Dialing(dial) -> Result.Ok(Accepted(pool = pool, seated = Option.None))
+        Tcp.Socket.Connected(connection) -> Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
+        Tcp.Socket.Sending(connection) -> Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
+        Tcp.Socket.Dialing(dial) -> Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
 
 fn acceptedOrNot(pool: Pool, key: Int, taken: Result<Option<Tcp.Connection>, String>) -> Result<Accepted, String>
     ? "An accept that failed costs the caller, not the run (#227)."
@@ -670,13 +672,13 @@ fn refusedAccept(pool: Pool, why: String) -> Result<Accepted, String>
     ? "Say the listener would not give us a caller, and carry on."
     ! [Console.error]
     _said = complainedIfPlain(pool, "could not accept an inbound caller: {why}")
-    Result.Ok(Accepted(pool = pool, seated = Option.None))
+    Result.Ok(Accepted(pool = pool, seated = Option.None, failed = true))
 
 fn acceptedFrom(pool: Pool, key: Int, taken: Option<Tcp.Connection>) -> Result<Accepted, String>
     ? "Nobody was waiting, or somebody was."
     ! [Console.error, Console.print, Tcp.close, Tcp.peerAddress, Time.unixMs]
     match taken
-        Option.None -> Result.Ok(Accepted(pool = pool, seated = Option.None))
+        Option.None -> Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
         Option.Some(connection) -> admitting(pool, key, connection)
 
 fn admitting(pool: Pool, key: Int, connection: Tcp.Connection) -> Result<Accepted, String>
@@ -708,14 +710,14 @@ fn hungUp(pool: Pool, connection: Tcp.Connection, why: String) -> Result<Accepte
     ! [Console.error, Tcp.close]
     _closed = Tcp.close(connection)
     _said = complainedIfPlain(pool, "an inbound caller hung up before it could be asked its address: {why}")
-    Result.Ok(Accepted(pool = pool, seated = Option.None))
+    Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
 
 fn refusedInbound(pool: Pool, connection: Tcp.Connection) -> Result<Accepted, String>
     ? "The cap reached: close the caller and carry on."
     ! [Console.error, Tcp.close]
     _closed = Tcp.close(connection)
     _said = complainedIfPlain(pool, "refused an inbound Peer: already holding {inboundLimit(pool)}")
-    Result.Ok(Accepted(pool = pool, seated = Option.None))
+    Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
 
 fn hostLimit() -> Int
     ? "How many inbound Peers one host may hold at once (#291)."
@@ -783,7 +785,7 @@ fn refusedHost(pool: Pool, connection: Tcp.Connection, address: String) -> Resul
     ! [Console.error, Tcp.close]
     _closed = Tcp.close(connection)
     _said = complainedIfPlain(pool, "refused an inbound Peer from {address}: already holding one from that host")
-    Result.Ok(Accepted(pool = pool, seated = Option.None))
+    Result.Ok(Accepted(pool = pool, seated = Option.None, failed = false))
 
 fn seatingIn(pool: Pool, key: Int, connection: Tcp.Connection, address: String) -> Result<Accepted, String>
     ? "The caller into the pool, with its Handshake left pending against it."
@@ -807,7 +809,7 @@ fn seatingIn(pool: Pool, key: Int, connection: Tcp.Connection, address: String) 
     ! [Console.print, Time.unixMs]
     seated = Pool.update(pool, sockets = Map.set(pool.sockets, key, Tcp.Socket.Connected(connection)), standing = Domain.Inbox.seated(pool.standing, key, address, true))
     _said = saidIfPlain(pool, "peer {key} dialled us from {address}")
-    Result.Ok(Accepted(pool = awaitingGreeting(seated, key, address, true), seated = Option.Some(key)))
+    Result.Ok(Accepted(pool = awaitingGreeting(seated, key, address, true), seated = Option.Some(key), failed = false))
 
 fn peerIdleDeadlineMs() -> Int
     ? "How long one inbound Peer may say nothing before its slot is taken"
@@ -1056,6 +1058,13 @@ fn listening(pool: Pool, port: Int, services: Int, height: Int) -> Result<Pool, 
     ! [Tcp.listen]
     listener = Tcp.listen(port, 16)?
     Result.Ok(Pool.update(pool, sockets = Map.set(pool.sockets, listenerKey(), Tcp.Socket.Listening(listener)), serves = services, height = height, port = port))
+
+fn listenerOf(pool: Pool) -> Option<Tcp.Socket>
+    ? "The listener callers queue on, when the node answers on a port."
+    Map.get(pool.sockets, listenerKey())
+
+verify listenerOf
+    listenerOf(opened(Network.Regtest)) => Option.None
 
 fn opened(network: Network) -> Pool
     ? "A pool with nothing in it."

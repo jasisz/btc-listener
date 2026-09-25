@@ -190,7 +190,7 @@ Index. Reads are positional: a Location names its bytes and
 ```mermaid
 sequenceDiagram
     participant L as Generated loop (main.av)
-    participant R as Processes (peer, walk, ticker, writer)
+    participant R as Processes (peer, walk, ticker, acceptor, writer)
     participant O as App.Owner (Follow)
     participant S as Sockets / Work
     R->>L: request (heard, handled, connected, ...)
@@ -247,8 +247,9 @@ The defensive poll path still sheds released connections. A Catch-up that
 fails on a Peer now retries on the owner's current state rather than on a
 snapshot taken before it began.
 
-The clock process advances dials, tops up, accepts callers, answers the Board
-and advertises the node once a second, whatever the walk is doing. A pool that
+The clock process advances dials, tops up, answers the Board and advertises
+the node once a second, whatever the walk is doing. The acceptor parks on the
+listener and admits a caller as it arrives, sweeping quiet inbound Peers first. A pool that
 empties can reseed from DNS rather than ending the run.
 
 The Handshake and wire formats are pure:

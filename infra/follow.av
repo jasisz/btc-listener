@@ -22,7 +22,7 @@ module Follow
         "and then serves the chain to (Stage 8, on the listen and accept that"
         "jasisz/aver#1131 asked for and #1138 delivered). Nothing in this"
         "loop is waiting on the runtime any more."
-    exposes [Following, Catching, Walked, Asking, Batched, Aligning, Flown, Chunking, Stepping, Chunked, Onward, opened, seatedKeys, handled, turned, tickFor, tickSockets, drained, servingOwed, closed, dueFor, catchingOn, askedHeaders, wantsHeaders, flying, stopAsked, headersHeard, alignedFor, flownOnce, blockLanded, chunkBegun, chunkStepped, chunkEnded, caughtMoved, faultedOn, chainStopped, withPool, sampleFollowing, sampleCatching]
+    exposes [Following, Catching, Walked, Asking, Batched, Aligning, Flown, Chunking, Stepping, Chunked, Onward, opened, seatedKeys, handled, turned, tickMs, tickFor, tickSockets, Admitted, callerTaken, listenerOf, drained, servingOwed, closed, dueFor, catchingOn, askedHeaders, wantsHeaders, flying, stopAsked, headersHeard, alignedFor, flownOnce, blockLanded, chunkBegun, chunkStepped, chunkEnded, caughtMoved, faultedOn, chainStopped, withPool, sampleFollowing, sampleCatching]
     depends [Bytes, Tcp, Work, Domain.Addr, Domain.Address, Domain.AddressBook, Domain.Block, Domain.Body, Domain.Catchup, Domain.CompactBlock, Domain.Hash, Domain.HeaderTree, Domain.Inbox, Domain.Index, Domain.IndexKeys, Domain.Inventory, Domain.Mempool, Domain.Network, Domain.Screen, Domain.Screenlines, Domain.Snapshot, Domain.Target, Domain.Transaction, Domain.TreeStore, Domain.UtxoStore, Domain.Version, Infra.Blocks, Infra.Board, Infra.Bodies, Infra.ChainState, Infra.Debug, Infra.Download, Infra.Headers, Infra.Mempool, Infra.Metrics, Infra.Peers, Infra.Resolver, Infra.Rewind, Infra.Pace, Infra.Screen, Infra.Store, Domain.Watchdog]
     effects [
         Console.error, Console.print,
@@ -237,7 +237,8 @@ fn turned(state: Following, nowMs: Int) -> Result<Following, String>
       "so, tell the Network where we are, weigh every Peer's Handshake"
       "Height against the tree's best (#328), start a dial if the pool is"
       "short, answer the Board, then minding (#201) -- the frame, the keys,"
-      "the record, a caller admitted -- and the two rules silence decides."
+      "the record -- and the two rules silence decides. Callers are the"
+      "acceptor's, not the clock's."
       "A rebuild nobody has answered for too long falls back to the whole"
       "Block. An Err is the run ending, as it always was."
     ! [
@@ -245,7 +246,7 @@ fn turned(state: Following, nowMs: Int) -> Result<Following, String>
         Disk.appendText,
         Infra.Kv.get,
         Random.int,
-        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.beginConnect, Tcp.close, Tcp.closeDial, Tcp.dialled, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
     ]
@@ -2092,10 +2093,6 @@ verify sampleTended
 
 fn afterAccepting(state: Following, taken: Accepted) -> Following
     ? "A caller admitted takes the next key, so the one after it is free."
-      "Asked on every look at the clock rather than waited on: accept answers"
-      "None for an empty backlog without blocking, so this costs a syscall a"
-      "second and needs no wait of its own. It was every quiet turn until"
-      "#201, which meant a node with something to say admitted nobody."
     Following(pool = taken.pool, store = state.store, blocks = state.blocks, book = state.book, nextKey = nextAfter(state.nextKey, taken.seated), watch = state.watch, mempool = state.mempool, rebuilding = state.rebuilding, log = state.log, board = state.board, gate = state.gate)
 
 fn nextAfter(nextKey: Int, seated: Option<Int>) -> Int
@@ -2124,13 +2121,14 @@ fn minding(state: Following, nowMs: Int) -> Result<Following, String>
     ? "The loop's own clock, looked at on every turn whether or not a"
       "Message arrived, and at most once a second."
       "This is everything the loop owes somebody watching it: the frame, the"
-      "keys, the record that has come due, and a caller waiting to be"
-      "admitted. None of it was ever about the pool being silent, and all of"
-      "it used to happen only when the pool was (#201)."
+      "keys and the record that has come due. None of it was ever about the"
+      "pool being silent, and all of it used to happen only when the pool"
+      "was (#201). A caller waiting to be admitted was here too, which made"
+      "every caller wait up to a second; the acceptor takes them now."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText,
-        Tcp.accept, Tcp.close, Tcp.peerAddress, Tcp.readNow, Tcp.writeNow,
+        Tcp.accept, Tcp.close, Tcp.readNow, Tcp.writeNow,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
     ]
@@ -2140,27 +2138,54 @@ fn minding(state: Following, nowMs: Int) -> Result<Following, String>
 
 fn minded(state: Following, nowMs: Int) -> Result<Following, String>
     ? "The clock has come round: the Snapshot's company brought up to date,"
-      "the record written if it is due, a caller admitted, and then the"
-      "Screen's share or the plain log's."
+      "the record written if it is due, and then the Screen's share or the"
+      "plain log's."
     ! [
-        Console.error, Console.print,
+        Console.print,
         Disk.appendText,
-        Tcp.accept, Tcp.close, Tcp.peerAddress,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.unixMs,
     ]
     fresh = withTended(refreshed(state, nowMs), nowMs)
     kept = withLog(fresh, marking(fresh, fresh.pool, "listen", fresh.watch.snapshot.tip.height, fresh.watch.snapshot.tip.height, false)?)
-    swept = quietSwept(kept, Infra.Peers.quietInbound(kept.pool, nowMs), nowMs)?
+    tended(kept, nowMs)
+
+record Admitted
+    state: Following
+    failed: Bool
+
+fn callerTaken(state: Following, nowMs: Int) -> Result<Admitted, String>
+    ? "One caller off the listener, if one is queued: what the acceptor asks"
+      "each time the listener is ready, so a caller is admitted as it"
+      "arrives rather than on the clock's next second. Quiet inbound Peers"
+      "are swept first, so a slot freed now is one this caller can have."
+      "failed is a listener that would not give a caller at all."
+    ! [
+        Console.error, Console.print,
+        Disk.appendText,
+        Tcp.accept, Tcp.close, Tcp.peerAddress,
+        Time.unixMs,
+    ]
+    swept = quietSwept(state, Infra.Peers.quietInbound(state.pool, nowMs), nowMs)?
     taken = Infra.Peers.accepting(swept.pool, swept.nextKey)?
-    tended(afterAccepting(swept, taken), nowMs)
+    Result.Ok(Admitted(state = afterAccepting(swept, taken), failed = taken.failed))
+
+verify callerTaken
+    callerTaken(sampleFollowing(), 0)?.failed => false
+
+fn listenerOf(state: Following) -> Option<Tcp.Socket>
+    ? "The listener the acceptor parks on, when the node answers on a port."
+    Infra.Peers.listenerOf(state.pool)
+
+verify listenerOf
+    listenerOf(sampleFollowing()) => Option.None
 
 fn quietSwept(state: Following, quiet: List<Int>, nowMs: Int) -> Result<Following, String>
     ? "Take back the slots of inbound Peers that have gone quiet (#330)."
-      "Before accepting rather than after, so a slot freed this turn is one a"
-      "caller can have this turn. Swept on the loop's own clock, which runs"
-      "once a second, so this walks the table once a second and not once a"
-      "Message."
+      "Before accepting rather than after, so a slot freed now is one a"
+      "caller can have now. Swept when the acceptor is asked, which is when"
+      "a caller arrives and once a second otherwise, so this walks the table"
+      "once a caller and not once a Message."
     ! [Console.error, Disk.appendText, Tcp.close, Time.unixMs]
     match quiet
         [] -> Result.Ok(state)

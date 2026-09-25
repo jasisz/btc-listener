@@ -2,8 +2,9 @@ module Wire
     intent =
         "What the processes of a following node ask of the one owner of its"
         "sockets and its disk: the node opened, the next whole Message from a"
-        "Peer, that Message acted on, a second of the loop's own clock, and"
-        "the outboxes emptied as their sockets drain."
+        "Peer, that Message acted on, a second of the loop's own clock, the"
+        "callers on the listener taken as they arrive, and the outboxes"
+        "emptied as their sockets drain."
         "Answered by App.Owner, which keeps the pool, the Store and the"
         "Mempool in one state and changes them one request at a time: the"
         "single writer ADR 0008 asks for. A request that cannot be answered"
@@ -12,7 +13,7 @@ module Wire
         "one hand-written Wait.poll."
     kind = capability
     semantics = effectful
-    exposes [Started, Heard, Turned, started, heard, handled, ticked, drained]
+    exposes [Started, Heard, Turned, started, heard, handled, ticked, accepted, drained]
 
 type Started
     Running
@@ -43,6 +44,11 @@ operation handled(key: Int, command: String, body: List<Int>) -> Bool
 
 operation ticked() -> Turned
     ? "One second of the loop's own clock: dials, the Screen, the Board, the stats line, the silence rule. Over once the node has closed."
+    oracle = generative
+    replay = recorded
+
+operation accepted() -> Turned
+    ? "Callers taken off the listener as they arrive, each one admitted or refused. Over once the node has closed, or when it answers on no port."
     oracle = generative
     replay = recorded
 

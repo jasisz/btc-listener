@@ -8,7 +8,7 @@ module ProbeOwner
         "generated loop's one wait covers at once, which is the whole claim"
         "the probe exists to check."
     depends [Bytes, Tcp, Wait, Work, Domain.Address, Domain.Network, Infra.BlockJobs, Infra.Peers, Infra.Wire, Tools.Decoding]
-    exposes [State, fresh, peers, started, heard, handled, ticked, drained, decoded, finished]
+    exposes [State, fresh, peers, started, heard, handled, ticked, accepted, drained, decoded, finished]
     effects [
         Args.get,
         Console.error, Console.print,
@@ -142,6 +142,13 @@ fn ticked(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
 
 verify ticked
     ticked(fresh()) => (fresh(), Result.Ok(Infra.Wire.Turned.Over))
+
+fn accepted(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
+    ? "The probe answers on no port and takes no callers."
+    (state, Result.Ok(Infra.Wire.Turned.Over))
+
+verify accepted
+    accepted(fresh()) => (fresh(), Result.Ok(Infra.Wire.Turned.Over))
 
 fn drained(state: State) -> Tuple<State, Result<Infra.Wire.Turned, Run.Wake>>
     ? "The probe writes one pong at a time and needs no writer."
