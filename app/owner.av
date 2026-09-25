@@ -618,7 +618,9 @@ fn connected(state: State, height: Int) -> Tuple<State, Result<Infra.Catching.St
     ? "The Block at this Height through its decode and connection jobs:"
       "each job is begun here and the request parks on it, and the next ask"
       "takes it. The decode of the next Height runs beside this one's"
-      "connection."
+      "connection. The Catch-up is taken out of the state for the step and"
+      "put back by fromWalked, so the window it carries has no second holder"
+      "while a Block is set into it (#227)."
     ! [
         Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -635,10 +637,20 @@ fn connected(state: State, height: Int) -> Tuple<State, Result<Infra.Catching.St
             Option.None -> (state, Result.Ok(Infra.Catching.Step.Over))
             Option.Some(node) -> match state.catching
                 Option.None -> (state, Result.Ok(Infra.Catching.Step.Over))
-                Option.Some(one) -> connectedAt(state, node, one, height)
+                Option.Some(one) -> connectedAt(withoutCatching(state), node, one, height)
+
+fn withoutCatching(state: State) -> State
+    ? "The state without its Catch-up. A function of its own so the"
+      "Catch-up it held is let go when this returns, before the step, and"
+      "not when the caller does."
+    State.update(state, catching = Option.None)
+
+verify withoutCatching
+    withoutCatching(fresh()) => fresh()
 
 fn connectedAt(state: State, node: Following, catching: Catching, height: Int) -> Tuple<State, Result<Infra.Catching.Step, Run.Wake>>
     ? "The walk and the chunk agree on the Height, or the chunk is refused."
+      "The state comes without the Catch-up, which every answer puts back."
     ! [
         Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -650,7 +662,7 @@ fn connectedAt(state: State, node: Following, catching: Catching, height: Int) -
         Work.cancel,
     ]
     match settingHeight(catching.setting) == height
-        false -> (state, Result.Ok(Infra.Catching.Step.Refused("the walk asked for Height {height} and the chunk is at {settingHeight(catching.setting)}")))
+        false -> (State.update(state, catching = Option.Some(catching)), Result.Ok(Infra.Catching.Step.Refused("the walk asked for Height {height} and the chunk is at {settingHeight(catching.setting)}")))
         true -> steppingWith(state, Infra.Follow.chunkStepped(node, catching))
 
 fn settingHeight(setting: Option<Setting>) -> Int

@@ -796,6 +796,9 @@ type Stepping
 fn chunkStepped(state: Following, catching: Catching) -> Result<Stepping, String>
     ? "One step of the chunk: a job asked about or begun, or a Block into"
       "the window. Parked names the job the walk waits on."
+      "The Setting is taken out of the Catch-up for the step and put back"
+      "by steppedWith, so the step holds the only reference to its window"
+      "and a Block set into it is not a copy of the whole window (#227)."
     ! [
         Console.print,
         Disk.appendText, Disk.readBytesAt,
@@ -806,15 +809,26 @@ fn chunkStepped(state: Following, catching: Catching) -> Result<Stepping, String
         Time.now, Time.unixMs,
         Work.cancel,
     ]
+    eye = eyeNow(state, catching)
     match catching.setting
         Option.None -> Result.Ok(Stepping.Ended(Walked(state = state, catching = catching)))
-        Option.Some(setting) -> steppedWith(state, catching, Infra.ChainState.stepOnce(Infra.ChainState.withSettingEye(setting, eyeNow(state, catching))))
+        Option.Some(setting) -> steppedWith(state, withoutSetting(catching), Infra.ChainState.stepOnce(Infra.ChainState.withSettingEye(setting, eye)))
+
+fn withoutSetting(catching: Catching) -> Catching
+    ? "The Catch-up without its chunk. A function of its own so the"
+      "Setting it held is let go when this returns, before the step, and"
+      "not when the caller does."
+    Catching.update(catching, setting = Option.None)
+
+verify withoutSetting
+    withoutSetting(sampleCatching()) => sampleCatching()
 
 fn steppedWith(state: Following, catching: Catching, stepped: Result<Stepped, String>) -> Result<Stepping, String>
-    ? "What the step came to, with its Store and Eye back into the loop. A"
-      "Block that will not connect is the chain's refusal, not an error."
+    ? "What the step came to, with its Store and Eye back into the loop and"
+      "its Setting back into the Catch-up. A Block that will not connect is"
+      "the chain's refusal, not an error, and leaves no Setting behind."
     match stepped
-        Result.Err(why) -> Result.Ok(Stepping.Refused(Walked(state = state, catching = Catching.update(catching, setting = Option.None)), why))
+        Result.Err(why) -> Result.Ok(Stepping.Refused(Walked(state = state, catching = catching), why))
         Result.Ok(one) -> match one
             Stepped.Waiting(setting, job) -> Result.Ok(Stepping.Parked(withSetting(state, catching, setting), job))
             Stepped.Connected(setting) -> Result.Ok(Stepping.Next(withSetting(state, catching, setting)))

@@ -289,6 +289,11 @@ fn connectTaken(setting: Setting, job: Work.Job, taken: Result<Option<Infra.Bloc
 
 fn absorbedFrom(setting: Setting, answer: Infra.BlockJobs.Reply) -> Result<Stepped, String>
     ? "The Block the connection was for, into the window and counted."
+      "The window's parts are bound by a match and the Setting carried on"
+      "holds an empty window, so the parts have exactly one use here, the"
+      "call that absorbs the Block, and are moved into it: nothing else"
+      "holds a Map when it is set (#227). Absorbed while the Setting still"
+      "held them, every Block copied the whole window once."
     ! [
         Console.print,
         Disk.appendText,
@@ -299,11 +304,22 @@ fn absorbedFrom(setting: Setting, answer: Infra.BlockJobs.Reply) -> Result<Stepp
     ]
     match setting.ahead
         Option.None -> Result.Err("a connection landed with no Block waiting for it")
-        Option.Some(this) -> absorbedInto(setting, this, Infra.Utxo.absorbed(setting.window.created, setting.window.spent, setting.window.undos, setting.window.held, this.height, this.blockId, Domain.BlockWorkJob.connection(answer))?)
+        Option.Some(this) -> match (setting.window.created, setting.window.spent, setting.window.undos, setting.window.held)
+            (created, spent, undos, held) -> absorbedInto(withoutWindow(setting), this, Infra.Utxo.absorbed(created, spent, undos, held, this.height, this.blockId, Domain.BlockWorkJob.connection(answer)))
 
-fn absorbedInto(setting: Setting, this: Ahead, parts: Tuple<Map<Bytes, Unspent>, Map<Bytes, Bool>, List<Entry>, Int, Option<Reached>, Absorbed>) -> Result<Stepped, String>
+fn withoutWindow(setting: Setting) -> Setting
+    ? "The Setting with an empty window. A function of its own so the"
+      "window it held is let go when this returns, before the Block is"
+      "absorbed, and not when the caller does."
+    Setting.update(setting, window = Infra.Utxo.emptyWindow())
+
+verify withoutWindow
+    withoutWindow(sampleSetting(5)).window.held => 0
+
+fn absorbedInto(setting: Setting, this: Ahead, absorbed: Result<Tuple<Map<Bytes, Unspent>, Map<Bytes, Bool>, List<Entry>, Int, Option<Reached>, Absorbed>, String>) -> Result<Stepped, String>
     ? "The window moved on and the Block counted, which is also where the"
-      "Screen and the metrics log hear about it."
+      "Screen and the metrics log hear about it. The parts come back through"
+      "a tuple bound by the match, so each is moved on into the window kept."
     ! [
         Console.print,
         Disk.appendText,
@@ -312,8 +328,10 @@ fn absorbedInto(setting: Setting, this: Ahead, parts: Tuple<Map<Bytes, Unspent>,
         Terminal.clear, Terminal.flush, Terminal.moveTo, Terminal.print, Terminal.readKey,
         Time.now, Time.unixMs,
     ]
-    match parts
-        (createdNow, spentNow, undosNow, heldNow, standing, counts) -> advanced(setting, recorded(setting.network, setting.walk, this.height, this.blockId, counts.added, counts.removed, counts.fees, counts.confirmed, BlockView(height = this.height, blockId = this.blockId, transactions = List.len(this.transactions), bytes = this.location.length, atMs = Time.unixMs()))?, Window(created = createdNow, spent = spentNow, undos = undosNow, held = heldNow, standing = standing))
+    match absorbed
+        Result.Err(why) -> Result.Err(why)
+        Result.Ok(parts) -> match parts
+            (createdNow, spentNow, undosNow, heldNow, standing, counts) -> advanced(setting, recorded(setting.network, setting.walk, this.height, this.blockId, counts.added, counts.removed, counts.fees, counts.confirmed, BlockView(height = this.height, blockId = this.blockId, transactions = List.len(this.transactions), bytes = this.location.length, atMs = Time.unixMs()))?, Window(created = createdNow, spent = spentNow, undos = undosNow, held = heldNow, standing = standing))
 
 fn advanced(setting: Setting, walk: Walk, window: Window) -> Result<Stepped, String>
     ? "The window written through when it has grown past its bound (#247);"
