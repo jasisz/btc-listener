@@ -42,10 +42,9 @@ Three numbers in the summary, and a manifest.
   over every value of their `given`s, with `#print axioms` inside Lean's core
   three (`propext`, `Classical.choice`, `Quot.sound`). Nothing `native_decide`
   proves counts here, because that trusts the compiler's evaluator. At the
-  `7cfb66a9` pin there are 99.
-- **`bounded_laws`** — laws stated only over an enumerated domain. Two
-  today, both `when`-guarded (`ScriptState.rearranged.staysWithinDeclaredDepth`,
-  `StackItem.isMinimalPush.directPushIsMinimalUnlessSmallNumber`). A law that
+  `c4b08179` pin there are 119.
+- **`bounded_laws`** — laws stated only over an enumerated domain. One
+  today, `when`-guarded (`ScriptState.rearranged.staysWithinDeclaredDepth`). A law that
   cites a bounded law in `using` can never be universal.
 - **`sorries`** — obligations that no strategy closed. Budget 0: a law that
   lands on `sorry` is a red run, by design.
