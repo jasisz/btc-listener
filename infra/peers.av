@@ -143,7 +143,7 @@ fn answerDeadlineMs() -> Int
 verify answerDeadlineMs
     answerDeadlineMs() => 60000
 
-fn pollable(pool: Pool) -> Map<Int, Tcp.Socket>
+fn pollable(pool: Pool) -> Map<Infra.Readiness.Watch, Tcp.Socket>
     ? "Every socket the wait should watch, which is every Peer and not the"
       "listener."
       "The listener is deliberately left out. A caller queued on it makes it"
@@ -156,7 +156,7 @@ fn pollable(pool: Pool) -> Map<Int, Tcp.Socket>
       "tick to be greeted."
     pollableIn(pool.sockets, peerKeysIn(Map.keys(pool.sockets), []), Map.fromList([]))
 
-fn pollableIn(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, acc: Map<Int, Tcp.Socket>) -> Map<Int, Tcp.Socket>
+fn pollableIn(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, acc: Map<Infra.Readiness.Watch, Tcp.Socket>) -> Map<Infra.Readiness.Watch, Tcp.Socket>
     ? "The named sockets, gathered into a map of their own."
     match keys
         [] -> acc
@@ -166,11 +166,11 @@ verify pollableIn
     Map.len(pollableIn(Map.fromList([]), [], Map.fromList([]))) => 0
     Map.len(pollableIn(Map.fromList([]), [3], Map.fromList([]))) => 0
 
-fn withSocket(acc: Map<Int, Tcp.Socket>, key: Int, socket: Option<Tcp.Socket>) -> Map<Int, Tcp.Socket>
+fn withSocket(acc: Map<Infra.Readiness.Watch, Tcp.Socket>, key: Int, socket: Option<Tcp.Socket>) -> Map<Infra.Readiness.Watch, Tcp.Socket>
     ? "One socket in, if the key still names one."
     match socket
         Option.None -> acc
-        Option.Some(one) -> Map.set(acc, key, one)
+        Option.Some(one) -> Map.set(acc, Infra.Readiness.Watch.Held(key), one)
 
 verify withSocket
     Map.len(withSocket(Map.fromList([]), 1, Option.None)) => 0
@@ -193,7 +193,7 @@ fn pollingReady(pool: Pool, timeoutMs: Int) -> Result<Polled, String>
     ! [Console.error, Wait.poll]
     held = peerKeysIn(Map.keys(pool.sockets), [])
     match Wait.poll(Infra.Readiness.items(watchSockets(pool)), timeoutMs)
-        Result.Ok(ready) -> Result.Ok(Polled(pool = pool, ready = ready))
+        Result.Ok(ready) -> Result.Ok(Polled(pool = pool, ready = Infra.Readiness.held(ready)))
         Result.Err(why) -> polledAgain(withoutGone(pool, held), List.len(held), timeoutMs)
 
 fn polledAgain(pool: Pool, held: Int, timeoutMs: Int) -> Result<Polled, String>
@@ -203,7 +203,7 @@ fn polledAgain(pool: Pool, held: Int, timeoutMs: Int) -> Result<Polled, String>
     ! [Console.error, Wait.poll]
     _said = shedding(pool, held)
     ready = Wait.poll(Infra.Readiness.items(watchSockets(pool)), timeoutMs)?
-    Result.Ok(Polled(pool = pool, ready = ready))
+    Result.Ok(Polled(pool = pool, ready = Infra.Readiness.held(ready)))
 
 fn pollingDial(pool: Pool, key: Int, dial: Tcp.Dial, timeoutMs: Int) -> Result<Polled, String>
     ? "The same, with a dial among the sockets: a Peer that went while a"
@@ -211,7 +211,7 @@ fn pollingDial(pool: Pool, key: Int, dial: Tcp.Dial, timeoutMs: Int) -> Result<P
     ! [Console.error, Wait.poll]
     held = peerKeysIn(Map.keys(pool.sockets), [])
     match Wait.poll(Infra.Readiness.items(dialledWith(pool, key, dial)), timeoutMs)
-        Result.Ok(ready) -> Result.Ok(Polled(pool = pool, ready = ready))
+        Result.Ok(ready) -> Result.Ok(Polled(pool = pool, ready = Infra.Readiness.held(ready)))
         Result.Err(why) -> polledDialAgain(withoutGone(pool, held), List.len(held), key, dial, timeoutMs)
 
 fn polledDialAgain(pool: Pool, held: Int, key: Int, dial: Tcp.Dial, timeoutMs: Int) -> Result<Polled, String>
@@ -221,7 +221,7 @@ fn polledDialAgain(pool: Pool, held: Int, key: Int, dial: Tcp.Dial, timeoutMs: I
     ! [Console.error, Wait.poll]
     _said = shedding(pool, held)
     ready = Wait.poll(Infra.Readiness.items(dialledWith(pool, key, dial)), timeoutMs)?
-    Result.Ok(Polled(pool = pool, ready = ready))
+    Result.Ok(Polled(pool = pool, ready = Infra.Readiness.held(ready)))
 
 fn shedding(pool: Pool, held: Int) -> Unit
     ? "How many sockets the runtime had already released, and who is left."
@@ -242,9 +242,9 @@ fn withoutGoneOne(pool: Pool, key: Int) -> Pool
     ! [Wait.poll]
     match Map.get(pool.sockets, key)
         Option.None -> pool
-        Option.Some(socket) -> forgottenIfGone(pool, key, Wait.poll(Infra.Readiness.items(Map.fromList([(key, socket)])), 0))
+        Option.Some(socket) -> forgottenIfGone(pool, key, Wait.poll(Infra.Readiness.items(Map.fromList([(Infra.Readiness.Watch.Held(key), socket)])), 0))
 
-fn forgottenIfGone(pool: Pool, key: Int, answer: Result<List<Int>, String>) -> Pool
+fn forgottenIfGone(pool: Pool, key: Int, answer: Result<List<Infra.Readiness.Watch>, String>) -> Pool
     ? "Forgotten rather than closed: whoever released the handle closed it"
       "already, and a handle the runtime does not know cannot be closed"
       "again."
@@ -1517,12 +1517,12 @@ fn settlingOn(pool: Pool, key: Int, address: PeerAddress, dial: Tcp.Dial, deadli
     waited = polledFor(polled.pool, Time.unixMs() - before)
     settlingAfter(reading(waited, polled.ready)?, key, address, dial, deadlineMs, List.contains(polled.ready, key))
 
-fn dialledWith(pool: Pool, key: Int, dial: Tcp.Dial) -> Map<Int, Tcp.Socket>
+fn dialledWith(pool: Pool, key: Int, dial: Tcp.Dial) -> Map<Infra.Readiness.Watch, Tcp.Socket>
     ? "Every Peer's socket, and the dial as one more key beside them."
       "The listener is left out for the reason pollable gives: a queued"
       "caller keeps it ready, and a key that is always ready would spin this"
       "loop rather than let it wait."
-    Map.set(watchSockets(pool), key, Tcp.Socket.Dialing(dial))
+    Map.set(watchSockets(pool), Infra.Readiness.Watch.Held(key), Tcp.Socket.Dialing(dial))
 
 fn settlingAfter(pool: Pool, key: Int, address: PeerAddress, dial: Tcp.Dial, deadlineMs: Int, arrived: Bool) -> Result<Joined, String>
     ? "The dial woke the poll, or one of the Peers did."
@@ -2941,17 +2941,14 @@ fn withoutPeerSpare(spare: List<Spare>, key: Int) -> List<Spare>
 verify withoutPeerSpare
     withoutPeerSpare([Spare(key = 1, frame = Frame(command = "inv", body = [])), Spare(key = 2, frame = Frame(command = "ping", body = [3]))], 1) => [Spare(key = 2, frame = Frame(command = "ping", body = [3]))]
 
-fn watchSockets(pool: Pool) -> Map<Int, Tcp.Socket>
+fn watchSockets(pool: Pool) -> Map<Infra.Readiness.Watch, Tcp.Socket>
     ? "Everything worth waking this pool for: the Peers that may have"
       "something to say, and the Peers this node still owes bytes to."
       "A socket wanted both ways needs two entries, because one key names"
-      "one interest. The write entry goes in at a negative key of its own"
-      "so the two cannot displace each other, and the arithmetic steps"
-      "over the listener at -1: a Peer key of zero would otherwise write"
-      "itself onto the listener's key."
+      "one interest: Held for the read, Owed for the write."
     writesWatched(pool, Map.keys(pool.outboxes), pollable(pool))
 
-fn writesWatched(pool: Pool, keys: List<Int>, acc: Map<Int, Tcp.Socket>) -> Map<Int, Tcp.Socket>
+fn writesWatched(pool: Pool, keys: List<Int>, acc: Map<Infra.Readiness.Watch, Tcp.Socket>) -> Map<Infra.Readiness.Watch, Tcp.Socket>
     ? "One write interest per Peer with bytes still owed to it. A key that"
       "names a dial or a listener is passed over, because neither of those"
       "has an outbox to empty."
@@ -2960,7 +2957,7 @@ fn writesWatched(pool: Pool, keys: List<Int>, acc: Map<Int, Tcp.Socket>) -> Map<
         [key, ..rest] -> match Map.get(pool.sockets, key)
             Option.None -> writesWatched(pool, rest, acc)
             Option.Some(socket) -> match socket
-                Tcp.Socket.Connected(connection) -> writesWatched(pool, rest, Map.set(acc, 0 - key - 2, Tcp.Socket.Sending(connection)))
+                Tcp.Socket.Connected(connection) -> writesWatched(pool, rest, Map.set(acc, Infra.Readiness.Watch.Owed(key), Tcp.Socket.Sending(connection)))
                 _ -> writesWatched(pool, rest, acc)
 
 verify writesWatched

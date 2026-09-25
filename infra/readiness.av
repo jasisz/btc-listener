@@ -1,23 +1,28 @@
 module Readiness
     intent =
         "Socket keys as items a shared wait will take."
-        "Wait.poll takes a Map of Wait.Item, and Infra.Peers and"
-        "Infra.Board each keep a Map of Tcp.Socket keyed their own way."
-        "This is the one line that turns one into the other, so neither of"
-        "them has to know what else is in the wait, and so the readiness"
-        "and the timeout stay exactly what Wait says they are."
+        "Wait.poll takes a Map of Wait.Item, and Infra.Peers keeps a Map of"
+        "Tcp.Socket keyed by Peer. A Peer can be waited on two ways at once,"
+        "for something to read and for room to write, so the wait is keyed by"
+        "a Watch that says which, and not by the Peer's key alone."
+        "This is the one line that turns sockets into items, so the"
+        "readiness and the timeout stay exactly what Wait says they are."
     depends [Tcp, Wait]
-    exposes [items]
+    exposes [Watch, items, held]
     effects []
 
-fn items(sockets: Map<Int, Tcp.Socket>) -> Map<Int, Wait.Item>
+type Watch
+    Held(Int)
+    Owed(Int)
+
+fn items(sockets: Map<Watch, Tcp.Socket>) -> Map<Watch, Wait.Item>
     ? "The same keys and socket interests, ready to share one wait with jobs."
     fromKeys(sockets, Map.keys(sockets), {})
 
 verify items
     items({}) => {}
 
-fn fromKeys(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, acc: Map<Int, Wait.Item>) -> Map<Int, Wait.Item>
+fn fromKeys(sockets: Map<Watch, Tcp.Socket>, keys: List<Watch>, acc: Map<Watch, Wait.Item>) -> Map<Watch, Wait.Item>
     ? "One item per key that still names a socket, carrying whatever the"
       "socket itself says it is waiting for: a Connected key waits to be"
       "read, a Sending key waits to be written to."
@@ -29,4 +34,24 @@ fn fromKeys(sockets: Map<Int, Tcp.Socket>, keys: List<Int>, acc: Map<Int, Wait.I
 
 verify fromKeys
     fromKeys({}, [], {}) => {}
-    fromKeys({}, [1], {}) => {}
+    fromKeys({}, [Watch.Held(1)], {}) => {}
+
+fn held(ready: List<Watch>) -> List<Int>
+    ? "The Peer keys of the sockets that came back ready to read or dialled,"
+      "in the order they came. A Peer with room to write has not said"
+      "anything by it."
+    heldIn(ready, [])
+
+verify held
+    held([Watch.Held(1), Watch.Owed(2), Watch.Held(3)]) => [1, 3]
+
+fn heldIn(ready: List<Watch>, acc: List<Int>) -> List<Int>
+    ? "The held keys so far, newest first."
+    match ready
+        [] -> List.reverse(acc)
+        [Watch.Held(key), ..rest] -> heldIn(rest, List.prepend(key, acc))
+        [Watch.Owed(_), ..rest] -> heldIn(rest, acc)
+
+verify heldIn
+    heldIn([], [2]) => [2]
+    heldIn([Watch.Owed(1)], []) => []
