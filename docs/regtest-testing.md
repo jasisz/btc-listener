@@ -369,6 +369,42 @@ A Mempool resolving Inputs through `o:` accepts double spends, relays them, and
 passes every other test in this document — and its held count would not fall to
 zero here, because what it holds was never really spendable.
 
+Both numbers above come from Transactions the Block mined. A Block takes back
+one other kind, and nothing above reaches it: a Transaction the Block beat to
+its Outputs without mining it. Hold one and make Core mine its replacement.
+
+```bash
+TX=$($C sendtoaddress "$($C getnewaddress)" 0.4 "" "" false true)   # replaceable
+# "mempool admitted <TX>" in the node's output before going on
+$C bumpfee "$TX"                                   # Core replaces it; we keep ours
+$C getrawmempool | grep -c "$TX"                   # 0 -- Core has dropped it
+```
+
+```
+mempool refused a Transaction: it conflicts with <TX>, which got here first
+```
+
+We keep what arrived first, so what stands in our Mempool is now a Transaction
+Core will never mine. Mine the replacement and it still has to leave:
+
+```bash
+$C generatetoaddress 1 "$($C getnewaddress)"
+$C getblock "$($C getbestblockhash)" | grep "$TX"   # nothing: it was not mined
+```
+
+```
+mempool: 1 Transaction(s) left, taken by the chain; holding 0 (0 bytes)
+```
+
+That the count reaches zero while the Block does not name the Transaction is
+the whole point: it left because the Outputs it meant to spend are gone, not
+because it was confirmed. The sweep answers both with one question, and since
+#412 it asks that question of the Blocks rather than of everything held — a
+Block says which Outputs it took in its own Undo record, so the cost is a read
+per Block instead of a Set lookup per held Transaction. Get the two names out
+of step and this is the test that fails while every other one passes, because
+it is the only one where what leaves is not what was mined.
+
 ### 8. A compact Block, from Core's own hand
 
 BIP152 names Transactions by six-byte short ids: a slice of a SipHash under a

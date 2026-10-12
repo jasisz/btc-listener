@@ -925,7 +925,7 @@ fn finishedWith(state: Following, built: Built, tipHeight: Int, unconfirmed: Lis
     _each = saidLinesIfPlain(seen, blockLinesOf(built.blocks, built.views))
     _said = saidLineIfPlain(seen, "following at Height {built.reached}: {built.blocks} connected, {built.dropped} disconnected, set +{built.added} -{built.removed}")
     setLog = Infra.Metrics.marked(built.eye.log, "set", built.reached, tipHeight, built.blocks, 0, Infra.Peers.polledMsOf(state.pool), List.len(Infra.Peers.peerKeys(state.pool)), Domain.AddressBook.sizeOf(state.book), built.added, built.removed, true)?
-    swept = sweptOf(built.store, state.mempool, built.blocks, built.dropped)?
+    swept = sweptOf(built.store, state.mempool, built.blocks, built.dropped, built.reached)?
     restored = restoring(state.pool.network, built.store, swept, backOut, tipHeight, 0, List.len(backOut))?
     Result.Ok(withWatch(Following.update(state, store = built.store, watch = seen, mempool = restored, log = setLog), watchAfterBuild(seen, built.views)))
 
@@ -1750,7 +1750,7 @@ verify companied
     List.len(companied(Domain.Snapshot.started(0), Infra.Peers.opened(Network.Regtest), Domain.AddressBook.noBook(), Domain.Mempool.empty(1000)).company.peers) => 0
     companied(Domain.Snapshot.started(0), Infra.Peers.opened(Network.Regtest), Domain.AddressBook.heard(Domain.AddressBook.noBook(), "1.2.3.4:8333", 0), Domain.Mempool.empty(1000)).company.candidates => 1
 
-fn sweptOf(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: Int) -> Result<Mempool, String>
+fn sweptOf(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: Int, upTo: Int) -> Result<Mempool, String>
     ? "The Mempool, after the chain moved under it."
       "Nothing moved means nothing to do, and that is the common case: this"
       "runs on every turn of the loop that reaches the Set, and most of them"
@@ -1758,7 +1758,74 @@ fn sweptOf(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: 
     ! [Console.print, Infra.Kv.get]
     match connectedCount + disconnectedCount == 0
         true -> Result.Ok(pool)
-        false -> saidSwept(pool, sweeping(store, pool, Domain.Mempool.txids(pool), [])?)
+        false -> sweptHolding(store, pool, connectedCount, disconnectedCount, upTo)
+
+fn sweptHolding(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: Int, upTo: Int) -> Result<Mempool, String>
+    ? "Holding nothing is nothing to sweep, and that is the whole of a first"
+      "sync: a node still fetching the chain has been offered no Transactions"
+      "to hold. Asked before anything is read, so a sync pays nothing for"
+      "this at all."
+    ! [Console.print, Infra.Kv.get]
+    match Domain.Mempool.count(pool) == 0
+        true -> Result.Ok(pool)
+        false -> saidSwept(pool, sweptByWhatMoved(store, pool, connectedCount, disconnectedCount, upTo)?)
+
+fn sweptByWhatMoved(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: Int, upTo: Int) -> Result<Mempool, String>
+    ? "Two ways to the same answer, and which one is affordable depends on"
+      "whether anything was disconnected (n1bor/btc-listener#412)."
+      "Connecting alone takes Outputs out of the Set and each Block says"
+      "which in its own Undo record, so the Blocks can be asked -- a read"
+      "apiece, against a Mempool that is already indexed by what it means to"
+      "spend. Disconnecting also takes out the Outputs the abandoned Blocks"
+      "made, and those are not in anybody's Undo record, so a reorganisation"
+      "goes the old way and asks the Set about everything held. That is slow"
+      "and a reorganisation is rare; connecting is every ten minutes forever."
+    ! [Infra.Kv.get]
+    match disconnectedCount == 0
+        true -> sweptByBlocks(store, pool, upTo - connectedCount + 1, upTo, [])
+        false -> sweeping(store, pool, Domain.Mempool.txids(pool), [])
+
+fn sweptByBlocks(store: Store, pool: Mempool, height: Int, upTo: Int, removed: List<String>) -> Result<Mempool, String>
+    ? "Every Block this walk connected, by Height, gathering what each took."
+      "The Heights are this walk's because nothing was disconnected, so they"
+      "run unbroken from the first one connected up to where it reached."
+    ! [Infra.Kv.get]
+    match height > upTo
+        true -> Result.Ok(Domain.Mempool.confirmed(pool, Domain.Mempool.takenBy(pool, removed)))
+        false -> sweptAtHeight(store, pool, height, upTo, removed)
+
+fn sweptAtHeight(store: Store, pool: Mempool, height: Int, upTo: Int, removed: List<String>) -> Result<Mempool, String>
+    ? "Which Block stands at that Height. A Height that names none cannot"
+      "have its Undo record read, so the walk gives up its shortcut and the"
+      "Set is asked about everything held instead -- slow, and still right."
+    ! [Infra.Kv.get]
+    match Domain.Index.blockIdIn(Infra.Store.get(store, Domain.IndexKeys.heightKey(height)?)?)
+        Option.None -> sweeping(store, pool, Domain.Mempool.txids(pool), [])
+        Option.Some(blockId) -> sweptAtBlock(store, pool, blockId, height, upTo, removed)
+
+fn sweptAtBlock(store: Store, pool: Mempool, blockId: String, height: Int, upTo: Int, removed: List<String>) -> Result<Mempool, String>
+    ? "What one Block took out of the Set, which is what its Undo record is"
+      "for: the Outputs a disconnection would have to put back are exactly"
+      "the Outputs its Transactions spent. A Block with no Undo record kept"
+      "cannot answer, and the Set is asked about everything held instead."
+    ! [Infra.Kv.get]
+    match Infra.Store.get(store, Domain.UtxoStore.undoKey(blockId)?)?
+        Option.None -> sweeping(store, pool, Domain.Mempool.txids(pool), [])
+        Option.Some(found) -> sweptByBlocks(store, pool, height + 1, upTo, List.concat(namesOfSpent(Domain.UtxoStore.decodeUndo(found)?, []), removed))
+
+fn namesOfSpent(spent: List<Unspent>, named: List<String>) -> List<String>
+    ? "The Outputs an Undo record holds, under the names the Mempool claims"
+      "them by. The Set keys an Output by the bytes of the Transaction Id it"
+      "came from; the Mempool names it by the same Id written out, so this is"
+      "the same conversion keyForOutpoint does, the other way round."
+    match spent
+        [] -> named
+        [head, ..tail] -> namesOfSpent(tail, List.prepend(Domain.Mempool.outpoint(Bytes.toHex(head.txid), head.index), named))
+
+verify namesOfSpent
+    namesOfSpent([], []) => []
+    namesOfSpent([Unspent(txid = Bytes.fromHex("f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16")?, index = 0, value = 5, script = Bytes.fromHex("51")?, height = 1, coinbase = false)], []) => ["f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16:0"]
+    namesOfSpent([Unspent(txid = Bytes.fromHex("aa")?, index = 3, value = 5, script = Bytes.fromHex("51")?, height = 1, coinbase = false)], ["zz:9"]) => ["aa:3", "zz:9"]
 
 fn saidSwept(before: Mempool, after: Mempool) -> Result<Mempool, String>
     ? "Say what the chain took, unless it took nothing."

@@ -105,6 +105,37 @@ def relay_and_compact(s, a, b, c):
     s.hashes(a, [a.height()])
 
 
+def conflicted_mempool(s, a):
+    """A held Transaction that leaves because a Block took its Output, not
+    because the Block mined it (n1bor/btc-listener#412).
+
+    The sweep that empties the Mempool after a Block answers two questions at
+    once: what did this Block confirm, and what did it beat to its Outputs.
+    Every other test here only ever exercises the first. This one holds a
+    replaceable Transaction, lets Core replace it and mine the replacement,
+    and then insists the original leaves -- it was never in a Block, so only
+    the second question can account for it going.
+    """
+    with s.follow(a.peer, label="conflict") as live:
+        live.tip(a.height())
+        first = a.rpc("sendtoaddress", a.rpc("getnewaddress"), "0.4", "", "", False, True)
+        live.wait("mempool admitted " + first[:8], timeout=90)
+        replacement = a.rpc("bumpfee", first)["txid"]
+        assert replacement != first
+        # We keep the one that arrived first and refuse its replacement, so the
+        # Transaction standing in our Mempool is now one Core will never mine.
+        live.wait("conflicts with " + first, timeout=90)
+        wait_until(lambda: replacement in a.rpc("getrawmempool"), 30, "Core took the replacement")
+        assert first not in a.rpc("getrawmempool")
+        a.mine(1)
+        live.tip(a.height())
+        live.wait("holding 0 (0 bytes)", timeout=60)
+        mined = a.rpc("getblock", a.rpc("getbestblockhash"))["tx"]
+        assert replacement in mined, "the replacement should have been mined"
+        assert first not in mined, "the held Transaction must not have been mined"
+    s.passed("conflicted-transaction-left-though-never-mined", held=first[:8], mined=replacement[:8])
+
+
 def restored_mempool(s, a, b):
     b.sync(a)
     b.disconnect_all()
@@ -209,6 +240,7 @@ def main():
             baseline(s, a)
             reorg(s, a)
             relay_and_compact(s, a, b, c)
+            conflicted_mempool(s, a)
             restored_mempool(s, a, b)
             data = catchup(s, a, b, c)
             s.data = data
