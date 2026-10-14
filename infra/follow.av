@@ -925,9 +925,11 @@ fn finishedWith(state: Following, built: Built, tipHeight: Int, unconfirmed: Lis
     _each = saidLinesIfPlain(seen, blockLinesOf(built.blocks, built.views))
     _said = saidLineIfPlain(seen, "following at Height {built.reached}: {built.blocks} connected, {built.dropped} disconnected, set +{built.added} -{built.removed}")
     setLog = Infra.Metrics.marked(built.eye.log, "set", built.reached, tipHeight, built.blocks, 0, Infra.Peers.polledMsOf(state.pool), List.len(Infra.Peers.peerKeys(state.pool)), Domain.AddressBook.sizeOf(state.book), built.added, built.removed, true)?
+    sweptFrom = Time.unixMs()
     swept = sweptOf(built.store, state.mempool, built.blocks, built.dropped, built.reached)?
+    sweptLog = sweepNoted(setLog, built.blocks, built.dropped, Domain.Mempool.count(state.mempool), Domain.Mempool.count(swept), Time.unixMs() - sweptFrom)?
     restored = restoring(state.pool.network, built.store, swept, backOut, tipHeight, 0, List.len(backOut))?
-    Result.Ok(withWatch(Following.update(state, store = built.store, watch = seen, mempool = restored, log = setLog), watchAfterBuild(seen, built.views)))
+    Result.Ok(withWatch(Following.update(state, store = built.store, watch = seen, mempool = restored, log = sweptLog), watchAfterBuild(seen, built.views)))
 
 fn blockInvalid(state: Following, catching: Catching, blockId: String, why: String) -> Result<Onward, String>
     ? "A Block this Catch-up fetched proved its work and failed consensus"
@@ -1749,6 +1751,16 @@ fn companied(snapshot: Snapshot, pool: Pool, book: Map<String, Candidate>, mempo
 verify companied
     List.len(companied(Domain.Snapshot.started(0), Infra.Peers.opened(Network.Regtest), Domain.AddressBook.noBook(), Domain.Mempool.empty(1000)).company.peers) => 0
     companied(Domain.Snapshot.started(0), Infra.Peers.opened(Network.Regtest), Domain.AddressBook.heard(Domain.AddressBook.noBook(), "1.2.3.4:8333", 0), Domain.Mempool.empty(1000)).company.candidates => 1
+
+fn sweepNoted(log: Log, connected: Int, disconnected: Int, heldBefore: Int, heldAfter: Int, tookMs: Int) -> Result<Log, String>
+    ? "The sweep's own cost, noted every time it ran. A Catch-up that moved"
+      "nothing never swept and writes nothing; one that moved anything writes"
+      "a line whether it took a Transaction out or not, because a sweep that"
+      "finds nothing still had to look and that is the cost #412 was about."
+    ! [Disk.appendText, Time.unixMs]
+    match connected + disconnected == 0
+        true -> Result.Ok(log)
+        false -> Infra.Metrics.noting(log, "sweep", Domain.Watchdog.sweepTook(tookMs, connected, disconnected, heldBefore, heldAfter))
 
 fn sweptOf(store: Store, pool: Mempool, connectedCount: Int, disconnectedCount: Int, upTo: Int) -> Result<Mempool, String>
     ? "The Mempool, after the chain moved under it."

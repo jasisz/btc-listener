@@ -116,7 +116,7 @@ def conflicted_mempool(s, a):
     and then insists the original leaves -- it was never in a Block, so only
     the second question can account for it going.
     """
-    with s.follow(a.peer, label="conflict") as live:
+    with s.follow(a.peer, "log", label="conflict") as live:
         live.tip(a.height())
         first = a.rpc("sendtoaddress", a.rpc("getnewaddress"), "0.4", "", "", False, True)
         live.wait("mempool admitted " + first[:8], timeout=90)
@@ -127,13 +127,20 @@ def conflicted_mempool(s, a):
         live.wait("conflicts with " + first, timeout=90)
         wait_until(lambda: replacement in a.rpc("getrawmempool"), 30, "Core took the replacement")
         assert first not in a.rpc("getrawmempool")
+        note = Path(s.data) / "debug.log"
+        before_lines = note.read_text().count("sweep took ") if note.exists() else 0
         a.mine(1)
         live.tip(a.height())
         live.wait("holding 0 (0 bytes)", timeout=60)
         mined = a.rpc("getblock", a.rpc("getbestblockhash"))["tx"]
         assert replacement in mined, "the replacement should have been mined"
         assert first not in mined, "the held Transaction must not have been mined"
-    s.passed("conflicted-transaction-left-though-never-mined", held=first[:8], mined=replacement[:8])
+        # The sweep's own cost is noted every time it runs (#412 was invisible
+        # for want of it), so prove *this* sweep emitted its line.
+        timed = [line for line in note.read_text().splitlines() if "sweep took " in line]
+        assert len(timed) > before_lines, "this Block's sweep wrote no timing line in " + str(note)
+        assert "connected" in timed[-1] and "held " in timed[-1], timed[-1]
+    s.passed("conflicted-transaction-left-though-never-mined", held=first[:8], mined=replacement[:8], timed=len(timed))
 
 
 def restored_mempool(s, a, b):

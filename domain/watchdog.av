@@ -10,7 +10,7 @@ module Watchdog
         "are Infra.Screen's Eye and the loop's, and the line goes to"
         "debug.log beside the decisions it records. Reporting only: what to"
         "do about a slow Block is a different decision."
-    exposes [overrun, blockBudgetMs, chunkBudgetOf, stopBudgetMs, turnBudgetMs, unheard, slowChunk, slowChunkDone, slowBlock, slowStop, slowTurn, seconds]
+    exposes [overrun, blockBudgetMs, chunkBudgetOf, stopBudgetMs, turnBudgetMs, unheard, slowChunk, slowChunkDone, slowBlock, slowStop, slowTurn, sweepTook, seconds]
 
 fn overrun(startedMs: Int, nowMs: Int, budgetMs: Int) -> Bool
     ? "Whether more than the budget has passed since something started."
@@ -148,6 +148,23 @@ fn slowTurn(handling: String, workedMs: Int) -> String
 verify slowTurn
     slowTurn("getdata from peer 12", 1326381) => "slow turn: 1326s between two polls, handling getdata from peer 12"
     slowTurn("a quiet turn", 45000) => "slow turn: 45s between two polls, handling a quiet turn"
+
+fn sweepTook(tookMs: Int, connected: Int, disconnected: Int, heldBefore: Int, heldAfter: Int) -> String
+    ? "What the Mempool sweep cost, every time it ran. n1bor/btc-listener#412"
+      "was invisible for want of exactly this line: the sweep wrote nothing"
+      "unless it took something out, so the one thing in a Catch-up whose cost"
+      "grew with the Mempool rather than with the Block was also the one thing"
+      "no log and no metric could see. The Blocks are named because the sweep"
+      "reads an Undo record per connected Block, and the held counts because a"
+      "sweep that takes nothing still had to look. The note prepends the kind,"
+      "so this does not repeat it: the line reads sweep took 4ms, the way the"
+      "watchdog line reads watchdog slow turn."
+    "took {tookMs}ms, {connected} connected {disconnected} disconnected, held {heldBefore} -> {heldAfter}"
+
+verify sweepTook
+    sweepTook(4, 1, 0, 4697, 4612) => "took 4ms, 1 connected 0 disconnected, held 4697 -> 4612"
+    sweepTook(12480, 2, 1, 50000, 49000) => "took 12480ms, 2 connected 1 disconnected, held 50000 -> 49000"
+    sweepTook(0, 1, 0, 0, 0) => "took 0ms, 1 connected 0 disconnected, held 0 -> 0"
 
 fn slowStop(tookMs: Int) -> String
     ? "The line for a stop that took longer than its budget to land."
