@@ -30,7 +30,7 @@ module Mempool
         "defence. A Transaction that would be the cheapest thing in a full"
         "Mempool is refused rather than admitted and immediately evicted:"
         "the two are the same outcome, and refusing says so honestly."
-    exposes [Mempool, Held, Admission, empty, entry, outpoint, admit, confirmed, holds, heldFor, count, bytes, capOf, floorRate, lowest, conflictOf, txids]
+    exposes [Mempool, Held, Admission, empty, entry, outpoint, admit, confirmed, holds, heldFor, count, bytes, capOf, floorRate, lowest, conflictOf, txids, takenBy]
     depends [Domain.Standard]
     effects []
 
@@ -421,14 +421,153 @@ fn confirmed(pool: Mempool, mined: List<String>) -> Mempool
       "By Transaction Id, and a Block naming Transactions we never held is"
       "the ordinary case rather than a surprise -- most of what is mined"
       "arrived here first, but nothing says it had to."
+      "In one pass over what is held, not one removal per Transaction"
+      "(n1bor/btc-listener#412). Taking them out one at a time was quadratic:"
+      "the compiled Map is a shared table that is copied whole the first time"
+      "a holder that is not its sole owner changes it, and reading the pool"
+      "twice in one call -- once to find the entry, once to hand the pool on"
+      "-- left it with two owners at every removal, so a Block that confirmed"
+      "2,500 of 8,000 held copied 28,000 entries 2,500 times and the sweep"
+      "took seconds. Rebuilding held and claims from their entries touches"
+      "each once, allocates each once, and never asks a shared table to"
+      "change. The single removals, without and withoutTxid, stay for"
+      "eviction, where one copy is the cost of one Transaction and not of a"
+      "Block."
     match mined
         [] -> pool
-        [head, ..tail] -> confirmed(withoutTxid(pool, head), tail)
+        [_, .._] -> rebuilt(pool, goneFrom(mined, Map.fromList([])))
 
 verify confirmed
     count(confirmed(withOne(), ["aa"])) => 0
+    bytes(confirmed(withOne(), ["aa"])) => 0
+    conflictOf(confirmed(withOne(), ["aa"]), entry("bb", 250, 250, ["cc:0"], "")) => Option.None
     count(confirmed(withOne(), ["zz"])) => 1
+    bytes(confirmed(withOne(), ["zz"])) => 250
+    conflictOf(confirmed(withOne(), ["zz"]), entry("bb", 250, 250, ["cc:0"], "")) => Option.Some("aa")
     count(confirmed(withOne(), [])) => 1
+    count(confirmed(withTwo(), ["aa"])) => 1
+    bytes(confirmed(withTwo(), ["aa"])) => 300
+    conflictOf(confirmed(withTwo(), ["aa"]), entry("ee", 1, 1, ["dd:0"], "")) => Option.Some("bb")
+    conflictOf(confirmed(withTwo(), ["aa"]), entry("ee", 1, 1, ["cc:0"], "")) => Option.None
+    count(confirmed(withTwo(), ["aa", "bb"])) => 0
+    capOf(confirmed(withTwo(), ["aa", "bb"])) => 10000
+
+fn goneFrom(mined: List<String>, gone: Map<String, Bool>) -> Map<String, Bool>
+    ? "The mined Transaction Ids as a set, so each held entry asks one question."
+    match mined
+        [] -> gone
+        [head, ..tail] -> goneFrom(tail, Map.set(gone, head, true))
+
+verify goneFrom
+    Map.has(goneFrom(["aa", "bb"], Map.fromList([])), "bb") => true
+    Map.has(goneFrom(["aa"], Map.fromList([])), "bb") => false
+    Map.len(goneFrom([], Map.fromList([]))) => 0
+
+fn rebuilt(pool: Mempool, gone: Map<String, Bool>) -> Mempool
+    ? "The pool with the gone Transactions left out of both tables, and the"
+      "bytes recounted from what stays rather than subtracted one at a time."
+    match keptHeld(Map.entries(pool.held), gone, [], 0)
+        (pairs, total) -> Mempool(held = Map.fromList(pairs), claims = Map.fromList(keptClaims(Map.entries(pool.claims), gone, [])), bytes = total, cap = pool.cap)
+
+verify rebuilt
+    count(rebuilt(withOne(), goneFrom(["aa"], Map.fromList([])))) => 0
+    count(rebuilt(withOne(), Map.fromList([]))) => 1
+
+fn keptHeld(entries: List<Tuple<String, Held>>, gone: Map<String, Bool>, kept: List<Tuple<String, Held>>, total: Int) -> Tuple<List<Tuple<String, Held>>, Int>
+    ? "Every held entry whose Transaction is not gone, and their bytes."
+    match entries
+        [] -> (kept, total)
+        [(txid, held), ..tail] -> keptHeldOne(txid, held, tail, gone, kept, total, Map.has(gone, txid))
+
+verify keptHeld
+    keptHeld([], Map.fromList([]), [], 0) => ([], 0)
+    keptHeld([("aa", entry("aa", 250, 250, ["cc:0"], ""))], goneFrom(["aa"], Map.fromList([])), [], 0) => ([], 0)
+    keptHeld([("aa", entry("aa", 250, 250, ["cc:0"], ""))], Map.fromList([]), [], 0) => ([("aa", entry("aa", 250, 250, ["cc:0"], ""))], 250)
+
+fn keptHeldOne(txid: String, held: Held, tail: List<Tuple<String, Held>>, gone: Map<String, Bool>, kept: List<Tuple<String, Held>>, total: Int, isGone: Bool) -> Tuple<List<Tuple<String, Held>>, Int>
+    ? "One entry: left out if gone, kept and counted otherwise."
+    match isGone
+        true -> keptHeld(tail, gone, kept, total)
+        false -> keptHeld(tail, gone, List.prepend((txid, held), kept), total + held.size)
+
+verify keptHeldOne
+    keptHeldOne("aa", entry("aa", 250, 250, ["cc:0"], ""), [], Map.fromList([]), [], 0, true) => ([], 0)
+    keptHeldOne("aa", entry("aa", 250, 250, ["cc:0"], ""), [], Map.fromList([]), [], 0, false) => ([("aa", entry("aa", 250, 250, ["cc:0"], ""))], 250)
+
+fn keptClaims(entries: List<Tuple<String, String>>, gone: Map<String, Bool>, kept: List<Tuple<String, String>>) -> List<Tuple<String, String>>
+    ? "Every claim whose claimant is not gone. The claim is keyed by the"
+      "Output and holds the Transaction, so it is the value that is asked."
+    match entries
+        [] -> kept
+        [(output, txid), ..tail] -> keptClaimsOne(output, txid, tail, gone, kept, Map.has(gone, txid))
+
+verify keptClaims
+    keptClaims([], Map.fromList([]), []) => []
+    keptClaims([("cc:0", "aa")], goneFrom(["aa"], Map.fromList([])), []) => []
+    keptClaims([("cc:0", "aa")], Map.fromList([]), []) => [("cc:0", "aa")]
+
+fn keptClaimsOne(output: String, txid: String, tail: List<Tuple<String, String>>, gone: Map<String, Bool>, kept: List<Tuple<String, String>>, isGone: Bool) -> List<Tuple<String, String>>
+    ? "One claim: dropped with its Transaction, kept otherwise."
+    match isGone
+        true -> keptClaims(tail, gone, kept)
+        false -> keptClaims(tail, gone, List.prepend((output, txid), kept))
+
+verify keptClaimsOne
+    keptClaimsOne("cc:0", "aa", [], Map.fromList([]), [], true) => []
+    keptClaimsOne("cc:0", "aa", [], Map.fromList([]), [], false) => [("cc:0", "aa")]
+
+fn withTwo() -> Mempool
+    ? "A Mempool holding two Transactions on different Outputs, for the cases."
+    lodged(withOne(), entry("bb", 300, 300, ["dd:0"], ""))
+
+verify withTwo
+    count(withTwo()) => 2
+    bytes(withTwo()) => 550
+
+fn takenBy(pool: Mempool, removed: List<String>) -> List<String>
+    ? "Which held Transactions the chain took, named by the Outputs it took"
+      "out of the Set rather than by the Transactions it mined."
+      "A held Transaction leaves when an Output it means to spend is no longer"
+      "unspent, and this asks that question the cheap way round. The Outputs a"
+      "Block took are known -- it is what the Block's own Undo record is -- and"
+      "the Mempool already keeps claims, every Output a held Transaction means"
+      "to spend, so each one is a lookup rather than a walk of everything held."
+      "It answers confirmed and conflicted together, as asking the Set did: a"
+      "Transaction that was mined spent its own Inputs, so its Outputs are in"
+      "the list, and one that was beaten to an Output is there by that Output."
+      "A txid can come back more than once, from two Outputs of one"
+      "Transaction, and confirmed takes a Transaction out whether it is still"
+      "there or not, so the caller is not made to care."
+    takenInto(pool, removed, [])
+
+verify takenBy
+    takenBy(withOne(), []) => []
+    takenBy(withOne(), ["cc:0"]) => ["aa"]
+    takenBy(withOne(), ["dd:0"]) => []
+    takenBy(withOne(), ["dd:0", "cc:0"]) => ["aa"]
+    takenBy(withOne(), ["cc:0", "cc:0"]) => ["aa", "aa"]
+    count(confirmed(withOne(), takenBy(withOne(), ["cc:0"]))) => 0
+    count(confirmed(withOne(), takenBy(withOne(), ["dd:0"]))) => 1
+
+fn takenInto(pool: Mempool, removed: List<String>, gone: List<String>) -> List<String>
+    ? "One Output at a time, keeping whoever claimed it."
+    match removed
+        [] -> gone
+        [head, ..tail] -> takenInto(pool, tail, keptClaimant(Map.get(pool.claims, head), gone))
+
+verify takenInto
+    takenInto(withOne(), [], ["zz"]) => ["zz"]
+    takenInto(withOne(), ["cc:0"], []) => ["aa"]
+
+fn keptClaimant(claimant: Option<String>, gone: List<String>) -> List<String>
+    ? "The Transaction holding that Output, where one holds it."
+    match claimant
+        Option.None -> gone
+        Option.Some(txid) -> List.prepend(txid, gone)
+
+verify keptClaimant
+    keptClaimant(Option.None, ["zz"]) => ["zz"]
+    keptClaimant(Option.Some("aa"), []) => ["aa"]
 
 fn withoutTxid(pool: Mempool, txid: String) -> Mempool
     ? "One Transaction out, by Id, if it is there at all."
