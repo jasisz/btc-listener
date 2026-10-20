@@ -405,6 +405,17 @@ per Block instead of a Set lookup per held Transaction. Get the two names out
 of step and this is the test that fails while every other one passes, because
 it is the only one where what leaves is not what was mined.
 
+The read per Block was half of it. The other half was taking the confirmed
+Transactions *out*: one `Map.remove` each, and on this compiler a Map inside a
+record that is read twice in one call is copied whole on its next change, so a
+Block confirming 2,500 of 8,000 held copied both tables 2,500 times and the
+sweep took seconds -- 2.6 s median, 18.6 s worst, on mainnet, visible only to
+the `sweep took` line in `debug.log`. Since n1bor/btc-listener#428 the pool is
+rebuilt in one pass over its entries instead, and the same line reads tens of
+milliseconds at the same sizes. If it ever reads seconds again, that line is
+where to look first, and the emitted Rust for a `.clone()` before a
+`remove_owned` is where to look second.
+
 ### 8. A compact Block, from Core's own hand
 
 BIP152 names Transactions by six-byte short ids: a slice of a SipHash under a
